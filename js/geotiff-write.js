@@ -40,11 +40,12 @@ function geoKeyTags(geoKeys) {
 // origin: [x, y] of the top-left corner; pixelSize: [dx, dy] (both positive).
 export async function writeGeoTIFF({ width, height, rgba, origin, pixelSize, geoKeys }) {
   const rowsPerStrip = Math.max(1, Math.floor(65536 / (width * 4)));
-  const strips = [];
+  const jobs = [];
   for (let r = 0; r < height; r += rowsPerStrip) {
     const end = Math.min(height, r + rowsPerStrip);
-    strips.push(await deflate(rgba.subarray(r * width * 4, end * width * 4)));
+    jobs.push(deflate(rgba.subarray(r * width * 4, end * width * 4)));
   }
+  const strips = await Promise.all(jobs);
 
   const tags = [
     [256, LONG, [width]],

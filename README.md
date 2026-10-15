@@ -73,7 +73,8 @@ index.html#v=0.75&lat=-42&lon=147&w=2&rays=200&cam=4.6,2.6,6.2,0,0.5,0
 | `seed`   | which random coastline points get rays                         |
 | `detail` | coastline scale, `110m` or `50m`                               |
 | `grat`, `globe` | 0 hides the graticule or the globe                      |
-| `bm`     | basemap: `gebco` (default), `esri` or `none`                   |
+| `bm`     | basemap: `none` (default), `gebco` or `esri`                   |
+| `spin`   | 1 slowly orbits the camera round the scene                     |
 | `cam`    | camera position and target, six numbers                        |
 
 Add `?embed=1` for a compact view to put in an iframe; the "Copy embed code"
