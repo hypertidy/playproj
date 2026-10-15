@@ -68,6 +68,24 @@ to cone to cylinder and back. "Unroll" opens the cone with its apex fixed,
 the way a paper cone opens. Hash keys: `prop` (`eqd`, `conf`, `area`),
 `lat1`, `lon`, `t` (unroll, 0 to 1), `links`, plus the shared ones below.
 
+## Spilhaus
+
+`spilhaus.html` shows Spilhaus' world ocean map, an oblique Adams World in a
+Square II. Nothing physical makes it, so the surface is the map: a grid over
+the square carried back onto the sphere by the inverse projection. "Unfold"
+moves every point in a straight line from the globe to the square, and the
+square's own grid shows how a conformal net wraps the sphere, pinched at the
+corners. The centre and azimuth can be changed for any oblique Adams square.
+
+`js/families/spilhaus.js` is a port of PROJ's `spilhaus` and `adams_ws2`
+(Evenden, Evers, Wilkinson, Jimenez Shaw), checked against PROJ itself. The
+inverse is a Newton iteration, so the page solves it exactly on a grid and
+interpolates between nodes (within 0.003 degrees) for the basemap. GeoTIFF
+exports carry the PROJ string in an ESRI PE string's PROJ4 extension, which
+GDAL reads. Hash keys: `t` (unfold, 0 to 1), `lat`, `lon`, `azi` (the
+centre and azimuth), `net` (0 hides the square grid), `links`, plus the
+shared ones below.
+
 ## Basemaps and GeoTIFF export
 
 The plane can carry a basemap, reprojected pixel by pixel by casting each
@@ -121,6 +139,10 @@ js/geotiff-write.js         GeoTIFF writer with user-defined CRS keys
 js/families/perspective.js  azimuthal perspective family: rays, PROJ string, GeoTIFF keys
 js/families/conic.js        cone family with cylinder and plane limits
 cones.html, js/cones.js     cones and cylinders page
+js/families/azimuthal.js    compass (laea) and string (aeqd) constructions
+js/families/spilhaus.js     Spilhaus / Adams World in a Square II, from PROJ
+spilhaus.html, js/spilhaus.js  Spilhaus page
+test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-proj.mjs         ray construction vs proj4js
 legacy/pproj/               the original R package and experiments
@@ -137,7 +159,10 @@ npm test
 light position that has a PROJ equivalent, at several tangent points.
 `test/check-conic.mjs` does the same for the cone family (all three
 properties, cylinder and plane limits, both hemispheres) and round-trips its
-inverse. `test/check-inverse.mjs` round-trips project and inverse for every light
+inverse. `test/check-azimuthal.mjs` checks the compass and string
+constructions against proj4js. proj4js has no Spilhaus, so
+`test/check-spilhaus.mjs` compares with points projected by PROJ itself, in
+`test/fixtures/spilhaus-proj.json`. `test/check-inverse.mjs` round-trips project and inverse for every light
 position. To check that GDAL reads the exported CRS (needs rasterio):
 
 ```sh
@@ -146,8 +171,6 @@ node test/write-tifs.mjs /tmp/tifs && python3 test/check-geotiff.py /tmp/tifs
 
 ## Plans
 
-- Developable surfaces: cylinders and cones wrapped around the sphere and
-  unrolled, with a morph from plane to cone to cylinder.
 - A family module format so new projection families are one file each.
 - Projections with no physical construction (Mollweide, Robinson and so on),
   shown through their distortion.

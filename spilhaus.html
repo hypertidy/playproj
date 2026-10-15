@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Spilhaus</title>
+<meta name="description" content="The Spilhaus world ocean map: a globe unfolding into a conformal square.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/spilhaus.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./spilhaus.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./spilhaus.html" aria-current="page">Spilhaus</a></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="t"><span>Unfold</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Unfold the globe into the square">
+      <div class="scale"><span>globe</span><span>square</span></div>
+      <div class="buttons">
+        <button id="play-unfold" type="button">Unfold</button>
+      </div>
+    </section>
+
+    <section class="embed-map">
+      <canvas id="map2d" aria-label="The Spilhaus square"></canvas>
+      <p class="badge ok">A port of PROJ's spilhaus, checked against PROJ itself to well under a millimetre.</p>
+    </section>
+
+    <section>
+      <div class="projline">
+        <code id="projstring"></code>
+        <button id="copy-proj" type="button" class="small">Copy</button>
+      </div>
+      <p id="describe" class="describe"></p>
+    </section>
+
+    <section>
+      <label class="row" for="basemap"><span>Basemap</span></label>
+      <select id="basemap" class="wide"></select>
+      <p id="bm-status" class="status" role="status"></p>
+      <div class="buttons">
+        <label class="inline" for="tif-size">Size
+          <select id="tif-size">
+            <option value="1024">1024 px</option>
+            <option value="2048" selected>2048 px</option>
+            <option value="4096">4096 px</option>
+          </select>
+        </label>
+        <button id="download-tif" type="button" disabled>Download GeoTIFF</button>
+      </div>
+      <p class="hint">The square with its basemap, as RGBA with its CRS, readable by GDAL.</p>
+    </section>
+
+    <section>
+      <div class="buttons">
+        <button id="centre" type="button">Spilhaus centre</button>
+      </div>
+      <label class="row" for="lat"><span>Centre latitude</span><output id="lat-out"></output></label>
+      <input id="lat" type="range" min="-90" max="90" step="0.5">
+      <label class="row" for="lon"><span>Centre longitude</span><output id="lon-out"></output></label>
+      <input id="lon" type="range" min="-180" max="180" step="0.5">
+      <label class="row" for="azi"><span>Azimuth</span><output id="azi-out"></output></label>
+      <input id="azi" type="range" min="-180" max="180" step="0.5">
+      <label class="row" for="links"><span>Links to the surface</span><output id="links-out"></output></label>
+      <input id="links" type="range" min="0" max="600" step="10">
+      <div class="buttons">
+        <button id="reseed" type="button">New links</button>
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+      <div class="toggles">
+        <label><input id="net" type="checkbox"> Square grid</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+        <label><input id="globe" type="checkbox"> Globe</label>
+        <label><input id="spin" type="checkbox"> Spin view</label>
+        <label>Coastline
+          <select id="detail">
+            <option value="110m">1:110m</option>
+            <option value="50m">1:50m</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>Athelstan Spilhaus wanted a map with the oceans as one body of water. He took Oscar Adams'
+          1929 conformal map of the whole sphere in a square, and turned the sphere so that the square's
+          centre sits in the Southern Ocean and its four corners fall on land.</p>
+        <p>No light, cone or cylinder makes this map: Adams built it from elliptic integrals. So the
+          surface here is the map itself. A grid over the square is carried back onto the sphere, and
+          Unfold moves every point in a straight line from its place on the globe to its place in the
+          square.</p>
+        <p>The orange lines are the square's own grid. On the globe they still cross at right angles,
+          because the map is conformal, everywhere but the red corners. There the full turn around a
+          point on the globe is squeezed into the square's corners: one corner each in China and in
+          Argentina, while the other two corners are the same point in North America. The square's
+          edges fold in half to close the globe up again.</p>
+        <p>Move the centre or the azimuth for your own oblique Adams square. The projection is a port
+          of PROJ's <code>spilhaus</code> and <code>adams_ws2</code> (Evenden, Evers, Wilkinson and
+          Jimenez Shaw), checked against PROJ.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
