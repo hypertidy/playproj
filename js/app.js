@@ -7,7 +7,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import * as fam from "./families/perspective.js";
+import * as persp from "./families/perspective.js";
+import * as azi from "./families/azimuthal.js";
 import { loadCoastline, graticule, mulberry32, sceneFrame } from "./geo.js";
 import { sources, loadWorld, reproject } from "./basemap.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
@@ -15,6 +16,8 @@ import { writeGeoTIFF } from "./geotiff-write.js";
 const RAY_REACH = 6;      // rays from lights further than this start at the edge of the scene
 const RAY_POOL = 4000;    // candidate ray targets, sampled once per seed
 const DEG = "\u00b0";
+
+const CONSTRUCTIONS = ["light", "laea", "aeqd"];
 
 const COLORS = {
   bg: 0x05070d,
@@ -27,12 +30,14 @@ const COLORS = {
   planeGrat: 0x3d6b52,
   ray: 0x9aa3ad,
   light: 0xffd34d,
-  horizon: 0xffb347
+  horizon: 0xffb347,
+  compass: 0xff7ab8,
+  string: 0x7ad7ff
 };
 
 // ---------------------------------------------------------------- state
 
-const defaults = { v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, seed: 1, detail: "110m", grat: 1, globe: 1, bm: "none", spin: 0, cam: null };
+const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, seed: 1, detail: "110m", grat: 1, globe: 1, bm: "none", spin: 0, cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -43,6 +48,7 @@ function readHash() {
     const raw = h.get(k);
     if (k === "detail") state.detail = raw === "50m" ? "50m" : "110m";
     else if (k === "bm") state.bm = raw in sources ? raw : "none";
+    else if (k === "az") state.az = CONSTRUCTIONS.includes(raw) ? raw : "light";
     else if (k === "cam") {
       const c = raw.split(",").map(Number);
       if (c.length === 6 && c.every(isFinite)) state.cam = c;
@@ -70,7 +76,13 @@ function writeHash() {
   }, 200);
 }
 
-const params = () => ({ a: fam.lightFromSlider(state.v), lat0: state.lat, lon0: state.lon });
+// The light construction is the perspective family; the compass and string
+// constructions are the azimuthal family, on the same sphere and plane.
+let fam = persp;
+const params = () => {
+  fam = state.az === "light" ? persp : azi;
+  return { a: persp.lightFromSlider(state.v), mode: state.az, lat0: state.lat, lon0: state.lon };
+};
 
 // ---------------------------------------------------------------- scene
 
@@ -286,6 +298,14 @@ function rebuild() {
       hz.push(r * Math.cos(t0), thr, r * Math.sin(t0), r * Math.cos(t1), thr, r * Math.sin(t1));
     }
   }
+  // compass and string maps end where the antipode lands, a circle on the plane
+  if (fam.edgeRadius) {
+    const r = fam.edgeRadius(p);
+    for (let k = 0; k < 128; k++) {
+      const t0 = (k / 128) * 2 * Math.PI, t1 = ((k + 1) / 128) * 2 * Math.PI;
+      hz.push(r * Math.cos(t0), 1.002, r * Math.sin(t0), r * Math.cos(t1), 1.002, r * Math.sin(t1));
+    }
+  }
   setLines("horizon", hz, COLORS.horizon, 0.9);
 
   // plane, axis and light
@@ -298,14 +318,17 @@ function rebuild() {
   planeLabel.position.set(w * 0.98, 1.05, w * 0.98);
   tangentLabel.position.set(0, 1.02, 0);
 
-  const finite = isFinite(p.a) && Math.abs(p.a) <= RAY_REACH;
+  const lit = state.az === "light";
+  const finite = lit && isFinite(p.a) && Math.abs(p.a) <= RAY_REACH;
   lightMarker.visible = lightLabel.visible = finite;
   if (finite) lightMarker.position.set(0, p.a, 0);
-  const top = Math.max(1.6, finite ? p.a : RAY_REACH), bottom = Math.min(-1.4, finite ? p.a : -RAY_REACH);
+  const top = !lit ? 1.6 : Math.max(1.6, finite ? p.a : RAY_REACH);
+  const bottom = !lit ? -1.4 : Math.min(-1.4, finite ? p.a : -RAY_REACH);
   setLines("axis", [0, bottom, 0, 0, top, 0], 0x667788, 0.7, { dashed: true });
 
-  // rays: light -> sphere point -> plane point (or light -> plane -> sphere)
-  const rays = [], hitsS = [], hitsP = [];
+  // rays: light -> sphere point -> plane point (or light -> plane -> sphere),
+  // or the compass and string constructions, one per sampled point
+  const rays = [], arcs = [], hitsS = [], hitsP = [];
   let n = 0;
   for (const [lon, lat] of rayPool) {
     if (n >= state.rays) break;
@@ -313,6 +336,13 @@ function rebuild() {
     if (!inPlane(xy)) continue;
     toScene(lon, lat, B);
     const P = [xy[0], 1, -xy[1]];
+    if (!lit) {
+      construct(state.az, B, P, rays, arcs);
+      hitsS.push(B[0], B[1], B[2]);
+      hitsP.push(P[0], P[1], P[2]);
+      n++;
+      continue;
+    }
     let start;
     if (finite) start = [0, p.a, 0];
     else {
@@ -331,11 +361,49 @@ function rebuild() {
     n++;
   }
   setLines("rays", rays, COLORS.ray, 0.35, { order: 1 });
+  setLines("arcs", arcs, state.az === "aeqd" ? COLORS.string : COLORS.compass, 0.55, { order: 1 });
   setPoints("hitsS", hitsS, 0xffffff, 3);
   setPoints("hitsP", hitsP, COLORS.planeCoast, 4);
 
   drawMap(p);
   updatePanel(p);
+}
+
+// Compass (laea): the straight chord from the tangent point T to the sphere
+// point S, then the arc a compass centred on T would swing, at that radius,
+// from S down to the plane point P. The chord is |TS| = 2 sin(c / 2) and the
+// map distance is the same, so P is S swung onto the plane.
+//
+// String (aeqd): the great-circle arc from T to S on the sphere, of length c,
+// and the same length laid flat on the plane from T to P.
+const ARC_STEPS = 24;
+function construct(mode, S, P, lines, arcs) {
+  const T = [0, 1, 0];
+  if (mode === "laea") {
+    lines.push(T[0], T[1], T[2], S[0], S[1], S[2]);
+    const u = [S[0] - T[0], S[1] - T[1], S[2] - T[2]], v = [P[0] - T[0], P[1] - T[1], P[2] - T[2]];
+    slerpArc(T, u, v, arcs);
+  } else {
+    slerpArc([0, 0, 0], T, S, arcs);
+    arcs.push(T[0], T[1], T[2], P[0], P[1], P[2]);
+  }
+}
+
+// Arc about centre O from O + u to O + v (|u| = |v|), as line segments.
+function slerpArc(O, u, v, out) {
+  const r = Math.hypot(u[0], u[1], u[2]);
+  if (r < 1e-9) return;
+  const dot = (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (r * Math.hypot(v[0], v[1], v[2]));
+  const om = Math.acos(Math.max(-1, Math.min(1, dot)));
+  const so = Math.sin(om);
+  let prev = [O[0] + u[0], O[1] + u[1], O[2] + u[2]];
+  for (let k = 1; k <= ARC_STEPS; k++) {
+    const t = k / ARC_STEPS;
+    const a = so < 1e-9 ? 1 - t : Math.sin((1 - t) * om) / so, b = so < 1e-9 ? t : Math.sin(t * om) / so;
+    const q = [O[0] + a * u[0] + b * v[0], O[1] + a * u[1] + b * v[1], O[2] + a * u[2] + b * v[2]];
+    out.push(prev[0], prev[1], prev[2], q[0], q[1], q[2]);
+    prev = q;
+  }
 }
 
 // ---------------------------------------------------------------- basemap
@@ -518,9 +586,9 @@ function drawMap(p) {
 
   // horizon circle
   const thr = fam.horizonCos(p.a);
-  if (thr > -1 + 1e-9) {
+  if (thr > -1 + 1e-9 || fam.edgeRadius) {
     const k = isFinite(p.a) ? (1 - p.a) / (thr - p.a) : 1;
-    const rho = k * Math.sqrt(1 - thr * thr);
+    const rho = fam.edgeRadius ? fam.edgeRadius(p) : k * Math.sqrt(1 - thr * thr);
     if (isFinite(rho) && rho < 4 * w) {
       ctx.setLineDash([5, 4]);
       ctx.strokeStyle = "#ffb347"; ctx.lineWidth = 1;
@@ -556,7 +624,7 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   v: $("v"), lat: $("lat"), lon: $("lon"), w: $("w"), rays: $("rays"),
   vOut: $("v-out"), latOut: $("lat-out"), lonOut: $("lon-out"), wOut: $("w-out"), raysOut: $("rays-out"),
-  proj: $("projstring"), describe: $("describe"), presets: $("presets"),
+  proj: $("projstring"), describe: $("describe"), presets: $("presets"), az: $("construction"), lightControls: $("light-controls"),
   grat: $("grat"), globe: $("globe"), detail: $("detail"),
   spin: $("spin"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
 };
@@ -567,7 +635,11 @@ for (const [id, src] of Object.entries(sources)) {
   ui.bm.appendChild(o);
 }
 
-for (const pr of fam.presets) {
+for (const b of ui.az.children) {
+  b.addEventListener("click", () => { stopSweep(); state.az = b.dataset.az; sync(); });
+}
+
+for (const pr of persp.presets) {
   const b = document.createElement("button");
   b.type = "button"; b.textContent = pr.label; b.dataset.v = pr.v;
   b.addEventListener("click", () => { stopSweep(); state.v = pr.v; sync(); });
@@ -597,6 +669,9 @@ function updatePanel(p) {
   ui.proj.classList.toggle("none", !s);
   ui.describe.textContent = fam.describe(p);
   for (const b of ui.presets.children) b.classList.toggle("active", +b.dataset.v === state.v);
+  for (const b of ui.az.children) b.classList.toggle("active", b.dataset.az === state.az);
+  ui.lightControls.hidden = state.az !== "light";
+  sweepBtn.hidden = state.az !== "light";
 }
 
 let rafPending = false;
@@ -607,7 +682,7 @@ function sync() {
   requestAnimationFrame(() => { rafPending = false; rebuild(); });
 }
 
-ui.v.addEventListener("input", () => { stopSweep(); state.v = fam.snapSlider(+ui.v.value); sync(); });
+ui.v.addEventListener("input", () => { stopSweep(); state.v = persp.snapSlider(+ui.v.value); sync(); });
 ui.lat.addEventListener("input", () => { state.lat = +ui.lat.value; sync(); });
 ui.lon.addEventListener("input", () => { state.lon = +ui.lon.value; sync(); });
 ui.w.addEventListener("input", () => { state.w = +ui.w.value; sync(); });

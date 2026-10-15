@@ -25,6 +25,15 @@ light along the axis through the sphere:
 Positions in between are valid perspective constructions with no PROJ name,
 and the page draws them anyway.
 
+Two azimuthal projections need no light, and the page draws them as
+constructions on the same sphere and plane:
+
+- **Compass** (`+proj=laea`): set a compass on the tangent point, open it to
+  a point on the sphere, and swing it down onto the plane. The chord is
+  2 sin(c/2) for angular distance c, which is exactly the equal-area radius.
+- **String** (`+proj=aeqd`): lay a string along the great circle from the
+  tangent point to the point, then pull it flat onto the plane.
+
 The 3D scene comes from the ray construction. The flat map is drawn by
 [proj4js](https://github.com/proj4js/proj4js) from the PROJ string whenever
 one exists, so each view checks the other, and the page reports how closely
@@ -85,6 +94,7 @@ index.html#v=0.75&lat=-42&lon=147&w=2&rays=200&cam=4.6,2.6,6.2,0,0.5,0
 
 | Key      | Meaning                                                        |
 |----------|----------------------------------------------------------------|
+| `az`     | construction: `light` (default), `laea` (compass) or `aeqd` (string) |
 | `v`      | light position on the slider, -1 to 1 (-0.5 antipode, 0 centre, 1 infinity) |
 | `lat`, `lon` | tangent point in degrees                                   |
 | `w`      | plane half-width in sphere radii                               |

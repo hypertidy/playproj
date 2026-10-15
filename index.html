@@ -32,13 +32,20 @@
     </header>
 
     <section class="embed-keep">
-      <div id="presets" class="presets" role="group" aria-label="Projection presets"></div>
-      <label class="row">
-        <span>Light position</span>
-        <output id="v-out"></output>
-      </label>
-      <input id="v" type="range" min="-1" max="1" step="0.001" aria-label="Light position along the axis">
-      <div class="scale"><span>below</span><span>antipode</span><span>centre</span><span>tangent</span><span>above</span></div>
+      <div id="construction" class="presets three" role="group" aria-label="Construction">
+        <button type="button" data-az="light">Light</button>
+        <button type="button" data-az="laea">Compass</button>
+        <button type="button" data-az="aeqd">String</button>
+      </div>
+      <div id="light-controls">
+        <div id="presets" class="presets" role="group" aria-label="Projection presets"></div>
+        <label class="row">
+          <span>Light position</span>
+          <output id="v-out"></output>
+        </label>
+        <input id="v" type="range" min="-1" max="1" step="0.001" aria-label="Light position along the axis">
+        <div class="scale"><span>below</span><span>antipode</span><span>centre</span><span>tangent</span><span>above</span></div>
+      </div>
     </section>
 
     <section class="embed-map">
@@ -111,6 +118,12 @@
           <tr><td>above the tangent point</td><td>near-side perspective</td></tr>
           <tr><td>infinitely far</td><td>orthographic</td></tr>
         </table>
+        <p>Two azimuthal projections need no light. With <b>Compass</b>, put the point of a compass on the
+          tangent point, open it to reach a point on the sphere, and swing it down onto the plane: that is
+          the Lambert azimuthal equal-area projection. With <b>String</b>, lay a string along the sphere from
+          the tangent point to the point, then pull it flat onto the plane: that is the azimuthal
+          equidistant projection. The Rays slider sets how many of these are drawn, and the orange ring is
+          where the antipode lands.</p>
         <p>The bright part of the coastline on the globe is what reaches the plane, and the orange ring is
           the horizon beyond which rays miss it. Lights between those positions give valid perspective
           projections that PROJ does not name.</p>
