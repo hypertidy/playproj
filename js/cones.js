@@ -14,7 +14,7 @@ import { sources, loadWorld, reprojectBox } from "./basemap.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
 
 const D2R = Math.PI / 180;
-const DEG = "°";
+const DEG = "\u00b0";
 const LIMIT = 3.2;        // how far (sphere radii) the surface reaches from the standard parallel
 const LINK_POOL = 4000;
 
