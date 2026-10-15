@@ -105,7 +105,9 @@ export function colourElevation(elev, width, height) {
       data[k * 4] = c[1] * f; data[k * 4 + 1] = c[2] * f; data[k * 4 + 2] = c[3] * f; data[k * 4 + 3] = 255;
     }
   }
-  return toWorld(data, width, height);
+  const world = toWorld(data, width, height);
+  world.elev = elev;
+  return world;
 }
 
 // ------------------------------------------------------------------ Esri
@@ -152,6 +154,20 @@ function toWorld(data, width, height) {
   canvas.width = width; canvas.height = height;
   canvas.getContext("2d").putImageData(new ImageData(data, width, height), 0, 0);
   return { width, height, data, canvas };
+}
+
+// Elevation in metres at a lon/lat, bilinear, or 0 where the world has none
+// (only GEBCO carries elevation). No-data cells count as sea level.
+export function sampleElev(world, lon, lat) {
+  const e = world && world.elev;
+  if (!e) return 0;
+  const W = world.width, H = world.height;
+  const u = ((lon + 180) / 360) * W - 0.5;
+  const v = Math.min(H - 1.001, Math.max(0, ((90 - lat) / 180) * H - 0.5));
+  const u0 = Math.floor(u), v0 = Math.floor(v), fu = u - u0, fv = v - v0;
+  const a = ((u0 % W) + W) % W, b = (a + 1) % W, r0 = v0 * W, r1 = r0 + W;
+  const z = (k) => (e[k] <= -32767 ? 0 : e[k]);
+  return (z(r0 + a) * (1 - fu) + z(r0 + b) * fu) * (1 - fv) + (z(r1 + a) * (1 - fu) + z(r1 + b) * fu) * fv;
 }
 
 // ------------------------------------------------------------------ reproject

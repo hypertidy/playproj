@@ -121,6 +121,7 @@ index.html#v=0.75&lat=-42&lon=147&w=2&rays=200&cam=4.6,2.6,6.2,0,0.5,0
 | `detail` | coastline scale, `110m` or `50m`                               |
 | `grat`, `globe` | 0 hides the graticule or the globe                      |
 | `bm`     | basemap: `none` (default), `gebco` or `esri`                   |
+| `relief` | GEBCO relief exaggeration, 0 (off) to 100; `wire` 1 draws it as wireframe |
 | `spin`   | 1 slowly orbits the camera round the scene                     |
 | `cam`    | camera position and target, six numbers                        |
 
