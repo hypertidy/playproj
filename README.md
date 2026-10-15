@@ -40,6 +40,25 @@ python3 -m http.server 8000
 # open http://localhost:8000/
 ```
 
+## Cones and cylinders
+
+`cones.html` wraps a cone round the sphere, touching it along a standard
+parallel, and unrolls it flat. The cone constant n = sin(standard parallel)
+is the fraction of a circle the flat cone fills, so moving the standard
+parallel to the equator turns the cone into a cylinder and moving it to a
+pole turns it into a plane. Each property is one family across all three:
+
+| Property    | Cylinder | Cone   | Plane   |
+|-------------|----------|--------|---------|
+| Equidistant | `eqc`    | `eqdc` | `aeqd`  |
+| Conformal   | `merc`   | `lcc`  | `stere` |
+| Equal-area  | `cea`    | `aea`  | `laea`  |
+
+"Sweep cone" runs the standard parallel from pole to pole, morphing plane
+to cone to cylinder and back. "Unroll" opens the cone with its apex fixed,
+the way a paper cone opens. Hash keys: `prop` (`eqd`, `conf`, `area`),
+`lat1`, `lon`, `t` (unroll, 0 to 1), `links`, plus the shared ones below.
+
 ## Basemaps and GeoTIFF export
 
 The plane can carry a basemap, reprojected pixel by pixel by casting each
@@ -89,7 +108,9 @@ js/app.js                   scene, map and controls
 js/geo.js                   coastline loading, graticule, scene frame
 js/basemap.js               basemap sources and per-pixel reprojection
 js/geotiff-write.js         GeoTIFF writer with user-defined CRS keys
-js/families/perspective.js  the projection family: geometry, PROJ string, text
+js/families/perspective.js  azimuthal perspective family: rays, PROJ string, GeoTIFF keys
+js/families/conic.js        cone family with cylinder and plane limits
+cones.html, js/cones.js     cones and cylinders page
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-proj.mjs         ray construction vs proj4js
 legacy/pproj/               the original R package and experiments
@@ -104,7 +125,9 @@ npm test
 
 `test/check-proj.mjs` compares the ray construction with proj4js for every
 light position that has a PROJ equivalent, at several tangent points.
-`test/check-inverse.mjs` round-trips project and inverse for every light
+`test/check-conic.mjs` does the same for the cone family (all three
+properties, cylinder and plane limits, both hemispheres) and round-trips its
+inverse. `test/check-inverse.mjs` round-trips project and inverse for every light
 position. To check that GDAL reads the exported CRS (needs rasterio):
 
 ```sh

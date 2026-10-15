@@ -159,20 +159,26 @@ function toWorld(data, width, height) {
 // Fill an RGBA buffer of size x size covering the plane square [-w, w],
 // sampling the world image bilinearly where the family's inverse lands.
 export function reproject(world, inverse, p, w, size) {
-  const out = new Uint8ClampedArray(size * size * 4);
+  return reprojectBox(world, inverse, p, [-w, -w, w, w], size, size);
+}
+
+// The same for any box [xmin, ymin, xmax, ymax] at nx by ny pixels.
+export function reprojectBox(world, inverse, p, box, nx, ny) {
+  const out = new Uint8ClampedArray(nx * ny * 4);
   const { width: W, height: H, data: src } = world;
-  const step = (2 * w) / size;
-  for (let j = 0; j < size; j++) {
-    const y = w - (j + 0.5) * step;
-    for (let i = 0; i < size; i++) {
-      const ll = inverse(-w + (i + 0.5) * step, y, p);
+  const [x0, y0, x1, y1] = box;
+  const sx = (x1 - x0) / nx, sy = (y1 - y0) / ny;
+  for (let j = 0; j < ny; j++) {
+    const y = y1 - (j + 0.5) * sy;
+    for (let i = 0; i < nx; i++) {
+      const ll = inverse(x0 + (i + 0.5) * sx, y, p);
       if (!ll) continue;
       const u = ((ll[0] + 180) / 360) * W - 0.5;
       const v = Math.min(H - 1.001, Math.max(0, ((90 - ll[1]) / 180) * H - 0.5));
       const u0 = Math.floor(u), v0 = Math.floor(v), fu = u - u0, fv = v - v0;
       const a = ((u0 % W) + W) % W, b = (a + 1) % W;
       const r0 = v0 * W, r1 = (v0 + 1) * W;
-      const k = (j * size + i) * 4;
+      const k = (j * nx + i) * 4;
       for (let c = 0; c < 3; c++) {
         const top = src[(r0 + a) * 4 + c] * (1 - fu) + src[(r0 + b) * 4 + c] * fu;
         const bot = src[(r1 + a) * 4 + c] * (1 - fu) + src[(r1 + b) * 4 + c] * fu;
