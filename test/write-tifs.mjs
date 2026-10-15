@@ -3,10 +3,11 @@
 import fs from "fs";
 import * as persp from "../js/families/perspective.js";
 import * as conic from "../js/families/conic.js";
+import * as azi from "../js/families/azimuthal.js";
 import { writeGeoTIFF } from "../js/geotiff-write.js";
 
 const out = process.argv[2];
-const P = (p) => ({ fam: persp, p }), C = (p) => ({ fam: conic, p });
+const P = (p) => ({ fam: persp, p }), C = (p) => ({ fam: conic, p }), A = (p) => ({ fam: azi, p });
 const cases = [
   P({ a: -1, lat0: -90, lon0: 0 }), P({ a: -1, lat0: -42, lon0: 147 }),
   P({ a: 0, lat0: 35, lon0: -120 }), P({ a: Infinity, lat0: 10, lon0: 20 }),
@@ -14,6 +15,8 @@ const cases = [
 ];
 for (const prop of ["eqd", "conf", "area"])
   for (const lat1 of [0, -40, 35, 90, -90]) cases.push(C({ prop, lat1, lon0: 147 }));
+for (const mode of ["laea", "aeqd"])
+  for (const [lat0, lon0] of [[-90, 0], [-42, 147], [35, -120]]) cases.push(A({ mode, lat0, lon0 }));
 const manifest = [];
 for (const [i, { fam, p }] of cases.entries()) {
   const { R, project, geoKeys, projString } = fam;
