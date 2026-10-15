@@ -22,6 +22,7 @@
   <main id="stage">
     <div id="three"></div>
     <a id="open-full" class="open-full" href="./" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
   </main>
 
   <aside id="panel">
@@ -43,6 +44,23 @@
     <section class="embed-map">
       <canvas id="map2d" aria-label="The projected map on the tangent plane"></canvas>
       <p id="badge" class="badge"></p>
+    </section>
+
+    <section>
+      <label class="row" for="basemap"><span>Basemap</span></label>
+      <select id="basemap" class="wide"></select>
+      <p id="bm-status" class="status" role="status"></p>
+      <div class="buttons">
+        <label class="inline" for="tif-size">Size
+          <select id="tif-size">
+            <option value="1024">1024 px</option>
+            <option value="2048" selected>2048 px</option>
+            <option value="4096">4096 px</option>
+          </select>
+        </label>
+        <button id="download-tif" type="button" disabled>Download GeoTIFF</button>
+      </div>
+      <p class="hint">The projected basemap on the plane, as RGBA with its CRS, readable by GDAL.</p>
     </section>
 
     <section>

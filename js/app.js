@@ -9,6 +9,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import * as fam from "./families/perspective.js";
 import { loadCoastline, graticule, mulberry32, sceneFrame } from "./geo.js";
+import { sources, loadWorld, reproject } from "./basemap.js";
+import { writeGeoTIFF } from "./geotiff-write.js";
 
 const RAY_REACH = 6;      // rays from lights further than this start at the edge of the scene
 const RAY_POOL = 4000;    // candidate ray targets, sampled once per seed
@@ -30,7 +32,7 @@ const COLORS = {
 
 // ---------------------------------------------------------------- state
 
-const defaults = { v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, seed: 1, detail: "110m", grat: 1, globe: 1, cam: null };
+const defaults = { v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, seed: 1, detail: "110m", grat: 1, globe: 1, bm: "gebco", cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -40,6 +42,7 @@ function readHash() {
     if (!h.has(k)) continue;
     const raw = h.get(k);
     if (k === "detail") state.detail = raw === "50m" ? "50m" : "110m";
+    else if (k === "bm") state.bm = raw in sources ? raw : "none";
     else if (k === "cam") {
       const c = raw.split(",").map(Number);
       if (c.length === 6 && c.every(isFinite)) state.cam = c;
@@ -104,11 +107,40 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.2);
 sun.position.set(3, 5, 4);
 scene.add(sun);
 
+// The globe is a lon/lat grid placed by the scene frame, so an
+// equirectangular basemap wraps onto it with plain lon/lat texture coordinates.
 const globe = new THREE.Mesh(
-  new THREE.SphereGeometry(1, 96, 64),
+  new THREE.BufferGeometry(),
   new THREE.MeshPhongMaterial({ color: COLORS.globe, transparent: true, opacity: 0.28, shininess: 40, depthWrite: false })
 );
 scene.add(globe);
+
+const GLOBE_NX = 144, GLOBE_NY = 72;
+const globeIndex = [];
+for (let j = 0; j < GLOBE_NY; j++)
+  for (let i = 0; i < GLOBE_NX; i++) {
+    const a = j * (GLOBE_NX + 1) + i, b = a + GLOBE_NX + 1;
+    globeIndex.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+const globeUV = [];
+for (let j = 0; j <= GLOBE_NY; j++)
+  for (let i = 0; i <= GLOBE_NX; i++) globeUV.push(i / GLOBE_NX, 1 - j / GLOBE_NY);
+
+function placeGlobe(toScene) {
+  const pos = new Float32Array((GLOBE_NX + 1) * (GLOBE_NY + 1) * 3);
+  let k = 0;
+  for (let j = 0; j <= GLOBE_NY; j++) {
+    const lat = 90 - (180 * j) / GLOBE_NY;
+    for (let i = 0; i <= GLOBE_NX; i++, k += 3) toScene(-180 + (360 * i) / GLOBE_NX, lat, pos, k);
+  }
+  globe.geometry.dispose();
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.BufferAttribute(pos.slice(), 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(globeUV, 2));
+  g.setIndex(globeIndex);
+  globe.geometry = g;
+}
 
 const planeMesh = new THREE.Mesh(
   new THREE.PlaneGeometry(1, 1),
@@ -204,6 +236,8 @@ function rebuild() {
   const toScene = sceneFrame(p.lat0, p.lon0);
   const thr = fam.horizonCos(p.a);
   const A = [0, 0, 0], B = [0, 0, 0];
+  placeGlobe(toScene);
+  scheduleBasemap(p);
 
   // coastline on the sphere, bright where it reaches the plane
   const on = [], off = [], flat = [];
@@ -304,6 +338,107 @@ function rebuild() {
   updatePanel(p);
 }
 
+// ---------------------------------------------------------------- basemap
+
+let world = null;          // the loaded source as a lon/lat RGBA image
+let worldTexture = null;
+// Fixed size, because a WebGL texture cannot change size once uploaded;
+// coarse renders are drawn into it scaled up.
+const PROJ_SIZE = 1024;
+const projCanvas = document.createElement("canvas");
+projCanvas.width = projCanvas.height = PROJ_SIZE;
+const scratch = document.createElement("canvas");
+const planeTexture = new THREE.CanvasTexture(projCanvas);
+planeTexture.colorSpace = THREE.SRGBColorSpace;
+let basemapTimer = 0;
+
+function renderBasemap(p, size) {
+  if (!world) return;
+  const rgba = reproject(world, fam.inverse, p, state.w, size);
+  const ctx = projCanvas.getContext("2d");
+  if (size === PROJ_SIZE) ctx.putImageData(new ImageData(rgba, size, size), 0, 0);
+  else {
+    scratch.width = scratch.height = size;
+    scratch.getContext("2d").putImageData(new ImageData(rgba, size, size), 0, 0);
+    ctx.clearRect(0, 0, PROJ_SIZE, PROJ_SIZE);
+    ctx.drawImage(scratch, 0, 0, PROJ_SIZE, PROJ_SIZE);
+  }
+  planeTexture.needsUpdate = true;
+}
+
+// A quick coarse image while things move, then a sharp one once they settle.
+function scheduleBasemap(p) {
+  if (!world) return;
+  renderBasemap(p, 256);
+  clearTimeout(basemapTimer);
+  basemapTimer = setTimeout(() => { renderBasemap(params(), PROJ_SIZE); drawMap(params()); }, 250);
+}
+
+function applyBasemapMaterials() {
+  const gm = globe.material, pm = planeMesh.material;
+  if (world) {
+    if (!worldTexture || worldTexture.image !== world.canvas) {
+      worldTexture = new THREE.CanvasTexture(world.canvas);
+      worldTexture.colorSpace = THREE.SRGBColorSpace;
+    }
+    gm.map = worldTexture; gm.color.set(0xffffff); gm.opacity = 0.7;
+    pm.map = planeTexture; pm.color.set(0xffffff); pm.opacity = 0.85;
+  } else {
+    gm.map = null; gm.color.set(COLORS.globe); gm.opacity = 0.28;
+    pm.map = null; pm.color.set(COLORS.plane); pm.opacity = 0.07;
+  }
+  gm.needsUpdate = pm.needsUpdate = true;
+}
+
+async function setBasemap() {
+  const id = state.bm;
+  writeHash();
+  ui.credit.innerHTML = sources[id].credit || "";
+  if (id === "none") {
+    world = null; ui.bmStatus.textContent = ""; applyBasemapMaterials(); sync();
+    return;
+  }
+  try {
+    const w = await loadWorld(id, (msg) => { if (state.bm === id) ui.bmStatus.textContent = msg; });
+    if (state.bm !== id) return;
+    world = w;
+    ui.bmStatus.textContent = "";
+  } catch (e) {
+    if (state.bm !== id) return;
+    world = null;
+    ui.bmStatus.textContent = `${sources[id].label} did not load (${e.message}). Check the connection and try again.`;
+  }
+  applyBasemapMaterials();
+  sync();
+}
+
+async function downloadTIF() {
+  if (!world) return;
+  const p = params(), n = +ui.tifSize.value, w = state.w, R = fam.R;
+  const label = ui.tif.textContent;
+  ui.tif.textContent = "Rendering...";
+  ui.tif.disabled = true;
+  try {
+    const rgba = reproject(world, fam.inverse, p, w, n);
+    const blob = await writeGeoTIFF({
+      width: n, height: n, rgba,
+      origin: [-w * R, w * R], pixelSize: [(2 * w * R) / n, (2 * w * R) / n],
+      geoKeys: fam.geoKeys(p)
+    });
+    const kind = (fam.projString(p) || "+proj=perspective").split(" ")[0].slice(6);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `playproj-${kind}-lat${state.lat}-lon${state.lon}-${state.bm}-${n}.tif`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  } finally {
+    ui.tif.textContent = label;
+    ui.tif.disabled = !world;
+  }
+}
+
 // ---------------------------------------------------------------- 2D map
 
 const mapCanvas = document.getElementById("map2d");
@@ -374,6 +509,10 @@ function drawMap(p) {
     }
     ctx.stroke();
   };
+  if (world) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(projCanvas, X(-w), Y(w), 2 * w * s, 2 * w * s);
+  }
   if (state.grat) stroke(grat, "#3d6b52", 0.8);
   stroke(coast, "#6ab787", 1.1);
 
@@ -418,8 +557,15 @@ const ui = {
   v: $("v"), lat: $("lat"), lon: $("lon"), w: $("w"), rays: $("rays"),
   vOut: $("v-out"), latOut: $("lat-out"), lonOut: $("lon-out"), wOut: $("w-out"), raysOut: $("rays-out"),
   proj: $("projstring"), describe: $("describe"), presets: $("presets"),
-  grat: $("grat"), globe: $("globe"), detail: $("detail")
+  grat: $("grat"), globe: $("globe"), detail: $("detail"),
+  bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
 };
+
+for (const [id, src] of Object.entries(sources)) {
+  const o = document.createElement("option");
+  o.value = id; o.textContent = src.label;
+  ui.bm.appendChild(o);
+}
 
 for (const pr of fam.presets) {
   const b = document.createElement("button");
@@ -443,6 +589,8 @@ function updatePanel(p) {
   ui.wOut.textContent = `${state.w} R`;
   ui.raysOut.textContent = state.rays;
   ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail;
+  ui.bm.value = state.bm;
+  ui.tif.disabled = !world;
   const s = fam.projString(p);
   ui.proj.textContent = s || "(no PROJ equivalent)";
   ui.proj.classList.toggle("none", !s);
@@ -466,6 +614,8 @@ ui.rays.addEventListener("input", () => { state.rays = +ui.rays.value; sync(); }
 ui.grat.addEventListener("change", () => { state.grat = ui.grat.checked ? 1 : 0; sync(); });
 ui.globe.addEventListener("change", () => { state.globe = ui.globe.checked ? 1 : 0; globe.visible = !!state.globe; sync(); });
 ui.detail.addEventListener("change", async () => { state.detail = ui.detail.value; await loadData(); sync(); });
+ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; setBasemap(); });
+ui.tif.addEventListener("click", downloadTIF);
 $("reseed").addEventListener("click", () => { state.seed = (state.seed % 9999) + 1; buildRayPool(); sync(); });
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(DEFAULT_CAM); writeHash(); });
 
@@ -526,7 +676,7 @@ async function loadData() {
   buildRayPool();
 }
 
-window.addEventListener("hashchange", () => { readHash(); globe.visible = !!state.globe; if (state.cam) setCamera(state.cam); loadData().then(sync); });
+window.addEventListener("hashchange", () => { readHash(); globe.visible = !!state.globe; if (state.cam) setCamera(state.cam); setBasemap(); loadData().then(sync); });
 
 if (embed) {
   document.body.classList.add("embed");
@@ -538,4 +688,5 @@ globe.visible = !!state.globe;
 if (state.cam) setCamera(state.cam);
 resize();
 loadData().then(() => { rebuild(); document.body.classList.add("ready"); });
+setBasemap();
 requestAnimationFrame(tick);

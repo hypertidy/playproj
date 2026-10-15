@@ -40,6 +40,22 @@ python3 -m http.server 8000
 # open http://localhost:8000/
 ```
 
+## Basemaps and GeoTIFF export
+
+The plane can carry a basemap, reprojected pixel by pixel by casting each
+plane pixel's ray back onto the sphere:
+
+- GEBCO 2026 elevation, read from the smallest overview of the
+  [Source Cooperative COG](https://source.coop/ausantarctic/gebco) that is at
+  least 2048 pixels wide, coloured with hypsometric tints and a hillshade.
+- Esri World Imagery, one zoom level of Web Mercator tiles (so no data
+  beyond 85 degrees).
+
+The same image wraps the globe. "Download GeoTIFF" writes the projected
+image as RGBA with its CRS: stereographic, gnomonic and orthographic as
+GeoTIFF projection keys, near-side perspective as an ESRI PE string (the
+form GDAL writes), and positions with no PROJ equivalent with no CRS.
+
 ## Share and embed
 
 The view state lives in the URL hash, so a link reproduces what you see:
@@ -57,6 +73,7 @@ index.html#v=0.75&lat=-42&lon=147&w=2&rays=200&cam=4.6,2.6,6.2,0,0.5,0
 | `seed`   | which random coastline points get rays                         |
 | `detail` | coastline scale, `110m` or `50m`                               |
 | `grat`, `globe` | 0 hides the graticule or the globe                      |
+| `bm`     | basemap: `gebco` (default), `esri` or `none`                   |
 | `cam`    | camera position and target, six numbers                        |
 
 Add `?embed=1` for a compact view to put in an iframe; the "Copy embed code"
@@ -69,6 +86,8 @@ index.html                  page
 css/app.css                 styles
 js/app.js                   scene, map and controls
 js/geo.js                   coastline loading, graticule, scene frame
+js/basemap.js               basemap sources and per-pixel reprojection
+js/geotiff-write.js         GeoTIFF writer with user-defined CRS keys
 js/families/perspective.js  the projection family: geometry, PROJ string, text
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-proj.mjs         ray construction vs proj4js
@@ -84,6 +103,12 @@ npm test
 
 `test/check-proj.mjs` compares the ray construction with proj4js for every
 light position that has a PROJ equivalent, at several tangent points.
+`test/check-inverse.mjs` round-trips project and inverse for every light
+position. To check that GDAL reads the exported CRS (needs rasterio):
+
+```sh
+node test/write-tifs.mjs /tmp/tifs && python3 test/check-geotiff.py /tmp/tifs
+```
 
 ## Plans
 

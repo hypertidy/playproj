@@ -137,6 +137,19 @@ body.embed .embed-map {
 }
 body.embed .embed-map .badge { display: none; }
 body.embed #map2d { border: 1px solid var(--line); }
+select.wide { width: 100%; margin-top: 4px; }
+label.inline { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+button:disabled { opacity: 0.5; cursor: default; }
+.status { margin: 6px 0 0; font-size: 12px; color: var(--orange); min-height: 0; }
+.status:empty { display: none; }
+.hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.credit {
+  position: absolute; right: 8px; bottom: 6px; margin: 0;
+  max-width: 60%;
+  font-size: 11px; color: var(--muted); text-align: right;
+  background: rgba(5, 7, 13, 0.6); padding: 2px 6px; border-radius: 4px;
+}
+.credit:empty { display: none; }
 .open-full {
   position: absolute; top: 8px; left: 8px;
   font-size: 12px;
