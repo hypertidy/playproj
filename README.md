@@ -1,41 +1,99 @@
+# playproj
 
-<!-- README.md is generated from README.Rmd. Please edit that file -->
+Map projections drawn the way they are built: a point of light, a sphere and
+a plane. Each map point is where a ray from the light, through a point on the
+sphere, lands on the plane. Move the light, the plane or the camera and watch
+the projection change.
 
-# pproj
+This continues the 2016 post
+[Three projections](https://mdsumner.github.io/2016/01/26/Three_Projections.html)
+and the R package `pproj` that tried to generalise it (now in
+[`legacy/pproj`](legacy/pproj)).
 
-<!-- badges: start -->
+## What is here
 
-[![R-CMD-check](https://github.com/mdsumner/pproj/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/mdsumner/pproj/actions/workflows/R-CMD-check.yaml)
-<!-- badges: end -->
+The first page covers the azimuthal perspective family. One slider moves the
+light along the axis through the sphere:
 
-The goal of pproj is to make simple illustrations of how map projections
-work.
+| Light                   | Projection              | PROJ                     |
+|-------------------------|-------------------------|--------------------------|
+| at the antipode         | stereographic           | `+proj=stere`            |
+| at the centre           | gnomonic                | `+proj=gnom`             |
+| above the tangent point | near-side perspective   | `+proj=nsper +h=...`     |
+| infinitely far          | orthographic            | `+proj=ortho`            |
 
-## Installation
+Positions in between are valid perspective constructions with no PROJ name,
+and the page draws them anyway.
 
-You can install the development version of pproj from
-[GitHub](https://github.com/) with:
+The 3D scene comes from the ray construction. The flat map is drawn by
+[proj4js](https://github.com/proj4js/proj4js) from the PROJ string whenever
+one exists, so each view checks the other, and the page reports how closely
+they agree.
 
-``` r
-# install.packages("devtools")
-devtools::install_github("mdsumner/pproj")
+## Run it
+
+It is a static site with no build step. Libraries (three.js, proj4js) load
+from jsDelivr.
+
+```sh
+python3 -m http.server 8000
+# open http://localhost:8000/
 ```
 
-## Example
+## Share and embed
 
-This is a basic example which shows you how to solve a common problem:
+The view state lives in the URL hash, so a link reproduces what you see:
 
-``` r
-library(pproj)
-do_ortho()
-
-## you may need this to see anything
-##rgl::rglwidget()
+```
+index.html#v=0.75&lat=-42&lon=147&w=2&rays=200&cam=4.6,2.6,6.2,0,0.5,0
 ```
 
-## Code of Conduct
+| Key      | Meaning                                                        |
+|----------|----------------------------------------------------------------|
+| `v`      | light position on the slider, -1 to 1 (-0.5 antipode, 0 centre, 1 infinity) |
+| `lat`, `lon` | tangent point in degrees                                   |
+| `w`      | plane half-width in sphere radii                               |
+| `rays`   | number of rays drawn                                           |
+| `seed`   | which random coastline points get rays                         |
+| `detail` | coastline scale, `110m` or `50m`                               |
+| `grat`, `globe` | 0 hides the graticule or the globe                      |
+| `cam`    | camera position and target, six numbers                        |
 
-Please note that the pproj project is released with a [Contributor Code
-of
-Conduct](https://contributor-covenant.org/version/2/1/CODE_OF_CONDUCT.html).
-By contributing to this project, you agree to abide by its terms.
+Add `?embed=1` for a compact view to put in an iframe; the "Copy embed code"
+button writes the snippet for the current view.
+
+## Layout
+
+```
+index.html                  page
+css/app.css                 styles
+js/app.js                   scene, map and controls
+js/geo.js                   coastline loading, graticule, scene frame
+js/families/perspective.js  the projection family: geometry, PROJ string, text
+data/                       Natural Earth coastlines as [lon, lat, ...] polylines
+test/check-proj.mjs         ray construction vs proj4js
+legacy/pproj/               the original R package and experiments
+```
+
+## Test
+
+```sh
+npm install
+npm test
+```
+
+`test/check-proj.mjs` compares the ray construction with proj4js for every
+light position that has a PROJ equivalent, at several tangent points.
+
+## Plans
+
+- Developable surfaces: cylinders and cones wrapped around the sphere and
+  unrolled, with a morph from plane to cone to cylinder.
+- A family module format so new projection families are one file each.
+- Projections with no physical construction (Mollweide, Robinson and so on),
+  shown through their distortion.
+
+Contributions are welcome. Please note that this project is released with a
+[Contributor Code of Conduct](CODE_OF_CONDUCT.md).
+
+Coastlines are from [Natural Earth](https://www.naturalearthdata.com/) (public domain).
