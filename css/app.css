@@ -157,3 +157,9 @@ button:disabled { opacity: 0.5; cursor: default; }
   padding: 3px 8px; border-radius: 4px;
   text-decoration: none;
 }
+
+.presets.three { grid-template-columns: repeat(3, 1fr); }
+.pages { display: flex; gap: 14px; margin-top: 6px; font-size: 13px; }
+.pages a { color: var(--muted); text-decoration: none; padding-bottom: 2px; border-bottom: 2px solid transparent; }
+.pages a:hover { color: var(--text); }
+.pages a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }

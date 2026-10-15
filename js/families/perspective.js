@@ -15,6 +15,8 @@
 // Other values of `a` are valid perspective constructions with no PROJ
 // equivalent, and the playground draws them anyway.
 
+import { esriGeoKeys } from "../geotiff-write.js";
+
 export const R = 6370997; // the PROJ "sphere" radius used in the 2016 examples
 
 const D2R = Math.PI / 180;
@@ -167,11 +169,7 @@ export function geoKeys(p) {
       `PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Vertical_Near_Side_Perspective"],` +
       `PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Longitude_Of_Center",${p.lon0}],` +
       `PARAMETER["Latitude_Of_Center",${p.lat0}],PARAMETER["Height",${(p.a - 1) * R}],UNIT["Meter",1.0]]`;
-    // the same keys GDAL writes with GEOTIFF_KEYS_FLAVOR=ESRI_PE
-    return [
-      [1024, 32767], [1025, 1], [1026, { ascii: "playproj near-side perspective" }], ...sphere,
-      [3073, { ascii: `ESRI PE String = ${wkt}` }], [3076, 9001]
-    ];
+    return esriGeoKeys(wkt, R, "playproj near-side perspective");
   }
   return [[1025, 1], [1026, { ascii: `playproj perspective, light at ${fmt(p.a)} R, tangent ${fmt(p.lat0)} ${fmt(p.lon0)}, sphere R=${R}, no PROJ equivalent` }]];
 }

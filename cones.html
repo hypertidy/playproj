@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: cones and cylinders</title>
+<meta name="description" content="Conic and cylindrical map projections as surfaces wrapped around a sphere and unrolled flat.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/cones.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./cones.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><a href="./">Perspective</a><a href="./cones.html" aria-current="page">Cones and cylinders</a></nav>
+    </header>
+
+    <section class="embed-keep">
+      <div id="props" class="presets three" role="group" aria-label="Property kept"></div>
+      <label class="row" for="lat1"><span>Standard parallel</span><output id="lat1-out"></output></label>
+      <input id="lat1" type="range" min="-90" max="90" step="0.5" aria-label="Standard parallel">
+      <div class="scale"><span>plane</span><span>cone</span><span>cylinder</span><span>cone</span><span>plane</span></div>
+      <label class="row" for="t"><span>Unroll</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Unroll the surface">
+      <div class="buttons">
+        <button id="play-unroll" type="button">Unroll</button>
+        <button id="sweep" type="button">Sweep cone</button>
+      </div>
+    </section>
+
+    <section class="embed-map">
+      <canvas id="map2d" aria-label="The flat map"></canvas>
+      <p id="badge" class="badge"></p>
+    </section>
+
+    <section>
+      <div class="projline">
+        <code id="projstring"></code>
+        <button id="copy-proj" type="button" class="small">Copy</button>
+      </div>
+      <p id="describe" class="describe"></p>
+    </section>
+
+    <section>
+      <label class="row" for="basemap"><span>Basemap</span></label>
+      <select id="basemap" class="wide"></select>
+      <p id="bm-status" class="status" role="status"></p>
+      <div class="buttons">
+        <label class="inline" for="tif-size">Size
+          <select id="tif-size">
+            <option value="1024">1024 px</option>
+            <option value="2048" selected>2048 px</option>
+            <option value="4096">4096 px</option>
+          </select>
+        </label>
+        <button id="download-tif" type="button" disabled>Download GeoTIFF</button>
+      </div>
+      <p class="hint">The flat map with its basemap, as RGBA with its CRS, readable by GDAL.</p>
+    </section>
+
+    <section>
+      <label class="row" for="lon"><span>Central meridian</span><output id="lon-out"></output></label>
+      <input id="lon" type="range" min="-180" max="180" step="1">
+      <label class="row" for="links"><span>Links to the surface</span><output id="links-out"></output></label>
+      <input id="links" type="range" min="0" max="600" step="10">
+      <div class="buttons">
+        <button id="reseed" type="button">New links</button>
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+      <div class="toggles">
+        <label><input id="grat" type="checkbox"> Graticule</label>
+        <label><input id="globe" type="checkbox"> Globe</label>
+        <label><input id="spin" type="checkbox"> Spin view</label>
+        <label>Coastline
+          <select id="detail">
+            <option value="110m">1:110m</option>
+            <option value="50m">1:50m</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A cone touches the sphere along one parallel, the standard parallel. Cut along the meridian
+          opposite the central one and laid flat, it becomes a sector of a circle: the cone constant is
+          the fraction of the circle it fills, and it equals the sine of the standard parallel.</p>
+        <p>Move the standard parallel to the equator and the cone becomes a cylinder; move it to a pole and
+          it becomes a plane. Each property is one family across all three surfaces:</p>
+        <table>
+          <tr><th>Property</th><th>Cylinder</th><th>Cone</th><th>Plane</th></tr>
+          <tr><td>Equidistant</td><td>eqc</td><td>eqdc</td><td>aeqd</td></tr>
+          <tr><td>Conformal</td><td>merc</td><td>lcc</td><td>stere</td></tr>
+          <tr><td>Equal-area</td><td>cea</td><td>aea</td><td>laea</td></tr>
+        </table>
+        <p>Unlike the perspective projections there is no point of light: the property decides how far
+          along the surface each parallel lands. The links join points on the globe to where they land
+          on the surface. Unroll opens the cone with its apex fixed, the way a paper cone opens.</p>
+        <p>The flat map is drawn by <a href="https://github.com/proj4js/proj4js">proj4js</a> from the PROJ
+          string, so it checks the construction.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

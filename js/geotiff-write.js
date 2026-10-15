@@ -108,3 +108,16 @@ export async function writeGeoTIFF({ width, height, rgba, origin, pixelSize, geo
   strips.forEach((s, i) => u8.set(s, stripOffsets[i]));
   return new Blob([buf], { type: "image/tiff" });
 }
+
+// GeoKeys carrying a CRS as an ESRI PE string, laid out the way GDAL writes
+// them (GEOTIFF_KEYS_FLAVOR=ESRI_PE), for projections GeoTIFF has no
+// coordinate transformation code for. sphereRadius sets the user-defined
+// sphere that GDAL also reads.
+export function esriGeoKeys(wkt, sphereRadius, citation) {
+  return [
+    [1024, 32767], [1025, 1], [1026, { ascii: citation }],
+    [2048, 32767], [2049, { ascii: `Sphere R=${sphereRadius}` }], [2050, 32767], [2051, 8901],
+    [2054, 9102], [2056, 32767], [2057, { double: sphereRadius }], [2058, { double: sphereRadius }],
+    [3073, { ascii: `ESRI PE String = ${wkt}` }], [3076, 9001]
+  ];
+}
