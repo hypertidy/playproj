@@ -68,6 +68,46 @@ export function project(lon, lat, p, eps = 1e-6) {
   return [k * cp * Math.sin(dlam), k * (cp0 * sp - sp0 * cp * cdl)];
 }
 
+// Inverse: plane x/y (sphere radii) back to [lon, lat] in degrees, by casting
+// the ray from the light through the plane point and finding where it meets
+// the sphere. Of the two crossings, the one nearest the tangent point is the
+// one the forward projection uses. Returns null where the ray misses.
+export function inverse(x, y, p, eps = 1e-6) {
+  const { a, lat0, lon0 } = p;
+  // scene frame: tangent point at +Y, plane point at (x, 1, -y)
+  let ox, oy, oz, dx, dy, dz, tmin;
+  if (isFinite(a)) {
+    ox = 0; oy = a; oz = 0;
+    dx = x; dy = 1 - a; dz = -y;
+    tmin = 1e-9;
+  } else {
+    ox = x; oy = 1; oz = -y;
+    dx = 0; dy = 1; dz = 0;
+    tmin = -Infinity;
+  }
+  const A = dx * dx + dy * dy + dz * dz;
+  const B = 2 * (ox * dx + oy * dy + oz * dz);
+  const C = ox * ox + oy * oy + oz * oz - 1;
+  const disc = B * B - 4 * A * C;
+  if (disc < 0) return null;
+  const sq = Math.sqrt(disc);
+  let best = null;
+  for (const t of [(-B - sq) / (2 * A), (-B + sq) / (2 * A)]) {
+    if (t <= tmin) continue;
+    const sy = oy + t * dy;
+    if (!best || sy > best[1]) best = [ox + t * dx, sy, oz + t * dz];
+  }
+  if (!best || best[1] <= horizonCos(a) + eps) return null;
+  const [east, up, south] = best;
+  const north = -south;
+  const phi0 = lat0 * D2R;
+  const sp0 = Math.sin(phi0), cp0 = Math.cos(phi0);
+  const lat = Math.asin(Math.max(-1, Math.min(1, up * sp0 + north * cp0))) / D2R;
+  let lon = lon0 + Math.atan2(east, up * cp0 - north * sp0) / D2R;
+  lon = ((lon + 540) % 360) - 180;
+  return [lon, lat];
+}
+
 export function projString(p) {
   const { a, lat0, lon0 } = p;
   const c = `+lat_0=${fmt(lat0)} +lon_0=${fmt(lon0)} +R=${R}`;
@@ -97,4 +137,41 @@ export function describe(p) {
 
 function fmt(x) {
   return String(+x.toFixed(4));
+}
+
+// GeoTIFF georeferencing for the current construction, as geokeys for
+// geotiff-write.js: a user-defined sphere and projection where GeoTIFF has
+// a coordinate transformation code, an ESRI PE string (which GDAL reads)
+// for near-side perspective, and a plain citation otherwise.
+const CT = { stere: 14, gnom: 19, ortho: 21 };
+
+export function geoKeys(p) {
+  const s = projString(p);
+  const name = s ? s.split(" ")[0].slice(6) : null;
+  const sphere = [
+    [2048, 32767], [2049, { ascii: `Sphere R=${R}` }], [2050, 32767], [2051, 8901],
+    [2054, 9102], [2056, 32767], [2057, { double: R }], [2058, { double: R }]
+  ];
+  if (name in CT) {
+    return [
+      [1024, 1], [1025, 1], ...sphere,
+      [3072, 32767], [3073, { ascii: `playproj ${s}` }], [3074, 32767], [3075, CT[name]], [3076, 9001],
+      [3080, { double: p.lon0 }], [3081, { double: p.lat0 }],
+      [3082, { double: 0 }], [3083, { double: 0 }],
+      [3088, { double: p.lon0 }], [3089, { double: p.lat0 }],
+      [3092, { double: 1 }]
+    ];
+  }
+  if (name === "nsper") {
+    const wkt = `PROJCS["playproj_near_side_perspective",GEOGCS["GCS_Sphere",DATUM["D_Sphere",SPHEROID["Sphere",${R},0.0]],` +
+      `PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Vertical_Near_Side_Perspective"],` +
+      `PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Longitude_Of_Center",${p.lon0}],` +
+      `PARAMETER["Latitude_Of_Center",${p.lat0}],PARAMETER["Height",${(p.a - 1) * R}],UNIT["Meter",1.0]]`;
+    // the same keys GDAL writes with GEOTIFF_KEYS_FLAVOR=ESRI_PE
+    return [
+      [1024, 32767], [1025, 1], [1026, { ascii: "playproj near-side perspective" }], ...sphere,
+      [3073, { ascii: `ESRI PE String = ${wkt}` }], [3076, 9001]
+    ];
+  }
+  return [[1025, 1], [1026, { ascii: `playproj perspective, light at ${fmt(p.a)} R, tangent ${fmt(p.lat0)} ${fmt(p.lon0)}, sphere R=${R}, no PROJ equivalent` }]];
 }
