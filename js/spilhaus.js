@@ -13,6 +13,7 @@ import * as fam from "./families/spilhaus.js";
 import { loadCoastline, graticule, mulberry32 } from "./geo.js";
 import { sources, loadWorld, reprojectBox } from "./basemap.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
+import { displace, hasElevation } from "./relief.js";
 
 const D2R = Math.PI / 180;
 const DEG = "\u00b0";
@@ -39,7 +40,7 @@ const COLORS = {
 
 const defaults = {
   lat: +fam.defaults.lat0.toFixed(4), lon: +fam.defaults.lon0.toFixed(4), azi: +fam.defaults.azi.toFixed(4),
-  t: 0.5, links: 120, net: 1, seed: 1, detail: "110m", grat: 1, globe: 1, bm: "none", spin: 0, cam: null
+  t: 0.5, links: 120, net: 1, seed: 1, detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null
 };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
@@ -62,6 +63,7 @@ function readHash() {
   state.azi = wrap(state.azi);
   state.t = Math.max(0, Math.min(1, state.t));
   state.links = Math.max(0, Math.min(1000, Math.round(state.links)));
+  state.relief = Math.max(0, Math.min(100, state.relief));
 }
 
 let hashTimer = 0;
@@ -170,7 +172,7 @@ const surface = new THREE.Mesh(
 );
 scene.add(surface);
 
-const GLOBE_NX = 144, GLOBE_NY = 72;
+const GLOBE_NX = 144;
 function gridIndex(nx, ny) {
   const idx = [];
   for (let j = 0; j < ny; j++)
@@ -180,16 +182,33 @@ function gridIndex(nx, ny) {
     }
   return idx;
 }
-const globeIndex = gridIndex(GLOBE_NX, GLOBE_NY);
-const globeUV = [];
-for (let j = 0; j <= GLOBE_NY; j++)
-  for (let i = 0; i <= GLOBE_NX; i++) globeUV.push(i / GLOBE_NX, 1 - j / GLOBE_NY);
 
-const MESH_N = GRID_N / MESH_STEP;
-const meshIndex = gridIndex(MESH_N, MESH_N);
-const meshUV = [];
-for (let j = 0; j <= MESH_N; j++)
-  for (let i = 0; i <= MESH_N; i++) meshUV.push(i / MESH_N, 1 - j / MESH_N);
+// the surface mesh takes every step-th grid node: finer when it carries relief
+const meshGrids = {};
+function meshGrid(step) {
+  if (!meshGrids[step]) {
+    const n = GRID_N / step, uv = [];
+    for (let j = 0; j <= n; j++)
+      for (let i = 0; i <= n; i++) uv.push(i / n, 1 - j / n);
+    meshGrids[step] = { n, index: gridIndex(n, n), uv };
+  }
+  return meshGrids[step];
+}
+
+// lon/lat grids for the globe, cached by size
+const globeGrids = {};
+function globeGrid(nx, ny) {
+  if (!globeGrids[nx]) {
+    const uv = [];
+    for (let j = 0; j <= ny; j++)
+      for (let i = 0; i <= nx; i++) uv.push(i / nx, 1 - j / ny);
+    globeGrids[nx] = { index: gridIndex(nx, ny), uv };
+  }
+  return globeGrids[nx];
+}
+const reliefOn = () => state.relief > 0 && hasElevation(world);
+
+const GLOBE_OPACITY = 0.25, GLOBE_OPACITY_MAP = 0.35;
 
 function setMesh(mesh, pos, uv, index, normals) {
   mesh.geometry.dispose();
@@ -260,12 +279,21 @@ function rebuild() {
   const t = state.t, H = fam.HALF;
   const A = [0, 0, 0], B = [0, 0, 0], S = [0, 0, 0];
 
-  // globe
-  const gp = new Float32Array((GLOBE_NX + 1) * (GLOBE_NY + 1) * 3);
-  for (let j = 0, k = 0; j <= GLOBE_NY; j++)
-    for (let i = 0; i <= GLOBE_NX; i++, k += 3) onGlobe(-180 + (360 * i) / GLOBE_NX, 90 - (180 * j) / GLOBE_NY, gp, k);
-  setMesh(globe, gp, globeUV, globeIndex, gp.slice());
+  // globe, on a finer grid and raised when it carries relief
+  const relief = reliefOn();
+  const GX = relief ? (state.wire ? 180 : 360) : GLOBE_NX, GY = GX / 2, gGrid = globeGrid(GX, GY);
+  const gp = new Float32Array((GX + 1) * (GY + 1) * 3);
+  for (let j = 0, k = 0; j <= GY; j++)
+    for (let i = 0; i <= GX; i++, k += 3) onGlobe(-180 + (360 * i) / GX, 90 - (180 * j) / GY, gp, k);
+  const gn = relief
+    ? displace(gp, gGrid.index, (k) => [-180 + (360 * (k % (GX + 1))) / GX, 90 - (180 * Math.floor(k / (GX + 1))) / GY], world, state.relief)
+    : gp.slice();
+  setMesh(globe, gp, gGrid.uv, gGrid.index, gn);
   globe.visible = !!state.globe;
+  globe.material.wireframe = surface.material.wireframe = relief && !!state.wire;
+  // a raised globe has to hide its own far side, so it is drawn solid
+  globe.material.depthWrite = relief;
+  globe.material.opacity = relief ? 0.95 : world ? GLOBE_OPACITY_MAP : GLOBE_OPACITY;
 
   // the unfolding surface: a grid over the square, every node from the sphere to the map
   const m = GRID_N + 1, nodePos = (i, j, out, o = 0) => {
@@ -273,10 +301,15 @@ function rebuild() {
     fromUnit([g.grid[3 * k], g.grid[3 * k + 1], g.grid[3 * k + 2]], S);
     return morph(S, -H + i * g.step, H - j * g.step, t, out, o);
   };
-  const sp = new Float32Array((MESH_N + 1) * (MESH_N + 1) * 3);
-  for (let j = 0, k = 0; j <= MESH_N; j++)
-    for (let i = 0; i <= MESH_N; i++, k += 3) nodePos(i * MESH_STEP, j * MESH_STEP, sp, k);
-  setMesh(surface, sp, meshUV, meshIndex);
+  const step = !relief ? MESH_STEP : state.wire ? 2 : 1, mg = meshGrid(step), mn = mg.n;
+  const sp = new Float32Array((mn + 1) * (mn + 1) * 3);
+  for (let j = 0, k = 0; j <= mn; j++)
+    for (let i = 0; i <= mn; i++, k += 3) nodePos(i * step, j * step, sp, k);
+  if (relief) displace(sp, mg.index, (k) => {
+    const node = Math.floor(k / (mn + 1)) * step * m + (k % (mn + 1)) * step;
+    return [g.lonlat[2 * node], g.lonlat[2 * node + 1]];
+  }, world, state.relief);
+  setMesh(surface, sp, mg.uv, mg.index);
 
   // the square's own grid, carried with the surface
   const net = [];
@@ -503,7 +536,7 @@ const ui = {
   tOut: $("t-out"), latOut: $("lat-out"), lonOut: $("lon-out"), aziOut: $("azi-out"), linksOut: $("links-out"),
   proj: $("projstring"), describe: $("describe"), centre: $("centre"),
   net: $("net"), grat: $("grat"), globe: $("globe"), detail: $("detail"),
-  spin: $("spin"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
+  spin: $("spin"), relief: $("relief"), reliefOut: $("relief-out"), wire: $("wire"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
 };
 
 for (const [id, src] of Object.entries(sources)) {
@@ -522,6 +555,9 @@ function updatePanel(p) {
   ui.net.checked = !!state.net; ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail;
   ui.bm.value = state.bm;
   ui.spin.checked = !!state.spin;
+  ui.relief.value = state.relief; ui.wire.checked = !!state.wire;
+  ui.relief.disabled = ui.wire.disabled = !hasElevation(world);
+  ui.reliefOut.textContent = !hasElevation(world) ? "needs GEBCO" : state.relief ? `${state.relief}x` : "off";
   ui.tif.disabled = !world;
   ui.proj.textContent = fam.projString(p);
   ui.describe.textContent = fam.describe(p);
@@ -549,6 +585,8 @@ ui.detail.addEventListener("change", async () => { state.detail = ui.detail.valu
 ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; setBasemap(); });
 ui.spin.addEventListener("change", () => { state.spin = ui.spin.checked ? 1 : 0; controls.autoRotate = !!state.spin; writeHash(); });
 ui.tif.addEventListener("click", downloadTIF);
+ui.relief.addEventListener("input", () => { state.relief = +ui.relief.value; sync(); });
+ui.wire.addEventListener("change", () => { state.wire = ui.wire.checked ? 1 : 0; sync(); });
 $("reseed").addEventListener("click", () => { state.seed = (state.seed % 9999) + 1; buildLinkPool(); sync(); });
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(DEFAULT_CAM); writeHash(); });
 

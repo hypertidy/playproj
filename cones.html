@@ -61,6 +61,9 @@
       <label class="row" for="basemap"><span>Basemap</span></label>
       <select id="basemap" class="wide"></select>
       <p id="bm-status" class="status" role="status"></p>
+      <label class="row" for="relief"><span>Relief</span><output id="relief-out"></output></label>
+      <input id="relief" type="range" min="0" max="100" step="1" aria-label="Relief exaggeration">
+      <div class="toggles"><label><input id="wire" type="checkbox"> Wireframe</label></div>
       <div class="buttons">
         <label class="inline" for="tif-size">Size
           <select id="tif-size">
