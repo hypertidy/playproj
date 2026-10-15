@@ -32,7 +32,7 @@ const COLORS = {
 
 // ---------------------------------------------------------------- state
 
-const defaults = { v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, seed: 1, detail: "110m", grat: 1, globe: 1, bm: "gebco", cam: null };
+const defaults = { v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, seed: 1, detail: "110m", grat: 1, globe: 1, bm: "none", spin: 0, cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -558,7 +558,7 @@ const ui = {
   vOut: $("v-out"), latOut: $("lat-out"), lonOut: $("lon-out"), wOut: $("w-out"), raysOut: $("rays-out"),
   proj: $("projstring"), describe: $("describe"), presets: $("presets"),
   grat: $("grat"), globe: $("globe"), detail: $("detail"),
-  bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
+  spin: $("spin"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
 };
 
 for (const [id, src] of Object.entries(sources)) {
@@ -590,6 +590,7 @@ function updatePanel(p) {
   ui.raysOut.textContent = state.rays;
   ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail;
   ui.bm.value = state.bm;
+  ui.spin.checked = !!state.spin;
   ui.tif.disabled = !world;
   const s = fam.projString(p);
   ui.proj.textContent = s || "(no PROJ equivalent)";
@@ -615,6 +616,7 @@ ui.grat.addEventListener("change", () => { state.grat = ui.grat.checked ? 1 : 0;
 ui.globe.addEventListener("change", () => { state.globe = ui.globe.checked ? 1 : 0; globe.visible = !!state.globe; sync(); });
 ui.detail.addEventListener("change", async () => { state.detail = ui.detail.value; await loadData(); sync(); });
 ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; setBasemap(); });
+ui.spin.addEventListener("change", () => { state.spin = ui.spin.checked ? 1 : 0; controls.autoRotate = !!state.spin; writeHash(); });
 ui.tif.addEventListener("click", downloadTIF);
 $("reseed").addEventListener("click", () => { state.seed = (state.seed % 9999) + 1; buildRayPool(); sync(); });
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(DEFAULT_CAM); writeHash(); });
@@ -676,7 +678,7 @@ async function loadData() {
   buildRayPool();
 }
 
-window.addEventListener("hashchange", () => { readHash(); globe.visible = !!state.globe; if (state.cam) setCamera(state.cam); setBasemap(); loadData().then(sync); });
+window.addEventListener("hashchange", () => { readHash(); globe.visible = !!state.globe; controls.autoRotate = !!state.spin; if (state.cam) setCamera(state.cam); setBasemap(); loadData().then(sync); });
 
 if (embed) {
   document.body.classList.add("embed");
@@ -685,6 +687,8 @@ if (embed) {
 
 readHash();
 globe.visible = !!state.globe;
+controls.autoRotate = !!state.spin;
+controls.autoRotateSpeed = 0.8;
 if (state.cam) setCamera(state.cam);
 resize();
 loadData().then(() => { rebuild(); document.body.classList.add("ready"); });
