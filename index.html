@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: perspective projections</title>
+<meta name="description" content="Map projections traced as rays from a point of light, through a sphere, onto a plane.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <p class="sub">Map projections as light, sphere and plane</p>
+    </header>
+
+    <section class="embed-keep">
+      <div id="presets" class="presets" role="group" aria-label="Projection presets"></div>
+      <label class="row">
+        <span>Light position</span>
+        <output id="v-out"></output>
+      </label>
+      <input id="v" type="range" min="-1" max="1" step="0.001" aria-label="Light position along the axis">
+      <div class="scale"><span>below</span><span>antipode</span><span>centre</span><span>tangent</span><span>above</span></div>
+    </section>
+
+    <section class="embed-map">
+      <canvas id="map2d" aria-label="The projected map on the tangent plane"></canvas>
+      <p id="badge" class="badge"></p>
+    </section>
+
+    <section>
+      <div class="projline">
+        <code id="projstring"></code>
+        <button id="copy-proj" type="button" class="small">Copy</button>
+      </div>
+      <p id="describe" class="describe"></p>
+    </section>
+
+    <section>
+      <label class="row"><span>Tangent latitude</span><output id="lat-out"></output></label>
+      <input id="lat" type="range" min="-90" max="90" step="1">
+      <label class="row"><span>Tangent longitude</span><output id="lon-out"></output></label>
+      <input id="lon" type="range" min="-180" max="180" step="1">
+      <label class="row"><span>Plane half-width</span><output id="w-out"></output></label>
+      <input id="w" type="range" min="1" max="8" step="0.25">
+      <label class="row"><span>Rays</span><output id="rays-out"></output></label>
+      <input id="rays" type="range" min="0" max="600" step="10">
+      <div class="buttons">
+        <button id="sweep" type="button">Sweep light</button>
+        <button id="reseed" type="button">New rays</button>
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+      <div class="toggles">
+        <label><input id="grat" type="checkbox"> Graticule</label>
+        <label><input id="globe" type="checkbox"> Globe</label>
+        <label>Coastline
+          <select id="detail">
+            <option value="110m">1:110m</option>
+            <option value="50m">1:50m</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A plane touches the sphere at the tangent point. A point of light sits on the axis through the
+          centre of the sphere and the tangent point. Each map point is where a ray from the light, passing
+          through a point on the sphere, meets the plane. Where the light sits decides the projection.</p>
+        <table>
+          <tr><th>Light</th><th>Projection</th></tr>
+          <tr><td>at the antipode</td><td>stereographic</td></tr>
+          <tr><td>at the centre</td><td>gnomonic</td></tr>
+          <tr><td>above the tangent point</td><td>near-side perspective</td></tr>
+          <tr><td>infinitely far</td><td>orthographic</td></tr>
+        </table>
+        <p>The bright part of the coastline on the globe is what reaches the plane, and the orange ring is
+          the horizon beyond which rays miss it. Lights between those positions give valid perspective
+          projections that PROJ does not name.</p>
+        <p>The flat map is drawn by <a href="https://github.com/proj4js/proj4js">proj4js</a> from the PROJ
+          string, not from the 3D geometry, so the two views check each other.</p>
+        <p>This continues the 2016 post
+          <a href="https://mdsumner.github.io/2016/01/26/Three_Projections.html">Three projections</a>.
+          Coastlines are from <a href="https://www.naturalearthdata.com/">Natural Earth</a>.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

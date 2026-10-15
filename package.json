@@ -1,0 +1,14 @@
+{
+  "name": "playproj",
+  "private": true,
+  "description": "Map projections traced as rays from a point of light, through a sphere, onto a plane",
+  "type": "module",
+  "scripts": {
+    "test": "node test/check-proj.mjs",
+    "serve": "python3 -m http.server 8000"
+  },
+  "devDependencies": {
+    "proj4": "2.12.1"
+  },
+  "license": "MIT"
+}
