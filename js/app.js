@@ -10,7 +10,7 @@ import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer
 import * as persp from "./families/perspective.js";
 import * as azi from "./families/azimuthal.js";
 import { loadCoastline, graticule, mulberry32, sceneFrame } from "./geo.js";
-import { sources, loadWorld, reproject } from "./basemap.js";
+import { sources, loadWorld, reproject, sampleElev } from "./basemap.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
 
 const RAY_REACH = 6;      // rays from lights further than this start at the edge of the scene
@@ -37,7 +37,7 @@ const COLORS = {
 
 // ---------------------------------------------------------------- state
 
-const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, seed: 1, detail: "110m", grat: 1, globe: 1, bm: "none", spin: 0, cam: null };
+const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, seed: 1, detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -59,6 +59,7 @@ function readHash() {
   state.lon = ((state.lon + 540) % 360) - 180;
   state.w = Math.max(1, Math.min(8, state.w));
   state.rays = Math.max(0, Math.min(1000, Math.round(state.rays)));
+  state.relief = Math.max(0, Math.min(100, state.relief));
 }
 
 let hashTimer = 0;
@@ -127,30 +128,50 @@ const globe = new THREE.Mesh(
 );
 scene.add(globe);
 
-const GLOBE_NX = 144, GLOBE_NY = 72;
-const globeIndex = [];
-for (let j = 0; j < GLOBE_NY; j++)
-  for (let i = 0; i < GLOBE_NX; i++) {
-    const a = j * (GLOBE_NX + 1) + i, b = a + GLOBE_NX + 1;
-    globeIndex.push(a, b, a + 1, a + 1, b, b + 1);
-  }
-const globeUV = [];
-for (let j = 0; j <= GLOBE_NY; j++)
-  for (let i = 0; i <= GLOBE_NX; i++) globeUV.push(i / GLOBE_NX, 1 - j / GLOBE_NY);
+// A plain grid for the smooth globe, a finer one when it carries relief.
+function lonLatGrid(nx, ny) {
+  const index = [], uv = [];
+  for (let j = 0; j < ny; j++)
+    for (let i = 0; i < nx; i++) {
+      const a = j * (nx + 1) + i, b = a + nx + 1;
+      index.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  for (let j = 0; j <= ny; j++)
+    for (let i = 0; i <= nx; i++) uv.push(i / nx, 1 - j / ny);
+  return { nx, ny, index, uv };
+}
+// a wireframe reads better on a coarser grid
+const GLOBE_GRID = lonLatGrid(144, 72), RELIEF_GRID = lonLatGrid(360, 180), WIRE_GRID = lonLatGrid(180, 90);
+const EARTH_R = 6371000;
+
+// Relief: each point is pushed out along its radius (globe) or along the
+// plane's normal (plane) by its elevation times the exaggeration, so sea
+// level stays on the sphere and the plane, and coastlines stay on it too.
+const reliefOn = () => state.relief > 0 && !!(world && world.elev);
+const lift = (z) => (state.relief * z) / EARTH_R;
 
 function placeGlobe(toScene) {
-  const pos = new Float32Array((GLOBE_NX + 1) * (GLOBE_NY + 1) * 3);
+  const relief = reliefOn(), G = !relief ? GLOBE_GRID : state.wire ? WIRE_GRID : RELIEF_GRID;
+  const pos = new Float32Array((G.nx + 1) * (G.ny + 1) * 3);
   let k = 0;
-  for (let j = 0; j <= GLOBE_NY; j++) {
-    const lat = 90 - (180 * j) / GLOBE_NY;
-    for (let i = 0; i <= GLOBE_NX; i++, k += 3) toScene(-180 + (360 * i) / GLOBE_NX, lat, pos, k);
+  for (let j = 0; j <= G.ny; j++) {
+    const lat = 90 - (180 * j) / G.ny;
+    for (let i = 0; i <= G.nx; i++, k += 3) {
+      const lon = -180 + (360 * i) / G.nx;
+      toScene(lon, lat, pos, k);
+      if (relief) {
+        const r = 1 + lift(sampleElev(world, lon, lat));
+        pos[k] *= r; pos[k + 1] *= r; pos[k + 2] *= r;
+      }
+    }
   }
   globe.geometry.dispose();
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  g.setAttribute("normal", new THREE.BufferAttribute(pos.slice(), 3));
-  g.setAttribute("uv", new THREE.Float32BufferAttribute(globeUV, 2));
-  g.setIndex(globeIndex);
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(G.uv, 2));
+  g.setIndex(G.index);
+  if (relief) g.computeVertexNormals();
+  else g.setAttribute("normal", new THREE.BufferAttribute(pos.slice(), 3));
   globe.geometry = g;
 }
 
@@ -160,6 +181,36 @@ const planeMesh = new THREE.Mesh(
 );
 planeMesh.rotation.x = -Math.PI / 2;
 scene.add(planeMesh);
+
+// The plane with relief: a grid over the plane square, each node raised by
+// the elevation of the place that projects there.
+const PLANE_GRID = lonLatGrid(256, 256), PLANE_WIRE_GRID = lonLatGrid(128, 128);
+const planeRelief = new THREE.Mesh(
+  new THREE.BufferGeometry(),
+  new THREE.MeshPhongMaterial({ color: 0xffffff, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide, shininess: 10 })
+);
+planeRelief.visible = false;
+scene.add(planeRelief);
+
+function placePlaneRelief(p) {
+  const G = state.wire ? PLANE_WIRE_GRID : PLANE_GRID, w = state.w, n = G.nx;
+  const pos = new Float32Array((n + 1) * (n + 1) * 3);
+  for (let j = 0, k = 0; j <= n; j++) {
+    const y = w - (2 * w * j) / n;
+    for (let i = 0; i <= n; i++, k += 3) {
+      const x = -w + (2 * w * i) / n;
+      const ll = fam.inverse(x, y, p);
+      pos[k] = x; pos[k + 1] = 1 + (ll ? lift(sampleElev(world, ll[0], ll[1])) : 0); pos[k + 2] = -y;
+    }
+  }
+  planeRelief.geometry.dispose();
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(G.uv, 2));
+  g.setIndex(G.index);
+  g.computeVertexNormals();
+  planeRelief.geometry = g;
+}
 
 const lightMarker = new THREE.Mesh(
   new THREE.SphereGeometry(0.055, 24, 16),
@@ -312,6 +363,14 @@ function rebuild() {
   const w = state.w;
   planeMesh.scale.set(2 * w, 2 * w, 1);
   planeMesh.position.set(0, 1, 0);
+  const relief = reliefOn();
+  planeRelief.visible = relief;
+  planeMesh.visible = !relief;
+  if (relief) placePlaneRelief(p);
+  globe.material.wireframe = planeRelief.material.wireframe = relief && !!state.wire;
+  // a raised globe has to hide its own far side, so it is drawn solid
+  globe.material.depthWrite = relief;
+  globe.material.opacity = relief ? 0.95 : world ? 0.7 : 0.28;
   setLines("planeEdge", [
     -w, 1, -w, w, 1, -w, w, 1, -w, w, 1, w, w, 1, w, -w, 1, w, -w, 1, w, -w, 1, -w
   ], 0x8899aa, 0.8);
@@ -451,6 +510,7 @@ function applyBasemapMaterials() {
     }
     gm.map = worldTexture; gm.color.set(0xffffff); gm.opacity = 0.7;
     pm.map = planeTexture; pm.color.set(0xffffff); pm.opacity = 0.85;
+    planeRelief.material.map = planeTexture; planeRelief.material.needsUpdate = true;
   } else {
     gm.map = null; gm.color.set(COLORS.globe); gm.opacity = 0.28;
     pm.map = null; pm.color.set(COLORS.plane); pm.opacity = 0.07;
@@ -626,7 +686,7 @@ const ui = {
   vOut: $("v-out"), latOut: $("lat-out"), lonOut: $("lon-out"), wOut: $("w-out"), raysOut: $("rays-out"),
   proj: $("projstring"), describe: $("describe"), presets: $("presets"), az: $("construction"), lightControls: $("light-controls"),
   grat: $("grat"), globe: $("globe"), detail: $("detail"),
-  spin: $("spin"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
+  spin: $("spin"), relief: $("relief"), reliefOut: $("relief-out"), wire: $("wire"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
 };
 
 for (const [id, src] of Object.entries(sources)) {
@@ -663,6 +723,10 @@ function updatePanel(p) {
   ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail;
   ui.bm.value = state.bm;
   ui.spin.checked = !!state.spin;
+  ui.relief.value = state.relief; ui.wire.checked = !!state.wire;
+  const hasElev = !!(world && world.elev);
+  ui.relief.disabled = ui.wire.disabled = !hasElev;
+  ui.reliefOut.textContent = !hasElev ? "needs GEBCO" : state.relief ? `${state.relief}x` : "off";
   ui.tif.disabled = !world;
   const s = fam.projString(p);
   ui.proj.textContent = s || "(no PROJ equivalent)";
@@ -693,6 +757,8 @@ ui.detail.addEventListener("change", async () => { state.detail = ui.detail.valu
 ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; setBasemap(); });
 ui.spin.addEventListener("change", () => { state.spin = ui.spin.checked ? 1 : 0; controls.autoRotate = !!state.spin; writeHash(); });
 ui.tif.addEventListener("click", downloadTIF);
+ui.relief.addEventListener("input", () => { state.relief = +ui.relief.value; sync(); });
+ui.wire.addEventListener("change", () => { state.wire = ui.wire.checked ? 1 : 0; sync(); });
 $("reseed").addEventListener("click", () => { state.seed = (state.seed % 9999) + 1; buildRayPool(); sync(); });
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(DEFAULT_CAM); writeHash(); });
 
