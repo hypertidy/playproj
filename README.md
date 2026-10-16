@@ -153,7 +153,7 @@ offered when PROJ has a name for the map. Winkel tripel's string spells out
 `+lat_1=50.4597762521898`: PROJ's own default, but a PROJ string read as a
 CRS (as GDAL reads it) otherwise gets `lat_1=0`. Hash keys: `base`, `lobes`
 (`none`, `land`, `ocean`, `gores`), `gores`, `s` (interrupt, 0 to 1), `lon0`
-(central meridian, or the butterfly's edge meridian), `t` (unfold), `cuts`,
+(central meridian, or the butterfly's edge meridian), `t` (unfold), `cuts`, `lobe` (the picked lobe or face, from 0),
 plus the shared ones below.
 
 ## Catastrophes
@@ -503,6 +503,38 @@ image as RGBA with its CRS: stereographic, gnomonic and orthographic as
 GeoTIFF projection keys, near-side perspective as an ESRI PE string (the
 form GDAL writes), and positions with no PROJ equivalent with no CRS.
 
+### Cells, tiles and lobes
+
+The cells pages (s2 cells, L3 bins, Model grids, MGRS and Sentinel-2) carry
+the same basemaps, warped into each page's own texture frame (a cube face's
+(s, t), a grid's index space, a UTM zone). Their "Download GeoTIFF" writes
+the picked cell, bin or tile in its own CRS, and Globals and interrupteds
+adds "Download lobe" (or face) for a lobe clicked on its flat map:
+
+| Page                    | What is written | CRS |
+|-------------------------|-----------------|-----|
+| Globals and interrupteds | a lobe, gore or butterfly face | the base projection about the lobe's own central meridian (Goode's lobes as PROJ's `goode`), or the face's `gnom` |
+| s2 cells                | a cell          | `gnom` about its cube face's centre, R = 6371010 m |
+| L3 bins                 | a bin           | WGS84 lon/lat (EPSG:4326) |
+| Model grids             | a cell          | rotated pole and Yang: `ob_tran` (degrees); Yin and tripolar south of the join: lon/lat; cubed sphere: the face's `gnom` |
+| MGRS and Sentinel-2     | a Sentinel-2 tile | its UTM zone's EPSG code, on the tile's own 109.8 km box (1098 px is 100 m) |
+
+The basemap for these is read for the cell's own lon/lat window at about
+the detail its pixels need (`readWindow` in `js/basemap.js`): the GEBCO
+overview just finer than a pixel (down to the full 15 arc second grid), or
+Esri tiles at a deeper zoom (up to 17, at most 64 tiles), so a small cell is
+not a blur of the global image. Pixels outside the cell stay transparent.
+PROJ strings with no GeoTIFF keys travel as an ESRI PE string with a PROJ4
+extension, which GDAL reads.
+
+Not written, and why: a tripolar cap cell has no CRS of its own (the cap is
+a scaled stereographic of a second sphere), so it is written in north polar
+stereographic, masked to the cell's outline. An interrupted map as a whole
+has no single PROJ string unless PROJ names it (`igh`, `igh_o`, `imoll`,
+`imoll_o`), so for the others the lobe is the unit; the butterfly as a whole
+likewise. The Dymaxion net on the Homage page and the Index space grid
+(curvilinear ROMS cells with no CRS) have no export.
+
 ## Share and embed
 
 The view state lives in the URL hash, so a link reproduces what you see:
@@ -523,7 +555,7 @@ index.html#v=0.75&lat=-42&lon=147&w=2&rays=200&cam=4.6,2.6,6.2,0,0.5,0
 | `from`   | where rays start: `tri` land triangle centres (default), `vert` land mesh vertices, `coast` coastline vertices (area-weighted except `coast`), or `even`: an evenly spaced lattice on land, where `rays` (or `links`) sets the density |
 | `detail` | coastline scale, `110m` or `50m`                               |
 | `grat`, `globe` | 0 hides the graticule or the globe                      |
-| `bm`     | basemap: `none` (default), `gebco` or `esri`                   |
+| `bm`     | basemap: `none` (default), `gebco` or `esri` (also on the cells pages) |
 | `relief` | GEBCO relief exaggeration, 0 (off) to 100, on every page; `wire` 1 draws it as wireframe |
 | `spin`   | 1 slowly orbits the camera round the scene                     |
 | `cam`    | camera position and target, six numbers                        |
@@ -541,6 +573,8 @@ js/geo.js                   coastline loading, graticule, scene frame
 js/landmesh.js              land triangulated from the coastlines, and ray sampling
 js/basemap.js               basemap sources and per-pixel reprojection
 js/geotiff-write.js         GeoTIFF writer with user-defined CRS keys
+js/cellexport.js            GeoTIFF of one cell, tile or lobe in its own CRS
+js/basemap-ui.js            basemap picker and cell GeoTIFF button for the cells pages
 js/families/perspective.js  azimuthal perspective family: rays, PROJ string, GeoTIFF keys
 js/families/conic.js        cone family with cylinder and plane limits
 cones.html, js/cones.js     cones and cylinders page

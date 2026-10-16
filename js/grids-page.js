@@ -10,6 +10,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as G from "./grids.js";
 import { loadCoastline, graticule } from "./geo.js";
+import { warpCanvas } from "./basemap.js";
+import { basemapControl, exportControl } from "./basemap-ui.js";
+import { gnomonic, polarStere, ringOf } from "./cellexport.js";
 
 const DEG = "\u00b0";
 const TEX = 2048;
@@ -38,7 +41,7 @@ const KINDS = [
 
 // ---------------------------------------------------------------- state
 
-const defaults = { g: "rot", t: 0, step: 10, plat: 39.25, plon: -162, join: 65, tlon: 80, eq: 1, coast: 1, grat: 1, cell: "", cam: null };
+const defaults = { g: "rot", t: 0, step: 10, plat: 39.25, plon: -162, join: 65, tlon: 80, eq: 1, coast: 1, grat: 1, cell: "", bm: "none", cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -50,6 +53,7 @@ function readHash() {
     const raw = h.get(k);
     if (k === "g") state.g = KINDS.some((x) => x.key === raw) ? raw : defaults.g;
     else if (k === "cell") state.cell = /^\d+,\d+,\d+$/.test(raw) ? raw : "";
+    else if (k === "bm") state.bm = raw;
     else if (k === "cam") {
       const c = raw.split(",").map(Number);
       if (c.length === 6 && c.every(isFinite)) state.cam = c;
@@ -129,7 +133,16 @@ function drawPatch(grid, k, rec, picked) {
   const p = grid.patches[k], { canvas, W, H } = rec;
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = COLORS.patch[grid.kind === "cube" ? k : grid.kind === "yy" ? k : 0];
+  // the basemap in index space, where the model's grid is straight
+  const world = basemap.world;
+  if (world) {
+    const f = 512 / Math.max(W, H);
+    rec.bm = rec.bm || warpCanvas(world, Math.max(8, Math.round(W * f)), Math.max(8, Math.round(H * f)), (u, v) => p.fromIndex(u, v));
+    ctx.drawImage(rec.bm, 0, 0, W, H);
+    ctx.globalAlpha = 0.3;
+  }
   ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
 
   if (grid.kind === "cube" || grid.kind === "yy") {
     ctx.fillStyle = "rgba(255,255,255,0.07)";
@@ -314,8 +327,49 @@ const ui = {
   plat: $("plat"), platOut: $("plat-out"), plon: $("plon"), plonOut: $("plon-out"),
   join: $("join"), joinOut: $("join-out"), tlon: $("tlon"), tlonOut: $("tlon-out"), eq: $("eq"),
   proj: $("projstring"), describe: $("describe"), info: $("cell-info"), about: $("about"),
-  coast: $("coast"), grat: $("grat")
+  coast: $("coast"), grat: $("grat"), bm: $("basemap"), tif: $("download-tif")
 };
+
+// The picked cell as a GeoTIFF in its grid's own CRS. The model grids are
+// on a sphere; 6371229 m is the radius the Met Office and NEMO use.
+const GRID_R = 6371229;
+const basemap = basemapControl({
+  select: ui.bm, status: $("bm-status"), credit: $("credit"),
+  onWorld: () => { if (current) for (const r of current.recs) r.bm = null; sync(); }
+});
+const lonlat = { forward: (a, b) => [a, b], inverse: (a, b) => [a, b] };
+const obString = (o) => `+proj=ob_tran +o_proj=longlat +o_lat_p=${num(o.oLatP)} +o_lon_p=${num(o.oLonP)} +lon_0=${num(o.lon0)} +R=${GRID_R}`;
+function cellJob() {
+  const c = pickedCell();
+  if (!c) return null;
+  const { k, i, j, p } = c, kind = current.grid.kind;
+  const ring = ringOf((a, b) => p.fromIndex((i + a) / p.ni, (j + b) / p.nj));
+  const base = { name: `playproj-${kind}-${kind === "cube" || kind === "yy" ? p.name.replace(" ", "") + "-" : ""}i${i}-j${j}`, ring };
+  if (kind === "rot" || (kind === "yy" && p.name === "Yang")) {
+    const o = kind === "rot" ? G.cfToObTran(state.plon, state.plat) : G.YANG, ob = G.obTran(o);
+    return { ...base, crs: { proj: obString(o), R: GRID_R }, forward: ob.forward, inverse: ob.inverse, periodX: 360 };
+  }
+  if (kind === "yy" || (kind === "tri" && j + 1 <= current.grid.nS))
+    return { ...base, crs: { geographic: true }, ...lonlat, periodX: 360 };
+  if (kind === "cube") {
+    const m = /lat_0=(\S+) \+lon_0=(\S+)/.exec(G.cubeFaceProj(k)), g = gnomonic(+m[1], +m[2]);
+    return { ...base, crs: { proj: `${G.cubeFaceProj(k)} +R=${GRID_R}`, R: GRID_R }, scale: GRID_R, forward: g.forward, inverse: g.inverse };
+  }
+  // a cap cell of the tripolar grid has no CRS of its own: polar
+  // stereographic, masked to the cell
+  const ps = polarStere(false, 0), eps = 1e-9;
+  return {
+    ...base, crs: { proj: `+proj=stere +lat_0=90 +lon_0=0 +k=1 +R=${GRID_R}`, R: GRID_R }, scale: GRID_R,
+    forward: ps.forward, inverse: ps.inverse,
+    inside: (lon, lat) => {
+      const uv = p.toIndex(lon, lat);
+      if (!uv) return false;
+      const u = uv[0] * p.ni, v = uv[1] * p.nj;
+      return u >= i - eps && u <= i + 1 + eps && v >= j - eps && v <= j + 1 + eps;
+    }
+  };
+}
+const tifOut = exportControl({ button: ui.tif, size: $("tif-size"), status: $("bm-status"), bm: () => basemap.id, job: cellJob });
 for (const k of KINDS) {
   const b = document.createElement("button");
   b.type = "button"; b.textContent = k.label; b.dataset.kind = k.key;
@@ -417,6 +471,7 @@ function updatePanel(picked) {
     ui.info.textContent = `${grid.patches.length > 1 ? p.name + " " : ""}cell i ${i}, j ${j}: centre ${lon.toFixed(3)}${DEG}, ${lat.toFixed(3)}${DEG}; ` +
       `area ${fmtArea(area)}; grid lines meet at ${ang.toFixed(1)}${DEG}.`;
   } else ui.info.textContent = "Click a cell for its index, centre and area.";
+  if (!tifOut.busy) ui.tif.disabled = !picked || !basemap.world;
 }
 
 let rafPending = false, redraw = true;
@@ -506,7 +561,9 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 
-window.addEventListener("hashchange", () => { readHash(); setCamera(state.cam || defaultCam()); sync(); });
+ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; writeHash(); basemap.set(state.bm); });
+
+window.addEventListener("hashchange", () => { readHash(); setCamera(state.cam || defaultCam()); basemap.set(state.bm); sync(); });
 
 if (embed) {
   document.body.classList.add("embed");
@@ -517,6 +574,7 @@ readHash();
 setCamera(state.cam || defaultCam());
 resize();
 sync();
+basemap.set(state.bm);
 loadCoastline("110m").then((lines) => {
   coastLines = lines;
   if (current) for (const r of current.recs) r.coast = null;

@@ -45,16 +45,29 @@ function loadScript(src) {
 
 // ------------------------------------------------------------------ GEBCO
 
+// The file's full grid and overviews, opened once.
+let gebcoImages = null;
+function gebcoLevels(src, status) {
+  if (!gebcoImages) {
+    gebcoImages = (async () => {
+      status("Loading GeoTIFF reader...");
+      if (typeof GeoTIFF === "undefined") await loadScript(GEOTIFF_JS);
+      status("Reading GEBCO 2026 overviews...");
+      const tiff = await GeoTIFF.fromUrl(src.url);
+      const count = await tiff.getImageCount(), out = [];
+      for (let i = 0; i < count; i++) out.push(await tiff.getImage(i));
+      return out;
+    })();
+    gebcoImages.catch(() => { gebcoImages = null; });
+  }
+  return gebcoImages;
+}
+
 // Read the smallest overview at least minWidth wide; never the full grid.
 async function loadGebco(src, status) {
-  status("Loading GeoTIFF reader...");
-  if (typeof GeoTIFF === "undefined") await loadScript(GEOTIFF_JS);
-  status("Reading GEBCO 2026 overviews...");
-  const tiff = await GeoTIFF.fromUrl(src.url);
-  const count = await tiff.getImageCount();
+  const levels = await gebcoLevels(src, status);
   let pick = null;
-  for (let i = 0; i < count; i++) {
-    const img = await tiff.getImage(i);
+  for (const img of levels) {
     const w = img.getWidth();
     if (w >= src.minWidth && (!pick || w < pick.getWidth())) pick = img;
   }
@@ -82,20 +95,21 @@ function ramp(stops, z) {
   return stops[stops.length - 1];
 }
 
-export function colourElevation(elev, width, height) {
+// A window of the grid (not the whole world) passes its cell sizes in
+// degrees, its top latitude, and wrap = false.
+export function colourElevation(elev, width, height, { dx = 360 / width, dy = dx, top = 90, wrap = true } = {}) {
   const data = new Uint8ClampedArray(width * height * 4);
-  const cell = 360 / width;
-  const dyM = cell * 110540 / 12;  // 12x vertical exaggeration
+  const dyM = dy * 110540 / 12;  // 12x vertical exaggeration
   const sun = [-0.5, 0.5, 0.7071]; // from the north-west, 45 degrees up
   for (let j = 0; j < height; j++) {
-    const lat = 90 - (j + 0.5) * cell;
-    const dxM = Math.max(1, cell * 111320 * Math.cos(lat * Math.PI / 180)) / 12;
+    const lat = top - (j + 0.5) * dy;
+    const dxM = Math.max(1, dx * 111320 * Math.cos(lat * Math.PI / 180)) / 12;
     const jn = Math.max(0, j - 1), js = Math.min(height - 1, j + 1);
     for (let i = 0; i < width; i++) {
       const k = j * width + i;
       let z = elev[k];
       if (z <= -32767) z = 0;
-      const ie = (i + 1) % width, iw = (i - 1 + width) % width;
+      const ie = wrap ? (i + 1) % width : Math.min(width - 1, i + 1), iw = wrap ? (i - 1 + width) % width : Math.max(0, i - 1);
       const gx = (elev[j * width + ie] - elev[j * width + iw]) / (2 * dxM);
       const gy = (elev[jn * width + i] - elev[js * width + i]) / (2 * dyM);
       const len = Math.hypot(gx, gy, 1);
@@ -204,4 +218,163 @@ export function reprojectBox(world, inverse, p, box, nx, ny) {
     }
   }
   return out;
+}
+
+// ------------------------------------------------------------------ windows
+
+// A window is a piece of a basemap on a lon/lat grid: RGBA rows from the
+// north, its west edge and top latitude, and cell sizes dx, dy in degrees.
+// west can be below -180 (the window then runs across the antimeridian).
+// The whole world is a window too, one that wraps.
+export function worldWindow(world) {
+  return { ...world, west: -180, north: 90, dx: 360 / world.width, dy: 180 / world.height, global: true };
+}
+
+const MAX_WINDOW = 4000;   // pixels on a side, within a texture
+const ESRI_MAX_ZOOM = 17, ESRI_MAX_TILES = 64;
+const MERC_LIM = 85.0511287798;
+const D2R = Math.PI / 180;
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+
+// The basemap over a lon/lat box { west, east, south, north } at about
+// res degrees per pixel (or finer), read from the source at the level that
+// suits: GEBCO's own overviews, or Esri tiles at a deeper zoom. Where the
+// global image already has the detail, or the finer read fails, the global
+// image is used (and the window says why in `note`).
+export async function readWindow(id, box, res, status = () => {}) {
+  const world = await loadWorld(id, status);
+  const global = worldWindow(world);
+  if (res >= global.dx * 0.999) return global;
+  try {
+    const w = id === "gebco" ? await gebcoWindow(box, res, status) : await esriWindow(box, res, status);
+    return w || global;
+  } catch (e) {
+    return { ...global, note: `the finer read failed (${e.message}), so this uses the global image` };
+  }
+}
+
+async function gebcoWindow(box, res, status) {
+  const levels = (await gebcoLevels(sources.gebco, status))
+    .map((img) => ({ img, r: 360 / img.getWidth() }))
+    .sort((a, b) => a.r - b.r);
+  // the coarsest level not coarser than res, then coarser while too big
+  let k = 0;
+  for (let i = 0; i < levels.length; i++) if (levels[i].r <= res) k = i;
+  const size = (r) => Math.max((box.east - box.west) / r, (box.north - box.south) / r);
+  while (k < levels.length - 1 && size(levels[k].r) > MAX_WINDOW) k++;
+  const { img, r } = levels[k], W = img.getWidth(), H = img.getHeight();
+  let x0 = Math.floor((box.west + 180) / r) - 2, x1 = Math.ceil((box.east + 180) / r) + 2;
+  if (x1 - x0 > W) { x0 = 0; x1 = W; }
+  const y0 = Math.max(0, Math.floor((90 - box.north) / r) - 2), y1 = Math.min(H, Math.ceil((90 - box.south) / r) + 2);
+  const w = x1 - x0, h = y1 - y0;
+  status(`Reading GEBCO 2026, ${w} x ${h} at ${(r * 3600).toFixed(0)} arc seconds...`);
+  const elev = new Float32Array(w * h);
+  // the window's columns taken modulo the grid, in runs that do not wrap
+  for (let x = x0; x < x1;) {
+    const xm = ((x % W) + W) % W, run = Math.min(x1 - x, W - xm);
+    const [band] = await img.readRasters({ window: [xm, y0, xm + run, y1], samples: [0] });
+    for (let j = 0; j < h; j++)
+      for (let i = 0; i < run; i++) elev[j * w + (x - x0) + i] = band[j * run + i];
+    x += run;
+  }
+  const full = w === W;
+  const out = colourElevation(elev, w, h, { dx: r, dy: r, top: 90 - y0 * r, wrap: full });
+  return { ...out, west: -180 + x0 * r, north: 90 - y0 * r, dx: r, dy: r, global: full && y0 === 0 && y1 === H };
+}
+
+// Esri tiles at the zoom that suits, mosaicked and resampled to lon/lat.
+async function esriWindow(box, res, status) {
+  const src = sources.esri;
+  const tyOf = (lat) => (1 - Math.log(Math.tan(Math.PI / 4 + clamp(lat, -MERC_LIM, MERC_LIM) * D2R / 2)) / Math.PI) / 2;
+  let z = clamp(Math.ceil(Math.log2(360 / (256 * res))), src.zoom, ESRI_MAX_ZOOM), n, tx0, tx1, ty0, ty1;
+  for (;; z--) {
+    n = 2 ** z;
+    tx0 = Math.floor(((box.west + 180) / 360) * n); tx1 = Math.floor(((box.east + 180) / 360) * n - 1e-9);
+    if (tx1 - tx0 + 1 > n) { tx0 = 0; tx1 = n - 1; }
+    ty0 = Math.floor(tyOf(box.north) * n); ty1 = Math.min(n - 1, Math.floor(tyOf(box.south) * n));
+    if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) <= ESRI_MAX_TILES || z <= src.zoom) break;
+  }
+  if (z <= src.zoom) return null;
+  const cols = tx1 - tx0 + 1, rows = ty1 - ty0 + 1;
+  status(`Loading ${cols * rows} Esri imagery tiles at zoom ${z}...`);
+  const merc = document.createElement("canvas");
+  merc.width = cols * 256; merc.height = rows * 256;
+  const mctx = merc.getContext("2d");
+  const jobs = [];
+  for (let y = ty0; y <= ty1; y++)
+    for (let x = tx0; x <= tx1; x++)
+      jobs.push(new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => { mctx.drawImage(img, (x - tx0) * 256, (y - ty0) * 256); resolve(); };
+        img.onerror = () => reject(new Error("Esri imagery tiles did not load"));
+        img.src = src.url.replace("{z}", z).replace("{y}", y).replace("{x}", ((x % n) + n) % n);
+      }));
+  await Promise.all(jobs);
+  const m = mctx.getImageData(0, 0, merc.width, merc.height).data;
+  // lon/lat cells as wide as a tile pixel, as tall as one at the middle latitude
+  const dx = 360 / (256 * n), mid = (clamp(box.north, -MERC_LIM, MERC_LIM) + clamp(box.south, -MERC_LIM, MERC_LIM)) / 2;
+  const dy = dx * Math.max(0.05, Math.cos(mid * D2R));
+  const top = Math.min(box.north, MERC_LIM), bottom = Math.max(box.south, -MERC_LIM);
+  const width = cols * 256, height = Math.max(1, Math.ceil((top - bottom) / dy));
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let j = 0; j < height; j++) {
+    const lat = top - (j + 0.5) * dy;
+    const row = Math.floor(tyOf(lat) * n * 256) - ty0 * 256;
+    if (row < 0 || row >= merc.height) continue;
+    for (let i = 0; i < width; i++) {
+      const s = (row * width + i) * 4, k = (j * width + i) * 4;
+      data[k] = m[s]; data[k + 1] = m[s + 1]; data[k + 2] = m[s + 2]; data[k + 3] = 255;
+    }
+  }
+  return { ...toWorld(data, width, height), west: -180 + (tx0 / n) * 360, north: top, dx, dy, global: false };
+}
+
+// The basemap colour at lon/lat, bilinear, into out[k..k+3]; false (and
+// nothing written) outside the window.
+export function sampleWindow(win, lon, lat, out, k) {
+  const { width: W, height: H, data } = win;
+  const v = (win.north - lat) / win.dy - 0.5;
+  if (v < -1 || v > H) return false;
+  if (!win.global) {
+    lon = win.west + ((((lon - win.west) % 360) + 360) % 360);
+    if ((lon - win.west) / win.dx - 0.5 > W) return false;
+  }
+  const u = (lon - win.west) / win.dx - 0.5;
+  const vc = clamp(v, 0, H - 1.001), v0 = Math.floor(vc), fv = vc - v0;
+  let a, b, fu;
+  if (win.global) {
+    const u0 = Math.floor(u); fu = u - u0;
+    a = ((u0 % W) + W) % W; b = (a + 1) % W;
+  } else {
+    const uc = clamp(u, 0, W - 1.001), u0 = Math.floor(uc); fu = uc - u0;
+    a = u0; b = u0 + 1;
+  }
+  const r0 = v0 * W, r1 = r0 + W;
+  if (data[(r0 + a) * 4 + 3] === 0 && data[(r1 + b) * 4 + 3] === 0) return false;
+  for (let c = 0; c < 3; c++) {
+    const top = data[(r0 + a) * 4 + c] * (1 - fu) + data[(r0 + b) * 4 + c] * fu;
+    const bot = data[(r1 + a) * 4 + c] * (1 - fu) + data[(r1 + b) * 4 + c] * fu;
+    out[k + c] = top * (1 - fv) + bot * fv;
+  }
+  out[k + 3] = 255;
+  return true;
+}
+
+// A canvas W x H of the global basemap warped into a page's own texture
+// frame: inv(u, v) gives the lon/lat at texture position u (0 to 1, left to
+// right) and v (0 to 1, bottom to top), or null where there is nothing.
+export function warpCanvas(world, W, H, inv) {
+  const win = worldWindow(world), out = new Uint8ClampedArray(W * H * 4);
+  for (let j = 0; j < H; j++) {
+    const v = 1 - (j + 0.5) / H;
+    for (let i = 0; i < W; i++) {
+      const ll = inv((i + 0.5) / W, v);
+      if (ll) sampleWindow(win, ll[0], ll[1], out, (j * W + i) * 4);
+    }
+  }
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  c.getContext("2d").putImageData(new ImageData(out, W, H), 0, 0);
+  return c;
 }

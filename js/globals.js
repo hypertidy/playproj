@@ -14,8 +14,9 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as fam from "./families/globals.js";
 import { samplePoints, evenSpacing, SAMPLE_MODES } from "./landmesh.js";
 import { loadCoastline, graticule } from "./geo.js";
-import { sources, loadWorld } from "./basemap.js";
+import { sources, loadWorld, readWindow } from "./basemap.js";
 import { writeGeoTIFF, esriGeoKeys } from "./geotiff-write.js";
+import { crsGeoKeys, saveBlob } from "./cellexport.js";
 import { displace, hasElevation } from "./relief.js";
 
 const D2R = Math.PI / 180;
@@ -39,7 +40,7 @@ const COLORS = {
 
 const defaults = {
   base: fam.defaults.base, lobes: fam.defaults.lobes, gores: fam.defaults.gores, s: fam.defaults.s, lon0: fam.defaults.lon0,
-  t: 0.6, links: 120, seed: 1, from: "tri", detail: "110m", cuts: 1, grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null
+  t: 0.6, links: 120, seed: 1, from: "tri", detail: "110m", cuts: 1, grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, lobe: -1, cam: null
 };
 const BUTTERFLY_EDGE = -20; // Cahill-Keyes puts an octahedron edge on 20 W
 const state = { ...defaults };
@@ -551,7 +552,7 @@ const flatScene = new THREE.Scene();
 const flatMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
 flatScene.add(flatMesh);
 
-function renderFlat(mesh, box, nx, ny) {
+function renderFlat(mesh, box, nx, ny, texture = worldTexture) {
   const pos = new Float32Array(mesh.pts.length * 3);
   mesh.pts.forEach((pt, k) => { pos[3 * k] = pt.x; pos[3 * k + 1] = pt.y; });
   flatMesh.geometry.dispose();
@@ -560,7 +561,7 @@ function renderFlat(mesh, box, nx, ny) {
   g.setAttribute("uv", new THREE.Float32BufferAttribute(mesh.uv, 2));
   g.setIndex(mesh.index);
   flatMesh.geometry = g;
-  flatMesh.material.map = worldTexture;
+  flatMesh.material.map = texture;
   flatMesh.material.needsUpdate = true;
   const cam = new THREE.OrthographicCamera(box[0], box[2], box[3], box[1], -1, 1);
   const rt = new THREE.WebGLRenderTarget(nx, ny, { colorSpace: THREE.SRGBColorSpace });
@@ -651,6 +652,68 @@ async function downloadTIF() {
   }
 }
 
+// One lobe (or butterfly face) on its own: the lobe's own projection about
+// its own central meridian, at the detail the basemap has there (read for
+// the lobe's lon/lat box, not the global image). The GPU draws the lobe's
+// mesh into the image, so no inverse projection is needed.
+let lobeBusy = false;
+const pickable = () => (isLobed() || state.base === "butterfly");
+function pickedPiece(c) {
+  if (!pickable()) return null;
+  return c.map.pieces[state.lobe] || null;
+}
+
+async function downloadLobe() {
+  const c = currentMap(), q = pickedPiece(c);
+  if (!world || !q) return;
+  const pp = fam.pieceProjection(c.p, q), size = +ui.tifSize.value, R = fam.R;
+  lobeBusy = true;
+  ui.lobeTif.textContent = "Rendering...";
+  ui.lobeTif.disabled = true;
+  try {
+    // the lobe's surface, laid out in the lobe's own projection
+    const L0 = lonOf(c.map), mesh = surfaceMesh({ ...c.map, pieces: [q] }, 0.5);
+    const pts = [];
+    for (let k = 0; k < mesh.pts.length; k++) {
+      const [x, y] = pp.flat(mesh.ll[2 * k] - L0, mesh.ll[2 * k + 1]);
+      pts.push({ x, y });
+    }
+    const box = flatBox([pts]);
+    const px = Math.max(box[2] - box[0], box[3] - box[1]) / size;
+    const nx = Math.ceil((box[2] - box[0]) / px), ny = Math.ceil((box[3] - box[1]) / px);
+    const top = box[1] + ny * px;
+    // the basemap for the lobe's lon/lat box, at about one pixel's detail
+    const [a, b, p0, p1] = q.bounds, pad = 1;
+    const win = await readWindow(state.bm, { west: a + L0 - pad, east: b + L0 + pad, south: Math.max(-90, p0 - pad), north: Math.min(90, p1 + pad) },
+      (px * 180) / Math.PI, (msg) => (ui.bmStatus.textContent = msg));
+    const tex = new THREE.CanvasTexture(win.canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.minFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    const W = win.width * win.dx, H = win.height * win.dy;
+    const uv = [];
+    for (let k = 0; k < mesh.pts.length; k++) uv.push((mesh.ll[2 * k] - win.west) / W, 1 - (win.north - mesh.ll[2 * k + 1]) / H);
+    ui.bmStatus.textContent = "Rendering...";
+    const rgba = renderFlat({ pts, uv, index: mesh.index }, [box[0], box[1], box[2], top], nx, ny, tex);
+    tex.dispose();
+    const blob = await writeGeoTIFF({
+      width: nx, height: ny, rgba,
+      origin: [box[0] * R, top * R], pixelSize: [px * R, px * R],
+      geoKeys: crsGeoKeys({ proj: pp.proj, R })
+    });
+    const what = c.map.butterfly ? `face${q.id + 1}` : `${q.hemi}${q.k + 1}`;
+    const name = pp.proj.split(" ")[0].replace("+proj=", "");
+    saveBlob(blob, `playproj-${name}-${state.lobes === "gores" && !c.map.butterfly ? "gore" : c.map.butterfly ? "butterfly" : state.lobes}-${what}-${state.bm}-${nx}.tif`);
+    ui.bmStatus.textContent = win.note ? `Written; ${win.note}.` : "";
+  } catch (e) {
+    ui.bmStatus.textContent = `The lobe could not be written (${e.message}).`;
+  } finally {
+    lobeBusy = false;
+    updatePanel(currentMap());
+  }
+}
+
 // ---------------------------------------------------------------- 2D map
 
 const mapCanvas = document.getElementById("map2d");
@@ -669,6 +732,7 @@ function drawMap(c) {
   const s = Math.min(cw / (x1 - x0), ch / (y1 - y0)) * 0.94;
   const X = (x) => cw / 2 + (x - (x0 + x1) / 2) * s, Y = (y) => ch / 2 - (y - (y0 + y1) / 2) * s;
   const path = (line) => { line.forEach((pt, i) => (i ? ctx.lineTo(X(pt.x), Y(pt.y)) : ctx.moveTo(X(pt.x), Y(pt.y)))); };
+  mapFrame = { cw, ch, s, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
 
   ctx.fillStyle = "#0d1a2b";
   ctx.beginPath();
@@ -687,7 +751,36 @@ function drawMap(c) {
   if (state.grat) stroke(c.grat, "rgba(63,167,160,0.6)", 0.8);
   stroke(c.coast, "#6ab787", 1.1);
   stroke(c.outlines, state.cuts ? "rgba(255,179,71,0.8)" : "#8899aa", 1);
+  const q = pickedPiece(c);
+  if (q) {
+    ctx.fillStyle = "rgba(255,211,77,0.18)";
+    ctx.beginPath(); path(c.outlines[q.id]); ctx.closePath(); ctx.fill();
+    stroke([c.outlines[q.id]], "#ffd34d", 2);
+  }
 }
+
+// click the flat map: the lobe (or face) under the pointer, again to drop it
+let mapFrame = null;
+function pieceAt(c, x, y) {
+  for (let k = c.outlines.length - 1; k >= 0; k--) {
+    const line = c.outlines[k];
+    let inside = false;
+    for (let i = 0, j = line.length - 1; i < line.length; j = i++) {
+      const a = line[i], b = line[j];
+      if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    if (inside) return k;
+  }
+  return -1;
+}
+mapCanvas.addEventListener("click", (ev) => {
+  if (!mapFrame || !pickable()) return;
+  const r = mapCanvas.getBoundingClientRect(), f = mapFrame;
+  const x = f.cx + (ev.clientX - r.left - f.cw / 2) / f.s, y = f.cy - (ev.clientY - r.top - f.ch / 2) / f.s;
+  const k = pieceAt(currentMap(), x, y);
+  state.lobe = k === state.lobe ? -1 : k;
+  sync();
+});
 
 // ---------------------------------------------------------------- panel
 
@@ -699,7 +792,8 @@ const ui = {
   proj: $("projstring"), describe: $("describe"), badge: $("badge"),
   cuts: $("cuts"), grat: $("grat"), globe: $("globe"), detail: $("detail"), from: $("from"), spin: $("spin"),
   relief: $("relief"), reliefOut: $("relief-out"), wire: $("wire"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"),
-  tifSize: $("tif-size"), tif: $("download-tif"), tifHint: $("tif-hint"), playI: $("play-interrupt")
+  tifSize: $("tif-size"), tif: $("download-tif"), tifHint: $("tif-hint"), playI: $("play-interrupt"),
+  lobeTif: $("download-lobe"), lobeHint: $("lobe-hint")
 };
 
 for (const [id, src] of Object.entries(sources)) ui.bm.add(new Option(src.label, id));
@@ -744,7 +838,13 @@ function updatePanel(c) {
   ui.tif.disabled = !world || !str;
   ui.tifHint.textContent = str || !world
     ? "The flat map with its basemap, as RGBA with its CRS, readable by GDAL."
-    : "PROJ has no single projection for this map, so a GeoTIFF could not say what its CRS is.";
+    : "PROJ has no single projection for this map, so a GeoTIFF could not say what its CRS is: pick a lobe instead.";
+  const q = pickedPiece(c), what = fly ? "face" : "lobe";
+  ui.lobeTif.hidden = ui.lobeHint.hidden = !pickable();
+  if (!lobeBusy) { ui.lobeTif.textContent = `Download ${what}`; ui.lobeTif.disabled = !world || !q; }
+  ui.lobeHint.textContent = !q ? `Click a ${what} on the flat map to pick it.`
+    : `${fly ? "Face" : q.hemi === "n" ? "Northern lobe" : "Southern lobe"} ${fly ? q.id + 1 : q.k + 1}: ${fam.pieceProjection(c.p, q).proj}. ` +
+      `Written in its own CRS, with the basemap read at the detail the ${what} needs.`;
 }
 
 let rafPending = false;
@@ -758,14 +858,15 @@ function sync() {
 ui.base.addEventListener("change", () => {
   const was = state.base;
   state.base = ui.base.value;
+  state.lobe = -1;
   // the butterfly's natural edge meridian is not the globals' central meridian
   if (state.base === "butterfly" && was !== "butterfly" && state.lon0 === defaults.lon0) state.lon0 = BUTTERFLY_EDGE;
   if (state.base !== "butterfly" && was === "butterfly" && state.lon0 === BUTTERFLY_EDGE) state.lon0 = defaults.lon0;
   if ((state.base === "butterfly") !== (was === "butterfly") && !state.cam) setCamera(defaultCam());
   sync();
 });
-ui.lobes.addEventListener("change", () => { state.lobes = ui.lobes.value; sync(); });
-ui.gores.addEventListener("input", () => { state.gores = +ui.gores.value; sync(); });
+ui.lobes.addEventListener("change", () => { state.lobes = ui.lobes.value; state.lobe = -1; sync(); });
+ui.gores.addEventListener("input", () => { state.gores = +ui.gores.value; state.lobe = -1; sync(); });
 ui.s.addEventListener("input", () => { stopAnim(); state.s = +ui.s.value; sync(); });
 ui.lon0.addEventListener("input", () => { state.lon0 = +ui.lon0.value; sync(); });
 ui.t.addEventListener("input", () => { stopAnim(); state.t = +ui.t.value; sync(); });
@@ -778,6 +879,7 @@ ui.from.addEventListener("change", () => { state.from = ui.from.value; buildLink
 ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; setBasemap(); });
 ui.spin.addEventListener("change", () => { state.spin = ui.spin.checked ? 1 : 0; controls.autoRotate = !!state.spin; writeHash(); });
 ui.tif.addEventListener("click", downloadTIF);
+ui.lobeTif.addEventListener("click", downloadLobe);
 ui.relief.addEventListener("input", () => { state.relief = +ui.relief.value; sync(); });
 ui.wire.addEventListener("change", () => { state.wire = ui.wire.checked ? 1 : 0; sync(); });
 $("reseed").addEventListener("click", () => { state.seed = (state.seed % 9999) + 1; buildLinkPool(); sync(); });

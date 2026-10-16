@@ -121,3 +121,11 @@ export function esriGeoKeys(wkt, sphereRadius, citation) {
     [3073, { ascii: `ESRI PE String = ${wkt}` }], [3076, 9001]
   ];
 }
+
+// An ESRI PE string for any PROJ string on a sphere of radius R: a custom
+// projection with the PROJ string in its PROJ4 extension, which GDAL reads.
+export function proj4Wkt(name, proj, R) {
+  return `PROJCS["playproj_${name}",GEOGCS["GCS_Sphere",DATUM["D_Sphere",SPHEROID["Sphere",${R},0.0]],` +
+    `PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["custom_proj4"],UNIT["Meter",1.0],` +
+    `EXTENSION["PROJ4","${proj} +wktext +no_defs"]]`;
+}
