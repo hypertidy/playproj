@@ -127,6 +127,36 @@ checked against s2sphere in `test/fixtures/s2-cells.json`. Hash keys: `lvl`
 (0 to 12), `t` (unfold, 0 globe, 0.5 cube, 1 net), `cell` (a token),
 `curve`, `grid`, `coast`, `uvgrid`, `cam`.
 
+## Model grids
+
+`grids.html` shows the curvilinear grids that climate and ocean models compute
+on. A model works on arrays, so its grid is one or more rectangles of cells
+bent round the sphere; "Unfold" moves every point in a straight line from the
+globe to the array, where the grid is straight and the world bends instead.
+Every single grid on a sphere has singular points (amber), and each design
+puts them somewhere different:
+
+| Grid          | Built from                                              | Singular points               |
+|---------------|---------------------------------------------------------|-------------------------------|
+| Rotated pole  | lon/lat with the pole moved, PROJ `ob_tran` (CF `rotated_latitude_longitude`) | the two rotated poles |
+| Tripolar      | Mercator-spaced lon/lat joined to Murray's (1996) bipolar cap, as in GFDL MOM | the South Pole and two poles on land on the join latitude |
+| Cubed sphere  | six gnomonic faces (`+proj=gnom`), equiangular as in FV3 or plain | the eight cube corners |
+| Yin-Yang      | two overlapping low-latitude lon/lat patches (Kageyama and Sato 2004) | none |
+
+The rotated pole page draws the EURO-CORDEX domain, a rectangle in rotated
+coordinates. The tripolar cap is a lon/lat grid on a second sphere whose poles
+sit on its equator, carried onto the cap by stereographic projection, so the
+grid stays orthogonal; its top row is the fold, where the array meets itself
+reversed. Click a cell for its index, centre, area and the angle its grid
+lines meet at. `js/grids.js` holds the grids; `test/check-grids.mjs` checks
+`ob_tran` and the tripolar cap against PROJ (`test/fixtures/grids-proj.json`,
+made by `test/make-grids-fixture.py`), the cube faces against proj4js `gnom`,
+and that each grid round-trips and the tripolar grid is orthogonal and folds.
+Hash keys: `g` (`rot`, `tri`, `cube`, `yy`), `t` (unfold), `step` (spacing in
+degrees), `plat`, `plon` (rotated pole, CF grid north pole), `join`, `tlon`
+(tripolar join latitude and pole longitude), `eq` (0 for plain gnomonic cube
+faces), `cell` (patch, i, j), `coast`, `grat`, `cam`.
+
 ## For example
 
 `example.html` is a storyboard: eight short steps retelling the first part of
@@ -207,6 +237,8 @@ catastrophes.html, js/catastrophes.js  map catastrophes page
 js/mishaps.js               catastrophe steps, vertex-by-vertex and spherical drawing
 cells.html, js/cells.js     s2 cells page
 js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
+grids.html, js/grids-page.js  model grids page
+js/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 example.html, js/example.js For example storyboard
 test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
@@ -232,7 +264,7 @@ constructions against proj4js. proj4js has no Spilhaus, so
 `test/fixtures/spilhaus-proj.json`. `test/check-mishaps.mjs` checks the catastrophes page's map
 frames against d3-geo and the areas behind its captions. `test/check-s2.mjs` checks
 cell tokens and corners against `test/fixtures/s2-cells.json`, made with
-s2sphere. `test/check-inverse.mjs` round-trips project and inverse for every light
+s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js. `test/check-inverse.mjs` round-trips project and inverse for every light
 position. To check that GDAL reads the exported CRS (needs rasterio):
 
 ```sh

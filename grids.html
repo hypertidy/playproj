@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: model grids</title>
+<meta name="description" content="Model grids: rotated pole, tripolar, cubed sphere and Yin-Yang, unfolded from the globe into the arrays models compute on.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/grids-page.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./grids.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./spilhaus.html">Spilhaus</a><a href="./catastrophes.html">Catastrophes</a><a href="./cells.html">s2 cells</a><a href="./grids.html" aria-current="page">Model grids</a><a href="./example.html">For example</a></nav>
+    </header>
+
+    <section class="embed-keep">
+      <div id="kinds" class="presets" role="group" aria-label="Grid"></div>
+      <label class="row" for="t"><span>Unfold</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Globe to the model's array">
+      <div class="buttons">
+        <button id="play" type="button">Unfold</button>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="step"><span>Spacing</span><output id="step-out"></output></label>
+      <input id="step" type="range" min="2" max="30" step="1" aria-label="Grid spacing">
+      <div id="rot-ctl">
+        <label class="row" for="plat"><span>Pole latitude</span><output id="plat-out"></output></label>
+        <input id="plat" type="range" min="0" max="90" step="0.25" aria-label="Grid north pole latitude">
+        <label class="row" for="plon"><span>Pole longitude</span><output id="plon-out"></output></label>
+        <input id="plon" type="range" min="-180" max="180" step="1" aria-label="Grid north pole longitude">
+        <div class="buttons">
+          <button id="cordex" type="button" class="small">EURO-CORDEX</button>
+          <button id="unrotated" type="button" class="small">Unrotated</button>
+        </div>
+      </div>
+      <div id="tri-ctl">
+        <label class="row" for="join"><span>Join latitude</span><output id="join-out"></output></label>
+        <input id="join" type="range" min="40" max="80" step="1" aria-label="Latitude where the cap joins">
+        <label class="row" for="tlon"><span>Pole longitude</span><output id="tlon-out"></output></label>
+        <input id="tlon" type="range" min="-180" max="180" step="1" aria-label="Longitude of the first northern pole">
+      </div>
+      <div id="cube-ctl">
+        <div class="toggles"><label><input id="eq" type="checkbox"> Equal angles</label></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="projline">
+        <code id="projstring"></code>
+        <button id="copy-proj" type="button" class="small">Copy</button>
+      </div>
+      <p id="describe" class="describe"></p>
+      <p id="cell-info" class="badge"></p>
+    </section>
+
+    <section>
+      <div class="toggles">
+        <label><input id="coast" type="checkbox"> Coastline</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <div id="about"></div>
+        <p>A model computes on arrays, so its grid is a rectangle of cells (or a few rectangles) bent
+          round the sphere. Unfold shows the array as the model sees it: the grid is straight and the
+          world is bent instead. A combed sphere always has a bald spot, so every single grid has
+          singular points (amber); the craft is where to put them.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
