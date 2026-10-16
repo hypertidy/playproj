@@ -14,6 +14,7 @@ import { loadCoastline, graticule } from "./geo.js";
 import { sources, loadWorld, reprojectBox } from "./basemap.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
 import { displace, hasElevation } from "./relief.js";
+import { drawLattice } from "./tissot.js";
 
 const D2R = Math.PI / 180;
 const DEG = "\u00b0";
@@ -35,7 +36,7 @@ const COLORS = {
 
 // ---------------------------------------------------------------- state
 
-const defaults = { prop: "conf", lat1: 40, lon: 0, tilt: 0, t: 0, links: 120, seed: 1, from: "tri", detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
+const defaults = { prop: "conf", lat1: 40, lon: 0, tilt: 0, t: 0, links: 120, seed: 1, from: "tri", detail: "110m", grat: 1, tissot: 0, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -546,6 +547,17 @@ function drawMap(p) {
   if (state.grat) stroke(grat, "rgba(217,164,65,0.55)", 0.8);
   stroke(coast, "#6ab787", 1.1);
 
+  // Tissot's indicatrix, from the construction itself (so tilted cones,
+  // which proj4js cannot draw, get them too)
+  if (state.tissot) {
+    const geo = (lon, lat) => {
+      if (Math.abs(fam.toAxis(lon, lat, p)[0]) > 179.9) return null;
+      if (!inReach(fam.flatPolar(lon, lat, p))) return null;
+      return fam.project(lon, lat, p);
+    };
+    drawLattice(ctx, geo, (x, y) => [X(x), Y(y)], { lon0: p.lon0, maxR: 0.25 * (bx1 - bx0) });
+  }
+
   if (tr) {
     badge.className = "badge ok";
     badge.textContent = `Drawn by proj4js. Agrees with the construction to ${maxDiff < 1e-6 ? "< 1e-6" : maxDiff.toExponential(1)} m over ${compared} points.`;
@@ -565,7 +577,7 @@ const ui = {
   lat1: $("lat1"), t: $("t"), lon: $("lon"), tilt: $("tilt"), tiltOut: $("tilt-out"), links: $("links"),
   lat1Out: $("lat1-out"), tOut: $("t-out"), lonOut: $("lon-out"), linksOut: $("links-out"),
   proj: $("projstring"), describe: $("describe"), props: $("props"),
-  grat: $("grat"), globe: $("globe"), detail: $("detail"), from: $("from"),
+  grat: $("grat"), tissot: $("tissot"), globe: $("globe"), detail: $("detail"), from: $("from"),
   spin: $("spin"), relief: $("relief"), reliefOut: $("relief-out"), wire: $("wire"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
 };
 
@@ -596,7 +608,7 @@ function updatePanel(p) {
   ui.linksOut.textContent = state.from === "even" && coast.length
     ? `${state.links} on land, ${evenSpacing(coast, state.links).toFixed(1)}${DEG} apart`
     : state.links;
-  ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail; ui.from.value = state.from;
+  ui.grat.checked = !!state.grat; ui.tissot.checked = !!state.tissot; ui.globe.checked = !!state.globe; ui.detail.value = state.detail; ui.from.value = state.from;
   ui.bm.value = state.bm;
   ui.spin.checked = !!state.spin;
   ui.relief.value = state.relief; ui.wire.checked = !!state.wire;
@@ -625,6 +637,7 @@ ui.lon.addEventListener("input", () => { state.lon = +ui.lon.value; sync(); });
 ui.tilt.addEventListener("input", () => { state.tilt = +ui.tilt.value; sync(); });
 ui.links.addEventListener("input", () => { state.links = +ui.links.value; if (state.from === "even") buildLinkPool(); sync(); });
 ui.grat.addEventListener("change", () => { state.grat = ui.grat.checked ? 1 : 0; sync(); });
+ui.tissot.addEventListener("change", () => { state.tissot = ui.tissot.checked ? 1 : 0; sync(); });
 ui.globe.addEventListener("change", () => { state.globe = ui.globe.checked ? 1 : 0; sync(); });
 ui.detail.addEventListener("change", async () => { state.detail = ui.detail.value; await loadData(); sync(); });
 ui.from.addEventListener("change", () => { state.from = ui.from.value; buildLinkPool(); sync(); });

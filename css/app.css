@@ -182,3 +182,22 @@ canvas.view { position: absolute; inset: 0; width: 100%; height: 100%; display: 
 .steps li { cursor: pointer; padding: 1px 0; }
 .steps li:hover { color: var(--text); }
 .steps li.active { color: var(--accent); }
+/* tissot.html: the globe and the map side by side in the stage */
+#stage.split { display: grid; grid-template-columns: 1fr 1fr; }
+#stage.split > .half { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+#stage.split > .half + .half { border-left: 1px solid var(--line); }
+#map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+.half-label {
+  position: absolute; left: 8px; bottom: 6px; pointer-events: none;
+  font-size: 12px; color: var(--muted);
+  background: rgba(5, 7, 13, 0.6); padding: 1px 6px; border-radius: 4px;
+}
+.readout { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.readout td { padding: 2px 6px; border-bottom: 1px solid var(--line); }
+.readout td:first-child { color: var(--muted); }
+.readout td:last-child { text-align: right; }
+/* stacked when the stage is taller than it is wide (set from js) */
+#stage.split.stacked { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+#stage.split.stacked > .half + .half { border-left: 0; border-top: 1px solid var(--line); }
+@media (max-width: 820px) { #stage.split { height: 92vh; } }
+body.embed #stage.split .half-label { display: none; }

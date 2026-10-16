@@ -13,6 +13,7 @@ import { samplePoints, evenSpacing, SAMPLE_MODES } from "./landmesh.js";
 import { loadCoastline, graticule, sceneFrame } from "./geo.js";
 import { sources, loadWorld, reproject, sampleElev } from "./basemap.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
+import { drawLattice } from "./tissot.js";
 
 const RAY_REACH = 6;      // rays from lights further than this start at the edge of the scene
 const MAX_RAYS = 5000; // the slider's top end
@@ -40,7 +41,7 @@ const COLORS = {
 
 // ---------------------------------------------------------------- state
 
-const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, ts: 90, seed: 1, from: "tri", detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
+const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, ts: 90, seed: 1, from: "tri", detail: "110m", grat: 1, tissot: 0, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -656,6 +657,13 @@ function drawMap(p) {
   if (state.grat) stroke(grat, "#3d6b52", 0.8);
   stroke(coast, "#6ab787", 1.1);
 
+  // Tissot's indicatrix from the ray construction, so lights with no PROJ
+  // name get them too
+  if (state.tissot) {
+    const geo = (lon, lat) => { const xy = fam.project(lon, lat, p); return inPlane(xy) ? xy : null; };
+    drawLattice(ctx, geo, (x, y) => [X(x), Y(y)], { lon0: p.lon0, maxR: 0.5 * w });
+  }
+
   // horizon circle
   const thr = fam.horizonCos(p.a);
   if (thr > -1 + 1e-9 || fam.edgeRadius) {
@@ -703,7 +711,7 @@ const ui = {
   v: $("v"), ts: $("ts"), tsOut: $("ts-out"), lat: $("lat"), lon: $("lon"), w: $("w"), rays: $("rays"),
   vOut: $("v-out"), latOut: $("lat-out"), lonOut: $("lon-out"), wOut: $("w-out"), raysOut: $("rays-out"),
   proj: $("projstring"), describe: $("describe"), presets: $("presets"), az: $("construction"), lightControls: $("light-controls"),
-  grat: $("grat"), globe: $("globe"), detail: $("detail"), from: $("from"),
+  grat: $("grat"), tissot: $("tissot"), globe: $("globe"), detail: $("detail"), from: $("from"),
   spin: $("spin"), relief: $("relief"), reliefOut: $("relief-out"), wire: $("wire"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
 };
 
@@ -743,7 +751,7 @@ function updatePanel(p) {
   ui.raysOut.textContent = state.from === "even" && coast.length
     ? `${state.rays} on land, ${evenSpacing(coast, state.rays).toFixed(1)}${DEG} apart`
     : state.rays;
-  ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail; ui.from.value = state.from;
+  ui.grat.checked = !!state.grat; ui.tissot.checked = !!state.tissot; ui.globe.checked = !!state.globe; ui.detail.value = state.detail; ui.from.value = state.from;
   ui.bm.value = state.bm;
   ui.spin.checked = !!state.spin;
   ui.relief.value = state.relief; ui.wire.checked = !!state.wire;
@@ -776,6 +784,7 @@ ui.lon.addEventListener("input", () => { state.lon = +ui.lon.value; sync(); });
 ui.w.addEventListener("input", () => { state.w = +ui.w.value; sync(); });
 ui.rays.addEventListener("input", () => { state.rays = +ui.rays.value; if (state.from === "even") buildRayPool(); sync(); });
 ui.grat.addEventListener("change", () => { state.grat = ui.grat.checked ? 1 : 0; sync(); });
+ui.tissot.addEventListener("change", () => { state.tissot = ui.tissot.checked ? 1 : 0; sync(); });
 ui.globe.addEventListener("change", () => { state.globe = ui.globe.checked ? 1 : 0; globe.visible = !!state.globe; sync(); });
 ui.detail.addEventListener("change", async () => { state.detail = ui.detail.value; await loadData(); sync(); });
 ui.from.addEventListener("change", () => { state.from = ui.from.value; buildRayPool(); sync(); });

@@ -95,6 +95,29 @@ GDAL reads. Hash keys: `t` (unfold, 0 to 1), `lat`, `lon`, `azi` (the
 centre and azimuth), `net` (0 hides the square grid), `links`, plus the
 shared ones below.
 
+## Tissot's indicatrix
+
+`tissot.html` puts equal small circles on a globe and shows what a projection
+makes of them. Each becomes (in the limit) an ellipse whose semi-axes a and b
+are the largest and smallest scale at that point: circles everywhere means
+conformal, equal areas everywhere means equal-area. Pick a projection or type
+any PROJ string proj4js can read, click a point for its scale factors, and
+colour the globe and map by areal scale or angular distortion. "Projected
+circles" draws the true image of each circle next to the linearised ellipse.
+
+`js/tissot.js` computes the factors from nothing but a forward function, so it
+works on PROJ strings and on the ray constructions alike. It differences the
+projection at the same four points round the target that PROJ's
+`proj_factors()` uses and applies the same formulas (Snyder 1987), giving h,
+k, s, a, b, omega, theta' and convergence. The method is Bill Huber's
+([GIS Stack Exchange](https://gis.stackexchange.com/a/5075)), ported to R in
+[hypertidy/tissot](https://github.com/hypertidy/tissot). The perspective and
+cones pages have a "Tissot indicatrix" toggle that draws them on their maps
+from the constructions. Hash keys: `proj` (preset, or `custom` with `def`),
+`lon`, `lat`, `size` (circle radius, degrees), `step` (15 or 30), `color`
+(`none`, `area`, `angle`), `pt` (picked lon,lat), `ell`, `circ`, `unit`,
+`axes`, `grat`; `tissot=1` on the perspective and cones pages.
+
 ## Globals and interrupteds
 
 `globals.html` takes the whole-world formulas: Mollweide, Goode homolosine,
@@ -381,6 +404,8 @@ sentinel.html, js/sentinel.js  MGRS and Sentinel-2 page
 js/mgrs.js                  UTM, MGRS references and Sentinel-2 tiles
 data/s2-tiles.json          which MGRS squares are Sentinel-2 tiles (ESA tiling grid)
 bins.html, js/bins.js       L3 bins page
+tissot.html, js/tissot-page.js  Tissot's indicatrix page
+js/tissot.js                distortion factors (h, k, s, omega, ...) from any forward function
 js/l3bin.js                 SeaWiFS / MODIS level-3 bin grid
 test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
@@ -410,7 +435,12 @@ frames against d3-geo and the areas behind its captions. `test/check-s2.mjs` che
 cell tokens and corners against `test/fixtures/s2-cells.json`, made with
 s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js.
 `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
-GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid. `test/check-inverse.mjs` round-trips project and inverse for every light
+GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid.
+`test/check-tissot.mjs` checks the distortion factors against PROJ's own
+`proj_factors()` for 27 projections, spheres and ellipsoids
+(`test/fixtures/tissot-proj.json`, from `test/make-tissot-fixture.py`): the
+formulas from PROJ's derivatives to rounding, and the whole path through
+proj4js to about 1e-8 per unit scale. `test/check-inverse.mjs` round-trips project and inverse for every light
 position. To check that GDAL reads the exported CRS (needs rasterio):
 
 ```sh
@@ -421,8 +451,8 @@ node test/write-tifs.mjs /tmp/tifs && python3 test/check-geotiff.py /tmp/tifs
 
 - A family module format so new projection families are one file each.
 - Projections with no physical construction (Mollweide, Robinson and so on),
-  shown through their distortion (the globals page shows them unrolled, not
-  yet their distortion).
+  shown through their distortion: started with the Tissot page (the
+  globals page shows them unrolled).
 
 Contributions are welcome. Please note that this project is released with a
 [Contributor Code of Conduct](CODE_OF_CONDUCT.md).
