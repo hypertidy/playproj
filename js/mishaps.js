@@ -192,3 +192,40 @@ export function areas(d3, f, rot) {
   }
   return { sphere: d3.geoArea(f) / (4 * Math.PI), planar: Math.abs(planar) / (360 * 180) };
 }
+
+// d3-geo's adaptive resampling (resample.js), recording what it does: each
+// projected great-arc midpoint, the chord it was measured from, and whether
+// it was kept. delta is the tolerance in pixels.
+export function resampleArc(project, a, b, delta, maxDepth = 16) {
+  const delta2 = delta * delta, cosMin = Math.cos(30 * D2R);
+  const cart = ([lon, lat]) => {
+    const c = Math.cos(lat * D2R);
+    return [c * Math.cos(lon * D2R), c * Math.sin(lon * D2R), Math.sin(lat * D2R)];
+  };
+  const tests = [], points = [];
+  const rec = (p0, c0, p1, c1, depth) => {
+    const dx = p1[0] - p0[0], dy = p1[1] - p0[1], d2 = dx * dx + dy * dy;
+    if (!(d2 > 4 * delta2 && depth--)) return;
+    let a2 = c0[0] + c1[0], b2 = c0[1] + c1[1], cc = c0[2] + c1[2];
+    const m = Math.hypot(a2, b2, cc);
+    a2 /= m; b2 /= m; cc /= m;
+    const ll = [Math.atan2(b2, a2) / D2R, Math.asin(cc) / D2R];
+    const p2 = project(ll);
+    const dx2 = p2[0] - p0[0], dy2 = p2[1] - p0[1], dz = dy * dx2 - dx * dy2;
+    const along = (dx * dx2 + dy * dy2) / d2;
+    const foot = [p0[0] + dx * along, p0[1] + dy * along];
+    const split = dz * dz / d2 > delta2 || Math.abs(along - 0.5) > 0.3 || c0[0] * c1[0] + c0[1] * c1[1] + c0[2] * c1[2] < cosMin;
+    tests.push({ p: p2, foot, split, depth: maxDepth - depth - 1 });
+    if (split) {
+      const c2 = [a2, b2, cc];
+      rec(p0, c0, p2, c2, depth);
+      points.push(p2);
+      rec(p2, c2, p1, c1, depth);
+    }
+  };
+  const pa = project(a), pb = project(b);
+  points.push(pa);
+  rec(pa, cart(a), pb, cart(b), maxDepth);
+  points.push(pb);
+  return { tests, points };
+}

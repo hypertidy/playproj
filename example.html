@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: for example</title>
+<meta name="description" content="Adaptive resampling in map projection, told in steps after Mike Bostock's 2013 talk For Example.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/dist/d3-geo.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/example.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <canvas id="view" class="view" aria-label="The current step"></canvas>
+    <a id="open-full" class="open-full" href="./example.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./spilhaus.html">Spilhaus</a><a href="./catastrophes.html">Catastrophes</a><a href="./cells.html">s2 cells</a><a href="./example.html" aria-current="page">For example</a></nav>
+    </header>
+
+    <section class="embed-keep">
+      <p id="step-title" class="step-title"></p>
+      <p id="caption" class="describe"></p>
+      <label class="row" for="param" id="param-row"><span id="param-label"></span><output id="param-out"></output></label>
+      <input id="param" type="range" min="0" max="1" step="0.001" aria-label="Step parameter">
+      <div class="buttons">
+        <button id="prev" type="button">Back</button>
+        <button id="next" type="button">Next</button>
+        <span id="count" class="hint"></span>
+      </div>
+    </section>
+
+    <section>
+      <ol id="steps" class="steps"></ol>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>About</summary>
+        <p>A shortened retelling of the first part of Mike Bostock's 2013 Eyeo talk
+          <a href="https://bost.ocks.org/mike/example/">For Example</a>, whose live examples no longer run
+          (the text is archived at <a href="https://github.com/mdsumner/flawedexample">mdsumner/flawedexample</a>).
+          The talk takes one of his own examples, a demonstration of adaptive resampling in
+          <a href="https://github.com/d3/d3-geo">d3-geo</a>, and asks what it fails to explain. The steps here
+          are redrawn with d3-geo; the words are a summary, not a transcript.</p>
+        <p>The <a href="./catastrophes.html">Catastrophes</a> tab carries on from the last step.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
