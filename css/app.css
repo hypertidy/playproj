@@ -219,3 +219,13 @@ canvas.inset { display: block; width: 100%; margin-top: 8px; border-radius: 6px;
 .readout.levels td { white-space: nowrap; padding: 2px 4px; }
 #ghost:empty { display: none; }
 #ghost { word-break: break-word; }
+/* rasterize.html: the two answers side by side */
+canvas.cells { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+#sources { grid-template-columns: 1fr 1fr 1fr; }
+#sources button { font-size: 12px; padding: 4px 6px; }
+#bytes td:first-child, #counts td:first-child { white-space: normal; }
+#counts td { text-align: right; white-space: nowrap; }
+#counts td:first-child { text-align: left; }
+#counts tr.head td { color: var(--muted); font-size: 12px; }
+#tile-row[hidden] { display: none; }
+body.embed #shapes, body.embed #detail, body.embed label[for="detail"] { display: none; }

@@ -311,6 +311,59 @@ zarr-python (`test/fixtures/structure`, made by
 `lev`, then `lvl`, `t` (unfold), `ex` (stack), `pick` (x,y in the CRS),
 `tiles`, `pix`, `coast`, `grat`, `cam`.
 
+## Rasterize
+
+`rasterize.html` puts one polygon on one grid two ways, side by side. On the
+left, **centre in**: a cell is in when its centre is inside, found by walking
+each row along the line through the cell centres and filling between pairs of
+edge crossings. That is GDAL's rasterize (and rasterio's) and the R package
+[fasterize](https://github.com/ecohealthalliance/fasterize). On the right,
+**exact coverage**: the fraction of each cell inside the polygon, as
+[exactextract](https://isciences.github.io/exactextract/) computes it. Point at
+a cell for its scanline and crossings, or for its piece of the polygon and
+its fraction. "Shift the grid" moves the grid by part of a cell, and "Drift"
+keeps it moving: the centre-in count jumps, the coverage sum does not. The
+left panel can also show GDAL's ALL_TOUCHED (every cell with any coverage) or
+a warp: the polygon rasterized on a global longitude-latitude grid and then
+resampled, nearest neighbour, onto this one.
+
+The grid is built round the shape in a CRS picked here (longitude and
+latitude, a local Lambert azimuthal equal-area, Web Mercator, polar
+stereographic, the UTM zone, or a typed PROJ string), with a cell count and a
+tile size, or it is a window on a real raster: a GeoTIFF or COG read by
+`js/structure.js` (GEBCO 2026 is the example) or a typed spec
+(`CRS; xmin,xmax,ymin,ymax; cols,rows; tile`). For a raster the level is the
+finest at which the shape spans at most 300 cells, and the tiles are the
+file's own; for a GeoTIFF the panel sums the byte ranges of the tiles each
+answer touches, from the TIFF's tile offsets. Edges are straight in longitude
+and latitude, so they are densified to a quarter of a degree before they are
+projected. Areas are true areas on the WGS84 ellipsoid, each cell measured
+through an equal-area projection centred on the shape, so the error of each
+answer shows; "nominal" is the cell count times the cell size squared.
+
+The storage table compares ways to keep the answer: a dense mask, the touched
+tiles, runs along rows (row, first, last), cell numbers, dense float coverage,
+exactextract's float matrix over the polygon's bounding box, cell number and
+fraction pairs, and runs of whole cells plus a list of edge fractions.
+
+Shapes are Natural Earth 110m country parts or 50m land polygons (from the
+coastlines via `js/landmesh.js`); click the globe to pick another. A ring
+that runs all the way round in longitude (Antarctica) is closed through the
+pole, and the out-and-back run that makes along the seam is folded away once
+projected. `js/rasterize.js` holds both algorithms (coverage as a boundary
+integral: each edge piece adds its part to the cell it crosses and takes its
+height from every cell to its right, a running sum along the row);
+`test/check-rasterize.mjs` checks them cell for cell against GDAL's
+rasterize (centre in and ALL_TOUCHED, through rasterio) and against
+exactextract's coverage fractions, on a star with a hole and on Tasmania,
+Iceland and Antarctica in two CRSs each (`test/fixtures/rasterize.json`,
+made by `test/make-rasterize-fixture.py`, which also checks the densify and
+projection against pyproj). Hash keys: `at` (`tas`, `ice`, `mad`, `gb`,
+`ant`, `star`, or lon,lat of a picked shape), `detail` (`110m`, `50m`),
+`crs` (`ll`, `laea`, `merc`, `polar`, `utm`, `file`, `custom` with `def`),
+`n` (cells across), `sx`, `sy` (shift, in cells), `tile`, `left`
+(`centre`, `touched`, `warp`), `src` and `lvl` (raster and level).
+
 ## L3 bins
 
 `bins.html` shows the level-3 bin grid of SeaWiFS, MODIS and their
@@ -439,6 +492,8 @@ js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
 grids.html, js/grids-page.js  model grids page
 structure.html, js/structure-page.js  tiles and overviews page
 js/structure.js             grid, tile and file structure of COG, Zarr, WMTS, ArcGIS, XYZ and specs
+rasterize.html, js/rasterize-page.js  rasterize page
+js/rasterize.js             centre-in scanline fill, exact coverage fractions, runs, tiles and bytes
 js/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 example.html, js/example.js For example storyboard
 homage.html, js/homage.js   homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977

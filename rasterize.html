@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: rasterize</title>
+<meta name="description" content="A polygon on a grid two ways: cells whose centre is inside (GDAL rasterize, fasterize) and the exact fraction of each cell covered (exactextract), with the tiles and bytes each one touches.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/dist/d3-geo.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/rasterize-page.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split">
+    <div class="half">
+      <canvas id="left" class="cells" aria-label="The grid with the cells whose centre is inside the polygon"></canvas>
+      <span id="left-label" class="half-label">Centre in: GDAL rasterize, fasterize</span>
+    </div>
+    <div class="half">
+      <canvas id="right" class="cells" aria-label="The grid with the fraction of each cell the polygon covers"></canvas>
+      <span class="half-label">Exact coverage: exactextract</span>
+    </div>
+    <a id="open-full" class="open-full" href="./rasterize.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Tissot</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html" aria-current="page">Rasterize</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <div id="shapes" class="presets three" role="group" aria-label="Shape"></div>
+      <div id="modes" class="presets three" role="group" aria-label="Left panel">
+        <button type="button" data-left="centre">Centre in</button>
+        <button type="button" data-left="touched">All touched</button>
+        <button type="button" data-left="warp">Warped</button>
+      </div>
+      <label class="row" for="n"><span>Cells across</span><output id="n-out"></output></label>
+      <input id="n" type="range" min="4" max="240" step="1" aria-label="Number of cells along the longer side of the shape">
+      <label class="row" for="sx"><span>Shift the grid</span><output id="shift-out"></output></label>
+      <input id="sx" type="range" min="-0.5" max="0.5" step="0.01" aria-label="Shift the grid across, in cells">
+      <input id="sy" type="range" min="-0.5" max="0.5" step="0.01" aria-label="Shift the grid down, in cells">
+      <div class="buttons">
+        <button id="drift" type="button">Drift</button>
+        <label class="inline" for="detail">Shapes
+          <select id="detail">
+            <option value="110m">Countries, 110m</option>
+            <option value="50m">Land, 50m coastlines</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="crs"><span>Grid CRS</span></label>
+      <select id="crs" class="wide">
+        <option value="ll">Longitude and latitude (EPSG:4326)</option>
+        <option value="laea">Equal area, centred on the shape (laea)</option>
+        <option value="merc">Web Mercator (EPSG:3857)</option>
+        <option value="polar">Polar stereographic (EPSG:3031 or 3413)</option>
+        <option value="utm">UTM zone of the shape's centre</option>
+        <option value="file">From a raster file or grid spec</option>
+      </select>
+      <div class="projline" style="margin-top:6px">
+        <input id="def" class="token" type="text" spellcheck="false" autocomplete="off" aria-label="PROJ string of the grid CRS">
+        <button id="copy-def" type="button" class="small">Copy</button>
+      </div>
+      <div id="file-ctl" hidden>
+        <div id="sources" class="presets three" role="group" aria-label="Rasters" style="margin-top:8px"></div>
+        <div class="projline">
+          <input id="src" class="token" type="text" spellcheck="false" autocomplete="off" placeholder="GeoTIFF or COG URL, or a spec: CRS; xmin,xmax,ymin,ymax; cols,rows; tile" aria-label="Raster URL or grid spec">
+          <button id="load" type="button" class="small">Read</button>
+        </div>
+        <label class="row" for="lvl"><span>Level</span><output id="lvl-out"></output></label>
+        <select id="lvl" class="wide" aria-label="Level of the raster"></select>
+      </div>
+      <div id="tile-row" class="buttons">
+        <label class="inline" for="tile">Tile
+          <select id="tile">
+            <option value="4">4 cells</option>
+            <option value="8">8 cells</option>
+            <option value="16">16 cells</option>
+            <option value="32">32 cells</option>
+            <option value="64">64 cells</option>
+          </select>
+        </label>
+      </div>
+      <p id="status" class="status"></p>
+      <p id="grid-info" class="hint"></p>
+    </section>
+
+    <section>
+      <table id="counts" class="readout"></table>
+      <p id="counts-note" class="hint"></p>
+      <p id="pick-info" class="badge"></p>
+    </section>
+
+    <section>
+      <label class="row"><span>Storage</span></label>
+      <table id="bytes" class="readout"></table>
+      <p id="bytes-note" class="hint"></p>
+    </section>
+
+    <section>
+      <canvas id="inset" class="inset" width="560" height="360" aria-label="The shape and the grid on the globe"></canvas>
+      <p class="hint">The shape and the grid's edge on the globe. Click a country or an island to rasterize it.</p>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A polygon becomes a raster by deciding, cell by cell, how much of it is inside. There are two
+          common answers. <b>Centre in</b> asks only about the cell's centre: walk each row along the line
+          through its cell centres, find where the polygon's edges cross it, sort the crossings and fill
+          between pairs. That is GDAL's rasterize (gdal_rasterize, rasterio's rasterize) and the R package
+          fasterize. Each cell is in or out, so the count jumps as the grid shifts by less than a cell,
+          and a thin piece can fall between centres and vanish.</p>
+        <p><b>Exact coverage</b> asks what fraction of the cell's area is inside, as exactextract does.
+          Only cells the boundary passes through need any geometry; every other cell is wholly in or
+          out. The fractions add up to the polygon's area in cells, however the grid is shifted. Here
+          they are worked out a row at a time from the boundary: each edge piece adds its part to the
+          cell it crosses and takes its height from every cell to its right, which is a running sum.</p>
+        <p><b>All touched</b> (GDAL's ALL_TOUCHED) burns every cell the boundary meets, the cells with any
+          coverage. <b>Warped</b> rasterizes in longitude and latitude first and then resamples onto this
+          grid, nearest neighbour, as a warp would: compare it with rasterizing the polygon in the grid's
+          own CRS. A polygon's edges are straight in its own CRS, so they are densified to a quarter of a
+          degree before they are projected.</p>
+        <p><b>Storage.</b> A raster is stored in tiles (or chunks), and a reader fetches whole tiles. The
+          tiles a polygon touches are what it costs to read or write it there. A dense mask spends a byte
+          on every cell; runs along rows (row, first, last) or a list of cell numbers spend bytes only on
+          the polygon; exactextract keeps a float for every cell of the polygon's bounding box. Exact
+          coverage is mostly ones, so runs of whole cells plus a list of edge fractions holds it in about
+          what the centre-in runs take. With a raster file, the tiles are the file's own at the level the
+          polygon is read from, and their byte ranges come from the TIFF's tile offsets, as on
+          <a href="./structure.html">Tiles and overviews</a>.</p>
+        <p>The page's results are checked against GDAL's rasterize (cell for cell, centre in and
+          ALL_TOUCHED) and exactextract's coverage fractions (to 1e-7) on stars with holes, countries and
+          Antarctica in several CRSs, in <code>test/check-rasterize.mjs</code>.</p>
+        <ul class="credits">
+          <li><a href="https://isciences.github.io/exactextract/">exactextract</a> by Dan Baston (ISciences), exact coverage fractions and zonal statistics.</li>
+          <li><a href="https://github.com/ecohealthalliance/fasterize">fasterize</a> by Noam Ross (EcoHealth Alliance), a scanline polygon fill for R.</li>
+          <li><a href="https://gdal.org/en/stable/programs/gdal_rasterize.html">GDAL</a>'s rasterize, by Frank Warmerdam, Even Rouault and the GDAL contributors.</li>
+          <li>Shapes from <a href="https://www.naturalearthdata.com/">Natural Earth</a>; grids projected with <a href="https://github.com/proj4js/proj4js">proj4js</a>; the globe drawn with <a href="https://github.com/d3/d3-geo">d3-geo</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
