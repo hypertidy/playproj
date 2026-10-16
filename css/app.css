@@ -160,6 +160,9 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .presets.three { grid-template-columns: repeat(3, 1fr); }
 .pages { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 13px; }
+/* related pages sit together; a wider gap between families */
+.pages { column-gap: 26px; }
+.pages .group { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; }
 .pages a { color: var(--muted); text-decoration: none; padding-bottom: 2px; border-bottom: 2px solid transparent; }
 .pages a:hover { color: var(--text); }
 .pages a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
