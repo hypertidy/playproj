@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: MGRS and Sentinel-2</title>
+<meta name="description" content="UTM zones as a transverse Mercator cylinder turned round the globe, the MGRS grid, and the Sentinel-2 tiles cut from it.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/sentinel.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./sentinel.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./sentinel.html" aria-current="page">MGRS and Sentinel-2</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="zone"><span>UTM zone</span><output id="zone-out"></output></label>
+      <input id="zone" type="range" min="1" max="60" step="1" aria-label="UTM zone">
+      <label class="row" for="t"><span>Unroll</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Globe to cylinder to flat map">
+      <div class="buttons">
+        <button id="play" type="button">Unroll</button>
+        <button id="turn" type="button">Turn the cylinder</button>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="lookup"><span>Point</span><output id="pt-out"></output></label>
+      <div class="projline">
+        <input id="lookup" class="token" type="text" spellcheck="false" autocomplete="off" placeholder="click, or paste lon, lat / MGRS / tile" aria-label="Point, MGRS reference or Sentinel-2 tile">
+        <button id="copy-geojson" type="button" class="small" disabled>GeoJSON</button>
+      </div>
+      <p id="pt-info" class="badge"></p>
+      <div id="tile-chips" class="buttons"></div>
+      <p id="tile-info" class="hint"></p>
+    </section>
+
+    <section>
+      <div class="toggles">
+        <label><input id="s2" type="checkbox"> Sentinel-2 tiles</label>
+        <label><input id="nb" type="checkbox"> Next zones' tiles</label>
+        <label><input id="sq" type="checkbox"> 100 km squares</label>
+        <label><input id="coast" type="checkbox"> Coastline</label>
+        <label><input id="cyl" type="checkbox"> Cylinder</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>UTM is one transverse Mercator cylinder: lay it on its side so it wraps round the globe along a
+          meridian, and use only the strip 3 degrees either side of that line, where the map is nearly true.
+          Turn the cylinder 6 degrees and do it again: 60 times round the globe gives the 60 zones.
+          "Unroll" moves the zone's strip onto its cylinder and opens it flat. The cylinder is a little
+          smaller than the globe (scale 0.9996), so it cuts the surface along two lines about 180 km either
+          side of the central meridian, where the map is exactly true.</p>
+        <p>MGRS cuts each zone into 8-degree latitude bands, C to X without I and O, to name a grid zone
+          such as 32V, then into 100 km squares named by two letters. A reference such as
+          32V KN 12345 67890 adds easting and northing within the square, to the metre.</p>
+        <p>Two places break the pattern: 32V is widened over south-west Norway, and over Svalbard zones
+          31X, 33X, 35X and 37X are widened to cover 32X, 34X and 36X, which do not exist.</p>
+        <p>A Sentinel-2 tile is one of those 100 km squares, 109.8 km on a side, so tiles overlap by
+          9.8 km on the east and south: drawn translucent, overlaps glow brighter. Each zone's tiles keep its
+          own UTM projection, and the squares at a zone's edge run on past it, so near the edge the same
+          ground is in tiles from two zones, in two different coordinate systems.</p>
+        <p>Click the globe or a zone for the point's UTM coordinates, its MGRS reference and the tiles that
+          contain it, or paste a longitude and latitude, an MGRS reference or a tile name.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
