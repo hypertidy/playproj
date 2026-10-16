@@ -65,8 +65,17 @@ pole turns it into a plane. Each property is one family across all three:
 
 "Sweep cone" runs the standard parallel from pole to pole, morphing plane
 to cone to cylinder and back. "Unroll" opens the cone with its apex fixed,
-the way a paper cone opens. Hash keys: `prop` (`eqd`, `conf`, `area`),
-`lat1`, `lon`, `t` (unroll, 0 to 1), `links`, plus the shared ones below.
+the way a paper cone opens.
+
+"Axis tilt" turns the globe under the surface, so the cone or cylinder sits
+on an axis away from the earth's (an oblique aspect; at 90 degrees, the
+transverse aspect). The tilted conformal cylinder is the Oblique Mercator
+(`+proj=omerc`), and at 90 degrees the Transverse Mercator; the others are
+written with `+proj=ob_tran`, which proj4js lacks, so their maps are drawn
+from the construction and checked against PROJ in the tests.
+
+Hash keys: `prop` (`eqd`, `conf`, `area`), `lat1`, `lon`, `tilt` (-90 to
+90), `t` (unroll, 0 to 1), `links`, plus the shared ones below.
 
 ## Spilhaus
 
@@ -232,6 +241,7 @@ test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-proj.mjs         ray construction vs proj4js
 test/check-secant.mjs       secant planes vs PROJ (fixture made with PROJ 9.8)
+test/check-oblique.mjs      tilted cones and cylinders (omerc, ob_tran) vs PROJ 9.8
 legacy/pproj/               the original R package and experiments
 ```
 
