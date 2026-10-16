@@ -95,6 +95,45 @@ GDAL reads. Hash keys: `t` (unfold, 0 to 1), `lat`, `lon`, `azi` (the
 centre and azimuth), `net` (0 hides the square grid), `links`, plus the
 shared ones below.
 
+## Globals and interrupteds
+
+`globals.html` takes the whole-world formulas: Mollweide, Goode homolosine,
+sinusoidal, Eckert IV, Equal Earth, Robinson, Natural Earth, Hammer and
+Winkel tripel. Nothing physical makes them, so the surface is the map: a grid
+over each lobe in longitude and latitude, every node with its place on the
+globe and on the map. "Unfold" rolls the map out from the globe onto a
+cylinder that flattens as it grows, so the seam opens at the back.
+
+"Interruption" cuts the map into lobes: Goode's land lobes (PROJ's `igh` for
+the homolosine, `imoll` for Mollweide), his ocean lobes (`igh_o`, `imoll_o`),
+or any number of gores. Any base with a straight, evenly divided equator can
+be interrupted (Hammer and Winkel tripel cannot: their lobes would not meet).
+"Interrupt" slides every lobe's central meridian from the map's own to the
+lobe's, so at 0 it is one unbroken map with the cuts drawn on it and at 1 the
+interrupted map. Lobes are offset along x so they meet on the equator; for
+Mollweide lobes this follows PROJ's anchoring on the first northern lobe, so
+`imoll` and `imoll_o` match PROJ exactly.
+
+The octahedral butterfly is Cahill's: the globe projected from its centre
+onto the eight faces of a circumscribed octahedron (`+proj=gnom` from each
+face centre), unfolded around the North Pole with each southern face hanging
+from its northern twin. Its Unfold has two halves: the globe falls onto the
+octahedron along rays from the centre, then the octahedron opens like a paper
+model, northern faces turning about the pole and southern faces on their
+equator hinges. The edge meridian defaults to 20 W, as in Cahill-Keyes.
+
+`js/families/globals.js` follows PROJ's code for every formula (including
+Robinson's single-precision table) and `test/check-globals.mjs` compares it
+with PROJ 9.8 itself (`test/fixtures/globals-proj.json`, made by
+`test/make-globals-fixture.py`). The basemap image and GeoTIFF export are the
+surface laid flat and drawn by the GPU, so no inverse is needed; exports are
+offered when PROJ has a name for the map. Winkel tripel's string spells out
+`+lat_1=50.4597762521898`: PROJ's own default, but a PROJ string read as a
+CRS (as GDAL reads it) otherwise gets `lat_1=0`. Hash keys: `base`, `lobes`
+(`none`, `land`, `ocean`, `gores`), `gores`, `s` (interrupt, 0 to 1), `lon0`
+(central meridian, or the butterfly's edge meridian), `t` (unfold), `cuts`,
+plus the shared ones below.
+
 ## Catastrophes
 
 `catastrophes.html` lets the usual map catastrophes happen. The globe and the
@@ -327,6 +366,8 @@ cones.html, js/cones.js     cones and cylinders page
 js/families/azimuthal.js    compass (laea) and string (aeqd) constructions
 js/families/spilhaus.js     Spilhaus / Adams World in a Square II, from PROJ
 spilhaus.html, js/spilhaus.js  Spilhaus page
+js/families/globals.js      whole-world formulas, their lobes, and the octahedral butterfly, from PROJ
+globals.html, js/globals.js globals and interrupteds page
 catastrophes.html, js/catastrophes.js  map catastrophes page
 js/mishaps.js               catastrophe steps, vertex-by-vertex and spherical drawing
 cells.html, js/cells.js     s2 cells page
@@ -363,7 +404,8 @@ properties, cylinder and plane limits, both hemispheres) and round-trips its
 inverse. `test/check-azimuthal.mjs` checks the compass and string
 constructions against proj4js. proj4js has no Spilhaus, so
 `test/check-spilhaus.mjs` compares with points projected by PROJ itself, in
-`test/fixtures/spilhaus-proj.json`. `test/check-mishaps.mjs` checks the catastrophes page's map
+`test/fixtures/spilhaus-proj.json`; `test/check-globals.mjs` does the same for the
+globals, their interruptions and the butterfly's faces. `test/check-mishaps.mjs` checks the catastrophes page's map
 frames against d3-geo and the areas behind its captions. `test/check-s2.mjs` checks
 cell tokens and corners against `test/fixtures/s2-cells.json`, made with
 s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js.
@@ -379,7 +421,8 @@ node test/write-tifs.mjs /tmp/tifs && python3 test/check-geotiff.py /tmp/tifs
 
 - A family module format so new projection families are one file each.
 - Projections with no physical construction (Mollweide, Robinson and so on),
-  shown through their distortion.
+  shown through their distortion (the globals page shows them unrolled, not
+  yet their distortion).
 
 Contributions are welcome. Please note that this project is released with a
 [Contributor Code of Conduct](CODE_OF_CONDUCT.md).
