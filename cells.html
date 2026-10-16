@@ -21,6 +21,7 @@
   <main id="stage">
     <div id="three"></div>
     <a id="open-full" class="open-full" href="./cells.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
   </main>
 
   <aside id="panel">
@@ -62,6 +63,23 @@
       <div class="buttons">
         <button id="reset-view" type="button">Reset view</button>
       </div>
+    </section>
+
+    <section>
+      <label class="row" for="basemap"><span>Basemap</span></label>
+      <select id="basemap" class="wide"></select>
+      <p id="bm-status" class="status" role="status"></p>
+      <div class="buttons">
+        <label class="inline" for="tif-size">Size
+          <select id="tif-size">
+            <option value="512">512 px</option>
+            <option value="1024" selected>1024 px</option>
+            <option value="2048">2048 px</option>
+          </select>
+        </label>
+        <button id="download-tif" type="button" disabled>Download GeoTIFF</button>
+      </div>
+      <p id="tif-hint" class="hint">The picked cell with its basemap, in the gnomonic projection of its cube face (the CRS s2 is built on), readable by GDAL.</p>
     </section>
 
     <section class="about">

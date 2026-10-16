@@ -10,6 +10,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as s2 from "./s2.js";
 import { loadCoastline } from "./geo.js";
+import { warpCanvas } from "./basemap.js";
+import { basemapControl, exportControl } from "./basemap-ui.js";
+import { gnomonic, ringOf } from "./cellexport.js";
 
 const DEG = "\u00b0";
 const TEX = 1024;
@@ -30,7 +33,7 @@ const toScene = (p) => new THREE.Vector3(p[1], p[2], p[0]);
 
 // ---------------------------------------------------------------- state
 
-const defaults = { lvl: 3, t: 0, curve: 1, grid: 1, coast: 1, uvgrid: 0, cell: "", cam: null };
+const defaults = { lvl: 3, t: 0, curve: 1, grid: 1, coast: 1, uvgrid: 0, cell: "", bm: "none", cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -40,7 +43,8 @@ function readHash() {
   for (const k of Object.keys(defaults)) {
     if (!h.has(k)) continue;
     const raw = h.get(k);
-    if (k === "cell") state.cell = s2.fromToken(raw) ? raw.toLowerCase() : "";
+    if (k === "bm") state.bm = raw;
+    else if (k === "cell") state.cell = s2.fromToken(raw) ? raw.toLowerCase() : "";
     else if (k === "cam") {
       const c = raw.split(",").map(Number);
       if (c.length === 6 && c.every(isFinite)) state.cam = c;
@@ -100,12 +104,25 @@ for (let f = 0; f < 6; f++) {
   textures.push(tx);
 }
 
+// the basemap on each face, warped into the face's (s, t)
+let bmFaces = null;
+const BM_TEX = 512;
+function buildBasemapFaces(world) {
+  bmFaces = !world ? null : [0, 1, 2, 3, 4, 5].map((f) =>
+    warpCanvas(world, BM_TEX, BM_TEX, (s, t) => s2.toLonLat(s2.faceUVtoXYZ(f, s2.stToUV(s), s2.stToUV(t)))));
+}
+
 const hue = (x) => `hsl(${Math.round(300 * x)}, 85%, 62%)`;
 
 function drawFace(face, picked) {
   const ctx = canvases[face].getContext("2d"), L = state.lvl, n = 1 << L;
   ctx.fillStyle = COLORS.face[face];
+  if (bmFaces) {
+    ctx.drawImage(bmFaces[face], 0, 0, TEX, TEX);
+    ctx.globalAlpha = 0.3;
+  }
   ctx.fillRect(0, 0, TEX, TEX);
+  ctx.globalAlpha = 1;
 
   ctx.fillStyle = "rgba(255,255,255,0.08)";
   ctx.font = `bold ${TEX * 0.5}px system-ui, sans-serif`;
@@ -286,8 +303,42 @@ const ui = {
   lvl: $("lvl"), lvlOut: $("lvl-out"), t: $("t"), tOut: $("t-out"),
   token: $("token"), cellLevel: $("cell-level"), info: $("cell-info"),
   curve: $("curve"), grid: $("grid"), coast: $("coast"), uvgrid: $("uvgrid"),
-  geojson: $("copy-geojson"), up: $("cell-up"), down: $("cell-down")
+  geojson: $("copy-geojson"), up: $("cell-up"), down: $("cell-down"),
+  bm: $("basemap"), tif: $("download-tif")
 };
+
+// The picked cell as a GeoTIFF: in the gnomonic projection about its face's
+// centre, where its edges (great circles) are straight. S2's own sphere has
+// radius 6371010 m.
+const S2_R = 6371010;
+const basemap = basemapControl({
+  select: ui.bm, status: $("bm-status"), credit: $("credit"),
+  onWorld: (world) => { buildBasemapFaces(world); sync(); }
+});
+const tifOut = exportControl({
+  button: ui.tif, size: $("tif-size"), status: $("bm-status"), bm: () => basemap.id,
+  job: () => {
+    const c = pickedCell();
+    if (!c) return null;
+    const { face, s0, t0, d } = c;
+    // the face's centre: a whole number of degrees, 180 rather than -180
+    const [lo, la] = s2.toLonLat(s2.faceAxis(face)), lat0 = Math.round(la);
+    const lon0 = Math.abs(lat0) === 90 ? 0 : Math.round(lo) === -180 ? 180 : Math.round(lo);
+    const g = gnomonic(lat0, lon0);
+    const at = (a, b) => s2.toLonLat(s2.faceUVtoXYZ(face, s2.stToUV(s0 + a * d), s2.stToUV(t0 + b * d)));
+    return {
+      name: `playproj-s2-${s2.toToken(c.id)}`,
+      crs: { proj: `+proj=gnom +lat_0=${lat0} +lon_0=${lon0} +R=${S2_R}`, R: S2_R }, scale: S2_R,
+      forward: g.forward, inverse: g.inverse, ring: ringOf(at),
+      inside: (lon, lat) => {
+        const p = s2.toXYZ(lon, lat);
+        if (s2.faceOf(p) !== face) return false;
+        const [u, v] = s2.faceUV(face, p), s = s2.uvToST(u), t = s2.uvToST(v);
+        return s >= s0 && s <= s0 + d && t >= t0 && t <= t0 + d;
+      }
+    };
+  }
+});
 
 const EARTH_AREA = 510065621.7;   // km2 on the authalic sphere
 const fmtArea = (a) => a >= 100 ? Math.round(a).toLocaleString("en") + " km2" : a >= 0.01 ? a.toPrecision(3) + " km2" : (a * 1e6).toPrecision(3) + " m2";
@@ -320,6 +371,7 @@ function updatePanel(picked) {
   if (document.activeElement !== ui.token) ui.token.value = state.cell;
   ui.token.classList.remove("bad");
   ui.geojson.disabled = ui.up.disabled = ui.down.disabled = !picked;
+  if (!tifOut.busy) ui.tif.disabled = !picked || !basemap.world;
   if (picked) {
     ui.up.disabled = picked.level === 0; ui.down.disabled = picked.level === s2.MAX_LEVEL;
     const [lon, lat] = s2.toLonLat(s2.faceUVtoXYZ(picked.face, s2.stToUV(picked.s0 + picked.d / 2), s2.stToUV(picked.t0 + picked.d / 2)));
@@ -435,7 +487,9 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 
-window.addEventListener("hashchange", () => { readHash(); if (state.cam) setCamera(state.cam); sync(); });
+ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; writeHash(); basemap.set(state.bm); });
+
+window.addEventListener("hashchange", () => { readHash(); if (state.cam) setCamera(state.cam); basemap.set(state.bm); sync(); });
 
 if (embed) {
   document.body.classList.add("embed");
@@ -446,5 +500,6 @@ readHash();
 if (state.cam) setCamera(state.cam);
 resize();
 sync();
+basemap.set(state.bm);
 loadCoastline("110m").then((lines) => { buildCoast(lines); sync(); document.body.classList.add("ready"); });
 requestAnimationFrame(tick);

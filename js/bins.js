@@ -10,6 +10,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as l3 from "./l3bin.js";
 import { loadCoastline } from "./geo.js";
+import { basemapControl, exportControl } from "./basemap-ui.js";
 
 const D2R = Math.PI / 180;
 const DEG = "\u00b0";
@@ -28,7 +29,7 @@ const COLORS = {
 
 // ---------------------------------------------------------------- state
 
-const defaults = { rows: 3, t: 0, grid: "2160", bin: "", lines: 1, coast: 1, cam: null };
+const defaults = { rows: 3, t: 0, grid: "2160", bin: "", lines: 1, coast: 1, bm: "none", cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -40,6 +41,7 @@ function readHash() {
     const raw = h.get(k);
     if (k === "grid") state.grid = raw === "drawn" || /^\d+$/.test(raw) ? raw : "2160";
     else if (k === "bin") state.bin = raw;
+    else if (k === "bm") state.bm = raw;
     else if (k === "cam") {
       const c = raw.split(",").map(Number);
       if (c.length === 6 && c.every(isFinite)) state.cam = c;
@@ -88,10 +90,15 @@ const px = (lon, lat) => [((lon + 180) / 360) * TEX_W, ((90 - lat) / 180) * TEX_
 
 function drawTexture(pick) {
   const ctx = tex.getContext("2d"), g = drawnGrid(), n = g.nrows, rh = TEX_H / n;
+  // the basemap is already plate carree, like the texture
+  const world = basemap && basemap.world;
+  if (world) ctx.drawImage(world.canvas, 0, 0, TEX_W, TEX_H);
+  ctx.globalAlpha = world ? 0.3 : 1;
   for (let r = 0; r < n; r++) {
     ctx.fillStyle = r % 2 ? COLORS.rowB : COLORS.rowA;
     ctx.fillRect(0, TEX_H - (r + 1) * rh, TEX_W, rh + 0.5);
   }
+  ctx.globalAlpha = 1;
   if (state.coast && coastPath) {
     ctx.strokeStyle = COLORS.coast; ctx.lineWidth = 1.4; ctx.globalAlpha = 0.85;
     ctx.stroke(coastPath); ctx.globalAlpha = 1;
@@ -223,8 +230,27 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   rows: $("rows"), rowsOut: $("rows-out"), t: $("t"), tOut: $("t-out"),
   grid: $("grid-rows"), bin: $("bin"), binRow: $("bin-row"), info: $("bin-info"), gridInfo: $("grid-info"),
-  lines: $("gridlines"), coast: $("coast"), geojson: $("copy-geojson")
+  lines: $("gridlines"), coast: $("coast"), geojson: $("copy-geojson"),
+  bm: $("basemap"), tif: $("download-tif")
 };
+
+// The picked bin as a GeoTIFF: a box in longitude and latitude.
+const basemap = basemapControl({
+  select: ui.bm, status: $("bm-status"), credit: $("credit"),
+  onWorld: () => sync()
+});
+const ident = (a, b) => [a, b];
+const tifOut = exportControl({
+  button: ui.tif, size: $("tif-size"), status: $("bm-status"), bm: () => basemap.id,
+  job: () => {
+    const p = picked();
+    if (!p || p.bad) return null;
+    return {
+      name: `playproj-l3bin-${p.g.nrows}-${p.bin}`, crs: { geographic: true },
+      forward: ident, inverse: ident, box: [p.west, p.south, p.east, p.north]
+    };
+  }
+});
 
 const fmtArea = (a) => (a >= 100 ? Math.round(a).toLocaleString("en") : a.toPrecision(3)) + " km2";
 const fmt = (x) => x.toFixed(4) + DEG;
@@ -244,6 +270,7 @@ function updatePanel(pick) {
   ui.gridInfo.textContent = `${lg.nrows.toLocaleString("en")} rows, ${lg.totbins.toLocaleString("en")} bins, about ` +
     `${side.toFixed(2)} km across; ${lg.numbin[lg.nrows >> 1].toLocaleString("en")} bins at the equator, ${lg.numbin[0]} at each pole.`;
   ui.geojson.disabled = !pick || pick.bad;
+  if (!tifOut.busy) ui.tif.disabled = !pick || !!pick.bad || !basemap.world;
   if (pick && !pick.bad) {
     ui.binRow.textContent = `row ${pick.row + 1} of ${lg.nrows}, column ${pick.col + 1} of ${pick.numbin}`;
     ui.info.textContent = `Bin ${pick.bin.toLocaleString("en")}: centre ${fmt(pick.centre[0])}, ${fmt(pick.centre[1])}; ` +
@@ -352,7 +379,9 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 
-window.addEventListener("hashchange", () => { readHash(); if (state.cam) setCamera(state.cam); sync(); });
+ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; writeHash(); basemap.set(state.bm); });
+
+window.addEventListener("hashchange", () => { readHash(); if (state.cam) setCamera(state.cam); basemap.set(state.bm); sync(); });
 
 if (embed) {
   document.body.classList.add("embed");
@@ -363,6 +392,7 @@ readHash();
 if (state.cam) setCamera(state.cam);
 resize();
 sync();
+basemap.set(state.bm);
 loadCoastline("110m").then((lines) => {
   coastPath = new Path2D();
   for (const l of lines)

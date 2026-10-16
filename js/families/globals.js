@@ -12,6 +12,8 @@
 // from the map's own (s = 0, one unbroken map) to the lobe's (s = 1, the
 // interrupted map), so the cuts open while the lobes straighten.
 
+import { proj4Wkt } from "../geotiff-write.js";
+
 export const R = 6370997;
 const D2R = Math.PI / 180;
 const HALFPI = Math.PI / 2;
@@ -317,6 +319,20 @@ export function faceStrings(p = {}) {
     `+proj=gnom +lat_0=${fmt(q.phiC)} +lon_0=${fmt(wrapDeg(q.lamC + p.lon0 + 180))} +R=${R}`);
 }
 
+// One piece of a map as a map of its own: the PROJ string of a lobe (its
+// base projection about the lobe's own central meridian; Goode's lobes use
+// PROJ's goode) or of a butterfly face, and flat(lam, phi), its x, y on a
+// unit sphere for relative lon/lat in degrees.
+export function pieceProjection(p, q) {
+  p = { ...defaults, ...p };
+  if (p.base === "butterfly") return { proj: faceStrings(p)[q.id], flat: (lam, phi) => gnomFace(q, lam, phi) };
+  const base = BASES[p.base], cr = q.c * D2R;
+  return {
+    proj: `+proj=${base.proj} +lon_0=${fmt(wrapDeg(p.lon0 + q.c))}${base.extra || ""} +R=${R}`,
+    flat: (lam, phi) => base.f(lam * D2R - cr, phi * D2R)
+  };
+}
+
 export function describe(p = {}) {
   p = { ...defaults, ...p };
   const base = BASES[p.base];
@@ -335,10 +351,7 @@ export function describe(p = {}) {
 // ESRI PE string's PROJ4 extension (as for Spilhaus), which GDAL reads.
 export function geoWkt(p) {
   const s = projString(p);
-  if (!s) return null;
-  return `PROJCS["playproj_${BASES[p.base].proj}",GEOGCS["GCS_Sphere",DATUM["D_Sphere",SPHEROID["Sphere",${R},0.0]],` +
-    `PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["custom_proj4"],UNIT["Meter",1.0],` +
-    `EXTENSION["PROJ4","${s} +wktext +no_defs"]]`;
+  return s ? proj4Wkt(BASES[p.base].proj, s, R) : null;
 }
 
 export { wrapDeg, wrapRad };

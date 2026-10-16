@@ -15,6 +15,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as g from "./mgrs.js";
 import { loadCoastline } from "./geo.js";
+import { warpCanvas } from "./basemap.js";
+import { basemapControl, exportControl } from "./basemap-ui.js";
 
 const DEG = "\u00b0";
 const D2R = Math.PI / 180;
@@ -31,7 +33,7 @@ const COLORS = {
 
 // ---------------------------------------------------------------- state
 
-const defaults = { mode: "utm", zone: 32, t: 0, pt: "5.3221,60.3913", tile: "", s2: 1, nb: 1, sq: 1, coast: 1, cyl: 1, cam: null };
+const defaults = { mode: "utm", zone: 32, t: 0, pt: "5.3221,60.3913", tile: "", s2: 1, nb: 1, sq: 1, coast: 1, cyl: 1, bm: "none", cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -47,6 +49,7 @@ function readHash() {
     if (!h.has(k)) continue;
     const raw = h.get(k);
     if (k === "mode") state.mode = ["utm", "upsn", "upss"].includes(raw) ? raw : "utm";
+    else if (k === "bm") state.bm = raw;
     else if (k === "pt") state.pt = raw === "" || parsePt(raw) ? raw : defaults.pt;
     else if (k === "tile") state.tile = g.tileByName(raw) ? raw.toUpperCase().replace(/^T/, "") : "";
     else if (k === "cam") {
@@ -192,6 +195,9 @@ function drawGlobe(coast) {
   const W = globeCanvas.width, H = globeCanvas.height, ctx = globeCanvas.getContext("2d");
   const px = (lon) => ((lon + 180) / 360) * W, py = (lat) => ((90 - lat) / 180) * H;
   ctx.fillStyle = "#222a36"; ctx.fillRect(0, 0, W, H);
+  // the basemap is plate carree, like the globe's texture
+  const world = basemap.world;
+  if (world) ctx.drawImage(world.canvas, 0, 0, W, H);
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   for (let z = 1; z <= 60; z++)
     for (let bi = 0; bi < 20; bi++) {
@@ -199,7 +205,9 @@ function drawGlobe(coast) {
       if (!lr) continue;
       const [la0, la1] = g.bandRange(band);
       ctx.fillStyle = (z + bi) % 2 ? "#14233a" : "#1a2d49";
+      ctx.globalAlpha = world ? 0.3 : 1;
       ctx.fillRect(px(lr[0]), py(la1), px(lr[1]) - px(lr[0]), py(la0) - py(la1));
+      ctx.globalAlpha = 1;
       ctx.strokeStyle = "#3d5377"; ctx.lineWidth = 1.5;
       ctx.strokeRect(px(lr[0]), py(la1), px(lr[1]) - px(lr[0]), py(la0) - py(la1));
       const w = px(lr[1]) - px(lr[0]);
@@ -298,12 +306,22 @@ function buildStrip(zone) {
   strip.geometry = geo;
 }
 
-let coast50 = null;
+let coast50 = null, stripBm = null, capBm = null;
 function drawStrip(zone) {
   const W = stripCanvas.width, H = stripCanvas.height, ctx = stripCanvas.getContext("2d");
   const cx = (e) => fu(e) * W, cy = (y) => (1 - fv(y)) * H;
   const cm = g.centralMeridian(zone);
   ctx.fillStyle = "#1d3253"; ctx.fillRect(0, 0, W, H);
+  // the basemap in the zone's transverse Mercator
+  const world = basemap.world;
+  if (world) {
+    if (!stripBm || stripBm.zone !== zone) {
+      const c = warpCanvas(world, 128, 1024, (u, v) => g.tmercInverse(FRAME.e0 + u * (FRAME.e1 - FRAME.e0) - 500000, FRAME.y0 + v * (FRAME.y1 - FRAME.y0), cm));
+      stripBm = { zone, c };
+    }
+    ctx.drawImage(stripBm.c, 0, 0, W, H);
+    ctx.globalAlpha = 0.3;
+  }
 
   // bands, alternately shaded, with their grid zone names
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -315,6 +333,7 @@ function drawStrip(zone) {
     ctx.fillStyle = bi % 2 ? "#1d3253" : "#243d63";
     ctx.fillRect(0, cy(y1), W, cy(y0) - cy(y1));
   }
+  ctx.globalAlpha = 1;
 
   if (state.sq) {
     ctx.strokeStyle = "rgba(200,220,245,0.45)"; ctx.lineWidth = 1.5;
@@ -634,8 +653,18 @@ function drawCap(north) {
   const cy = (n) => (1 - (n - g.UPS_FALSE + UPS_HALF) / (2 * UPS_HALF)) * W;
   const P = (lon, lat) => { const u = g.toUPS(lon, lat, north); return [cx(u.e), cy(u.n)]; };
   const west = north ? "Y" : "A", east = north ? "Z" : "B";
+  const world = basemap.world;
+  if (world) {
+    if (!capBm || capBm.north !== north) {
+      const at = (s) => g.UPS_FALSE - UPS_HALF + s * 2 * UPS_HALF;
+      capBm = { north, c: warpCanvas(world, 512, 512, (u, v) => g.fromUPS(north, at(u), at(v))) };
+    }
+    ctx.drawImage(capBm.c, 0, 0, W, W);
+    ctx.globalAlpha = 0.3;
+  }
   ctx.fillStyle = "#1d3253"; ctx.fillRect(0, 0, W / 2, W);
   ctx.fillStyle = "#243d63"; ctx.fillRect(W / 2, 0, W / 2, W);
+  ctx.globalAlpha = 1;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   const cell = cx(1e5) - cx(0);
   if (state.sq) {
@@ -829,8 +858,34 @@ const ui = {
   zone: $("zone"), zoneOut: $("zone-out"), zoneRow: $("zone-row"), modes: [...document.querySelectorAll("#modes button")], t: $("t"), tOut: $("t-out"),
   lookup: $("lookup"), ptOut: $("pt-out"), info: $("pt-info"), chips: $("tile-chips"), tileInfo: $("tile-info"),
   geojson: $("copy-geojson"),
-  s2: $("s2"), nb: $("nb"), sq: $("sq"), coast: $("coast"), cyl: $("cyl")
+  s2: $("s2"), nb: $("nb"), sq: $("sq"), coast: $("coast"), cyl: $("cyl"),
+  bm: $("basemap"), tif: $("download-tif")
 };
+
+// The picked tile as a GeoTIFF on its own grid: its UTM zone's EPSG code
+// and its 109.8 km square, so 1098 pixels are 100 m ones on the tile's
+// own 10 m grid.
+const basemap = basemapControl({
+  select: ui.bm, status: $("bm-status"), credit: $("credit"),
+  onWorld: () => {
+    stripBm = capBm = null;
+    drawGlobe(coastLines); drawStrip(state.zone);
+    if (state.mode !== "utm") drawCap(state.mode === "upsn");
+    sync();
+  }
+});
+const tifOut = exportControl({
+  button: ui.tif, size: $("tif-size"), status: $("bm-status"), bm: () => basemap.id,
+  job: () => {
+    const t = state.tile && g.tileByName(state.tile);
+    if (!t) return null;
+    return {
+      name: `playproj-T${t.name}`, crs: { epsg: t.epsg }, box: [t.xmin, t.ymin, t.xmax, t.ymax],
+      forward: (lon, lat) => { const u = g.toUTM(lon, lat, t.zone, t.south); return [u.e, u.n]; },
+      inverse: (e, n) => g.fromUTM(t.zone, t.south, e, n)
+    };
+  }
+});
 
 const fmtM = (v) => Math.round(v).toLocaleString("en") + " m";
 const fmtLL = (lon, lat) => `${Math.abs(lat).toFixed(4)}${DEG} ${lat < 0 ? "S" : "N"}, ${Math.abs(lon).toFixed(4)}${DEG} ${lon < 0 ? "W" : "E"}`;
@@ -863,6 +918,7 @@ function updatePanel() {
   const pt = parsePt(state.pt);
   ui.chips.replaceChildren();
   ui.geojson.disabled = !pt;
+  if (!tifOut.busy) ui.tif.disabled = !(state.tile && g.tileByName(state.tile)) || !basemap.world;
   if (!pt) {
     ui.ptOut.textContent = "";
     ui.info.textContent = "Click the globe or the zone, or paste a point, an MGRS reference or a tile name.";
@@ -1067,7 +1123,9 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 
-window.addEventListener("hashchange", () => { readHash(); if (state.cam) setCamera(state.cam); sync(); });
+ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; writeHash(); basemap.set(state.bm); });
+
+window.addEventListener("hashchange", () => { readHash(); if (state.cam) setCamera(state.cam); basemap.set(state.bm); sync(); });
 
 if (embed) {
   document.body.classList.add("embed");
@@ -1080,6 +1138,7 @@ setCamera(state.cam || defaultCam());
 resize();
 drawGlobe(null);
 sync();
+basemap.set(state.bm);
 requestAnimationFrame(tick);
 
 loadCoastline("110m").then((lines) => { coastLines = lines; drawGlobe(lines); drawStrip(state.zone); builtUps = ""; sync(); });
