@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: regular in what?</title>
+<meta name="description" content="Geostationary scan angles, and the lon/lat arrays datasets ship for grids that are regular in some map projection: find which one.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/regular-page.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <canvas id="view" class="view" aria-label="The current step" style="display:none"></canvas>
+    <a id="open-full" class="open-full" href="./regular.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Tissot</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./structure.html">Tiles and overviews</a><a href="./regular.html" aria-current="page">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <p id="step-title" class="step-title"></p>
+      <p id="caption" class="describe"></p>
+      <div id="sats" class="presets" role="group" aria-label="Satellite"></div>
+      <div id="examples" class="presets" role="group" aria-label="Dataset"></div>
+      <div id="param-box">
+        <label class="row" for="param"><span id="param-label"></span><output id="param-out"></output></label>
+        <input id="param" type="range" min="0" max="1" step="0.001" aria-label="Step parameter">
+      </div>
+      <div class="buttons">
+        <button id="prev" type="button">Back</button>
+        <button id="next" type="button">Next</button>
+        <button id="play" type="button" hidden>Play</button>
+        <span id="count" class="hint"></span>
+      </div>
+    </section>
+
+    <section id="paste-box" hidden>
+      <label for="paste" class="row"><span>Your lon/lat</span></label>
+      <textarea id="paste" rows="7" spellcheck="false" placeholder="i j lon lat per line, or lon lat in row order, or JSON {&quot;lon&quot;: [[...]], &quot;lat&quot;: [[...]]}"></textarea>
+      <div class="buttons">
+        <label class="inline" for="ncol">Columns <input id="ncol" class="token" type="number" min="0" step="1" style="width:6em"></label>
+        <button id="run" type="button">Test</button>
+        <button id="paste-example" type="button" class="small">Fill with an example</button>
+      </div>
+      <p id="paste-msg" class="hint"></p>
+    </section>
+
+    <section id="result-box" hidden>
+      <table id="candidates" class="readout levels"></table>
+      <div class="projline" style="margin-top:10px">
+        <code id="projstring"></code>
+        <button id="copy-proj" type="button" class="small">Copy</button>
+      </div>
+      <p id="answer" class="describe"></p>
+    </section>
+
+    <section>
+      <ol id="steps" class="steps"></ol>
+    </section>
+
+    <section class="about">
+      <details>
+        <summary>How the test works</summary>
+        <p>Project every lon/lat sample with a candidate CRS and fit x and y as straight-line functions
+          of the column and row (an affine transform, six numbers). What the fit misses, taken back into
+          index space, is the residual in cells. A grid is regular in that CRS when the residual is down
+          at the precision of the numbers it shipped with, float32 lon/lat being good to about a metre.</p>
+        <p>The affine soaks up an offset, a scale, a rotation and a shear, so only parameters that bend
+          the grid need searching. Polar stereographic has none: lat_ts is a scale and lon_0 a rotation.
+          Lambert conformal conic has one, the cone constant. Geostationary has two, the sub-satellite
+          longitude and the height. A rotated pole has two, the pole. These are found with Nelder-Mead;
+          then lon_0 is turned to make the grid north-up, and the cell size is checked against the radii
+          and lat_ts values that make it a round number, which is how the Hughes ellipsoid and
+          lat_ts = 70 come back out of the NSIDC arrays.</p>
+        <p>The result is a CRS and a geotransform, which is all a reader needs (GDAL's
+          <code>-a_srs</code> and <code>-a_ullr</code>, or a <a href="./structure.html">grid spec</a>);
+          the two 2D arrays can be dropped. The idea is Michael Sumner's "regular in what?" question,
+          asked of many datasets over the years.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

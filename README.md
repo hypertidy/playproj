@@ -311,6 +311,40 @@ zarr-python (`test/fixtures/structure`, made by
 `lev`, then `lvl`, `t` (unfold), `ex` (stack), `pick` (x,y in the CRS),
 `tiles`, `pix`, `coast`, `grat`, `cam`.
 
+## Regular in what?
+
+`regular.html` is a storyline in eight steps. The first four are the
+geostationary view in 3D, with the light at the satellite as on the
+Perspective page: the cap a satellite sees from any height; why its pixels are
+equal steps of scan angle (`+proj=geos`, x and y in radians times h) and not
+of a flat image (`+proj=nsper`), 21 GOES pixels apart at the edge of the disc
+and far more from low orbit; the two gimbal orders PROJ calls `sweep=x` (GOES)
+and `sweep=y` (Meteosat, Himawari), up to 15 pixels apart, magnified; and the
+disc unfolded into the regular scan-angle grid the data are stored on.
+
+The last four are about the 2D longitude and latitude arrays many datasets
+ship for grids that are regular in some CRS: the two arrays as stored, the
+grid lines and coast moved from lon/lat back to the CRS they came from (where
+every cell is the same), and a test that finds that CRS from the arrays alone.
+`js/regular.js` projects the samples with each candidate (lon/lat, Mercator,
+cylindrical equal-area, sinusoidal, transverse Mercator, polar and oblique
+stereographic and Lambert azimuthal, Lambert conformal conic, geostationary in
+both sweeps, rotated pole; sphere and ellipsoid), fits an affine transform of
+column and row, and reports what the fit misses in cells. Only parameters that
+bend the grid are searched (Nelder-Mead): the cone constant, a satellite's
+longitude and height, a pole. lon_0 is then turned to make the grid north-up,
+and the cell size is checked against common radii and lat_ts values for a
+round number. From float32 lon/lat alone it gets back, for example,
+`+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 +a=6378273 +b=6356889.449` with
+geotransform `-3850000, 25000, 0, 5850000, 0, -25000` for the NSIDC arrays,
+GOES-East's 56 microradians from 35786023 m, and HRRR's 3000 m on the 6371229 m
+sphere. Ten examples are built in (with their cell centres checked against PROJ
+in `test/check-regular.mjs`); the last step takes pasted `i j lon lat` rows,
+`lon lat` rows with a row length, or JSON `{"lon": [[...]], "lat": [[...]]}`.
+An example is a few lines in `EXAMPLES` in `js/regular.js`: a CRS, the centre
+of the first cell, the steps and the size. Hash keys: `s` (step), `sat`, `h`,
+`h2`, `mag`, `t`, `m`, `ex`, `pick`.
+
 ## L3 bins
 
 `bins.html` shows the level-3 bin grid of SeaWiFS, MODIS and their
@@ -438,6 +472,8 @@ cells.html, js/cells.js     s2 cells page
 js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
 grids.html, js/grids-page.js  model grids page
 structure.html, js/structure-page.js  tiles and overviews page
+regular.html, js/regular-page.js  regular in what? storyline: geostationary, lon/lat arrays
+js/regular.js               which CRS makes a lon/lat array regular; example grids; geos scan angles
 js/structure.js             grid, tile and file structure of COG, Zarr, WMTS, ArcGIS, XYZ and specs
 js/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 example.html, js/example.js For example storyboard

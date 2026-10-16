@@ -219,3 +219,12 @@ canvas.inset { display: block; width: 100%; margin-top: 8px; border-radius: 6px;
 .readout.levels td { white-space: nowrap; padding: 2px 4px; }
 #ghost:empty { display: none; }
 #ghost { word-break: break-word; }
+/* regular.html: pasted lon/lat */
+#paste {
+  display: block; width: 100%; margin-top: 4px; resize: vertical;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text); background: #070b16;
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+}
+#answer { word-break: break-word; }
+.presets[hidden] { display: none; }
