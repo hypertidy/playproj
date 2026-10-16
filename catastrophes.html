@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: map catastrophes</title>
+<meta name="description" content="What goes wrong when a sphere becomes a map: seams, poles, great circles and rings turned inside out.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/dist/d3-geo.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/catastrophes.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./catastrophes.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./spilhaus.html">Spilhaus</a><a href="./catastrophes.html" aria-current="page">Catastrophes</a></nav>
+    </header>
+
+    <section class="embed-keep">
+      <div id="steps" class="presets" role="group" aria-label="Catastrophe"></div>
+      <div id="modes" class="presets" role="group" aria-label="How edges are drawn">
+        <button type="button" data-mode="naive">Vertex by vertex</button>
+        <button type="button" data-mode="sphere">On the sphere</button>
+      </div>
+      <label class="row" for="t"><span>Unwrap</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Unwrap the globe to the flat map">
+      <div class="buttons">
+        <button id="play" type="button">Unwrap</button>
+        <button id="next" type="button">Next</button>
+      </div>
+    </section>
+
+    <section class="embed-map">
+      <canvas id="map2d" class="wide-map" aria-label="The flat map"></canvas>
+      <p id="badge" class="badge"></p>
+    </section>
+
+    <section>
+      <p id="caption" class="describe"></p>
+    </section>
+
+    <section>
+      <label class="row" for="lon"><span>Map centre longitude</span><output id="lon-out"></output></label>
+      <input id="lon" type="range" min="-180" max="180" step="1">
+      <label class="row" for="lat"><span>Map centre latitude</span><output id="lat-out"></output></label>
+      <input id="lat" type="range" min="-90" max="90" step="1">
+      <div class="toggles">
+        <label>Flat map
+          <select id="flat">
+            <option value="eqc">Plate Carree</option>
+            <option value="merc">Mercator</option>
+          </select>
+        </label>
+        <label><input id="flip" type="checkbox"> Reverse winding</label>
+        <label><input id="ghost" type="checkbox"> Show the other way</label>
+        <label><input id="coast" type="checkbox"> Coastline</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section class="about">
+      <details>
+        <summary>How it works</summary>
+        <p>The globe and the flat map are one surface. It is cut along the seam (red) and opened like
+          a cylinder, so Unwrap shows where every part of the map comes from. The map's poles (amber) are
+          points on the globe and whole lines on the map.</p>
+        <p>The same vertices are drawn two ways. <b>Vertex by vertex</b> projects each vertex and joins them
+          with straight lines on the map, as planar GIS code does. <b>On the sphere</b> joins them with great
+          circles, cuts at the seam and closes round the poles, as
+          <a href="https://github.com/d3/d3-geo">d3-geo</a> and s2 do. There, the winding order decides
+          which side of a ring is inside: d3 wants clockwise, GeoJSON and s2 counterclockwise.</p>
+        <p>The map centre moves the seam and the poles; the data never moves.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
