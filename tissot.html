@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Tissot's indicatrix</title>
+<meta name="description" content="Tissot's indicatrix: equal circles on the globe, and the ellipses they become on the map.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/tissot-page.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split">
+    <div class="half">
+      <div id="three"></div>
+      <span class="half-label">Globe: equal circles</span>
+    </div>
+    <div class="half">
+      <canvas id="map" aria-label="The map, with the circles as the projection draws them"></canvas>
+      <span class="half-label">Map: the same circles</span>
+    </div>
+    <a id="open-full" class="open-full" href="./tissot.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./tissot.html" aria-current="page">Tissot</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./sentinel.html">MGRS and Sentinel-2</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="proj"><span>Projection</span></label>
+      <select id="proj" class="wide"></select>
+      <label class="row" for="size"><span>Circle radius</span><output id="size-out"></output></label>
+      <input id="size" type="range" min="1" max="20" step="0.5" aria-label="Radius of the circles on the globe, in degrees">
+    </section>
+
+    <section>
+      <div class="projline">
+        <input id="def" class="token" type="text" spellcheck="false" autocomplete="off" aria-label="PROJ string">
+        <button id="copy-def" type="button" class="small">Copy</button>
+      </div>
+      <p id="badge" class="badge"></p>
+      <label class="row" for="lon"><span>Central longitude</span><output id="lon-out"></output></label>
+      <input id="lon" type="range" min="-180" max="180" step="1">
+      <label class="row" for="lat"><span>Central latitude</span><output id="lat-out"></output></label>
+      <input id="lat" type="range" min="-90" max="90" step="1">
+    </section>
+
+    <section>
+      <label class="row"><span>At the picked point</span><output id="pt-out"></output></label>
+      <table id="readout" class="readout"></table>
+      <p class="hint">Click the globe or the map to pick a point. Drag the map to pan, scroll to zoom,
+        double-click to reset.</p>
+    </section>
+
+    <section>
+      <div class="toggles">
+        <label><input id="ell" type="checkbox"> Indicatrix</label>
+        <label><input id="circ" type="checkbox"> Projected circles</label>
+        <label><input id="unit" type="checkbox"> True-scale circles</label>
+        <label><input id="axes" type="checkbox"> Meridian and parallel</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+        <label>Spacing
+          <select id="step">
+            <option value="15">15&deg;</option>
+            <option value="30">30&deg;</option>
+          </select>
+        </label>
+        <label>Colour by
+          <select id="color">
+            <option value="none">nothing</option>
+            <option value="area">areal scale</option>
+            <option value="angle">angular distortion</option>
+          </select>
+        </label>
+      </div>
+      <p id="legend" class="hint"></p>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>Draw equal small circles all over the globe, then project them. Each lands on the map as (very
+          nearly) an ellipse, and that ellipse is the projection's whole story at that point: its long and
+          short axes <i>a</i> and <i>b</i> are the largest and smallest scale there. If every ellipse is a
+          circle the map is conformal, and shapes are right in the small. If every ellipse has the same area
+          (<i>ab</i> = 1) the map is equal-area. No map can be both.</p>
+        <p>Nicolas Auguste Tissot worked this out in 1859. The ellipse is the image of a circle under the
+          projection's local linear map, its Jacobian. "Indicatrix" draws that ellipse; "Projected circles"
+          projects the actual circle point by point, and the two part company as the circles grow. The red
+          and blue lines are where the parallel and the meridian through the point go, with scales
+          <i>k</i> and <i>h</i>; they cross at right angles only where &theta;&prime; is 90&deg;.</p>
+        <p>The numbers are found from any forward projection by differencing it at four points around the
+          picked one, as PROJ's <code>proj_factors()</code> does, and they match it to about 1e-8.
+          That method is Bill Huber's, from his
+          <a href="https://gis.stackexchange.com/a/5075">answer on GIS Stack Exchange</a>, and his
+          Mathematica code was ported to R as the
+          <a href="https://github.com/hypertidy/tissot">tissot</a> package, which now asks PROJ for the
+          factors. The map is drawn by <a href="https://github.com/proj4js/proj4js">proj4js</a>.</p>
+        <table>
+          <tr><th>Symbol</th><th>Meaning</th></tr>
+          <tr><td><i>h</i>, <i>k</i></td><td>scale along the meridian, along the parallel</td></tr>
+          <tr><td><i>a</i>, <i>b</i></td><td>largest and smallest scale (the ellipse's semi-axes)</td></tr>
+          <tr><td><i>s</i></td><td>areal scale, <i>ab</i></td></tr>
+          <tr><td>&omega;</td><td>largest error in an angle at the point</td></tr>
+          <tr><td>&theta;&prime;</td><td>angle the meridian and parallel cross at on the map</td></tr>
+          <tr><td>convergence</td><td>angle from map north to the meridian</td></tr>
+        </table>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
