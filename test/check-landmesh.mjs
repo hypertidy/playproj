@@ -2,7 +2,7 @@
 // hold the land and not the water (the Caspian is a hole), and the samples
 // should come from where the land is.
 import { readFileSync } from "fs";
-import { landTriangles, landMesh, samplePoints } from "../js/landmesh.js";
+import { landTriangles, landMesh, samplePoints, evenLand, evenSpacing, isLand } from "../js/landmesh.js";
 
 const D2R = Math.PI / 180;
 const land = [[2.3, 48.8, "Paris"], [20, 20, "Sahara"], [-60, -10, "Amazon"], [134, -25, "Australia"],
@@ -31,6 +31,24 @@ for (const detail of ["110m", "50m"]) {
     if (a.length !== 500 || JSON.stringify(a) !== JSON.stringify(b)) bad.push(`${mode} sample not repeatable`);
     if (a.some(([lon, lat]) => !(lon >= -180 && lon <= 180 && lat >= -90 && lat <= 90))) bad.push(`${mode} sample out of range`);
   }
+  // the even lattice: about the asked-for count, all on land, and no two
+  // points much closer than the lattice spacing
+  for (const want of [200, 2000]) {
+    const pts = evenLand(coast, want, 1);
+    if (Math.abs(pts.length - want) > 0.05 * want) bad.push(`even ${want} gave ${pts.length}`);
+    if (pts.some(([lon, lat]) => !onLand(tris, lon, lat))) bad.push(`even ${want} point off land`);
+    const sp = evenSpacing(coast, want) * D2R;
+    let minD = Infinity;
+    const xyz = pts.map(([lon, lat]) => [Math.cos(lat * D2R) * Math.cos(lon * D2R), Math.cos(lat * D2R) * Math.sin(lon * D2R), Math.sin(lat * D2R)]);
+    for (let i = 0; i < xyz.length; i++)
+      for (let j = i + 1; j < xyz.length; j++) {
+        const d = Math.acos(Math.min(1, xyz[i][0] * xyz[j][0] + xyz[i][1] * xyz[j][1] + xyz[i][2] * xyz[j][2]));
+        if (d < minD) minD = d;
+      }
+    if (minD < 0.5 * sp) bad.push(`even ${want} closest pair ${(minD / sp).toFixed(2)} of the spacing`);
+  }
+  for (const [lon, lat, name] of land) if (!isLand(coast, lon, lat)) bad.push(`isLand: ${name}`);
+  for (const [lon, lat, name] of water) if (isLand(coast, lon, lat)) bad.push(`isLand: ${name}`);
   if (bad.length) { fails++; console.log(`FAIL ${detail}: ${bad.join("; ")}`); }
   console.log(`landmesh ${detail}: ${tris.length} triangles, ${mesh.verts.length} vertices, land ${(100 * frac).toFixed(1)}% of the sphere`);
 }

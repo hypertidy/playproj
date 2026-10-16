@@ -139,9 +139,9 @@ index.html#v=0.75&lat=-42&lon=147&w=2&rays=200&cam=4.6,2.6,6.2,0,0.5,0
 | `v`      | light position on the slider, -1 to 1 (-0.5 antipode, 0 centre, 1 infinity) |
 | `lat`, `lon` | tangent point in degrees                                   |
 | `w`      | plane half-width in sphere radii                               |
-| `rays`   | number of rays drawn                                           |
+| `rays`   | number of rays drawn, up to 5000                               |
 | `seed`   | which random points get rays                                   |
-| `from`   | where rays start: `tri` land triangle centres (default), `vert` land mesh vertices, `coast` coastline vertices; area-weighted except `coast` |
+| `from`   | where rays start: `tri` land triangle centres (default), `vert` land mesh vertices, `coast` coastline vertices (area-weighted except `coast`), or `even`: an evenly spaced lattice on land, where `rays` (or `links`) sets the density |
 | `detail` | coastline scale, `110m` or `50m`                               |
 | `grat`, `globe` | 0 hides the graticule or the globe                      |
 | `bm`     | basemap: `none` (default), `gebco` or `esri`                   |

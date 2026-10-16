@@ -89,7 +89,7 @@
       <label class="row"><span>Plane half-width</span><output id="w-out"></output></label>
       <input id="w" type="range" min="1" max="8" step="0.25">
       <label class="row"><span>Rays</span><output id="rays-out"></output></label>
-      <input id="rays" type="range" min="0" max="600" step="10">
+      <input id="rays" type="range" min="0" max="5000" step="10">
       <div class="buttons">
         <button id="sweep" type="button">Sweep light</button>
         <button id="reseed" type="button">New rays</button>
@@ -110,6 +110,7 @@
             <option value="tri">land triangle centres</option>
             <option value="vert">land mesh vertices</option>
             <option value="coast">coastline vertices</option>
+            <option value="even">evenly spaced on land</option>
           </select>
         </label>
       </div>
