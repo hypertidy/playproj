@@ -275,6 +275,27 @@ be dragged. Hash keys: `s` (step, from 0), `p` (the step's slider), `rot`.
 The midpoint test is redrawn by `resampleArc` in `js/mishaps.js`, which
 `test/check-mishaps.mjs` checks keeps the same points as d3-geo.
 
+## Homage
+
+`homage.html` is a storyboard of map projections that have been argued about
+in public, as a small homage to the people who kept explaining them: the UN
+emblem (a north polar azimuthal equidistant map to 60 S, beside the Lambert
+azimuthal equal-area), both carried on to the antipode; Greenland slid down to
+the Congo in Mercator; Gall-Peters and south-up, after the Cartographers for
+Social Equality in The West Wing (season 2, episode 16); Equal Earth (Savric,
+Jenny and Patterson 2018); Fuller's Dymaxion; and the projections named in
+[xkcd 977](https://xkcd.com/977/). The credits are in the page's About panel.
+Robinson, Winkel tripel, Van der Grinten and cylindrical equal-area (Gall-Peters,
+Hobo-Dyer) are written as d3 raw projections in `js/homage-geo.js`;
+`test/check-homage.mjs` checks them and the rest against PROJ 9.8
+(`test/fixtures/homage-proj.json`, from `test/make-homage-fixture.py`).
+PROJ's `+proj=wintri` defaults to `lat_1=0`, so Winkel's own
+`lat_1=acos(2/pi)` is given explicitly. The Dymaxion faces are gnomonic about
+each face centre on Fuller's icosahedron (Fuller's own face transform differs a
+little), and the net is found rather than copied: a maximum spanning tree of the
+faces weighted by the land each edge crosses, so the cuts fall in the sea. Hash
+keys: `s` (step, from 0), `p` (the step's slider).
+
 ## Basemaps and GeoTIFF export
 
 The plane can carry a basemap, reprojected pixel by pixel by casting each
@@ -344,6 +365,8 @@ js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
 grids.html, js/grids-page.js  model grids page
 js/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 example.html, js/example.js For example storyboard
+homage.html, js/homage.js   homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977
+js/homage-geo.js            Robinson, Winkel tripel, Van der Grinten, cea; Dymaxion icosahedron and net
 sentinel.html, js/sentinel.js  MGRS and Sentinel-2 page
 js/mgrs.js                  UTM, MGRS references and Sentinel-2 tiles
 data/s2-tiles.json          which MGRS squares are Sentinel-2 tiles (ESA tiling grid)
