@@ -201,7 +201,7 @@ export function landMesh(coast, maxEdge = 3) {
       else vmap.set(k, [L, lat, w / 3]);
     }
   }
-  const mesh = { verts: [...vmap.values()], cents };
+  const mesh = { verts: [...vmap.values()], cents, tris };
   meshCache.set(coast, mesh);
   return mesh;
 }
@@ -215,9 +215,80 @@ function weighted(items, count, rand) {
   return keyed.slice(0, count).map(([, it]) => [it[0], it[1]]);
 }
 
+// Land triangles binned into CELL-degree cells, for point-in-land tests.
+const CELL = 2;
+const indexCache = new WeakMap();
+
+function landIndex(coast) {
+  const hit = indexCache.get(coast);
+  if (hit) return hit;
+  const tris = landMesh(coast).tris;
+  const nx = 360 / CELL, ny = 180 / CELL;
+  const cells = Array.from({ length: nx * ny }, () => []);
+  tris.forEach((t, k) => {
+    const xs = t.map((v) => v[0]), ys = t.map((v) => v[1]);
+    const x0 = Math.floor((Math.min(...xs) + 180) / CELL), x1 = Math.floor((Math.max(...xs) + 180) / CELL);
+    const y0 = Math.max(0, Math.floor((Math.min(...ys) + 90) / CELL)), y1 = Math.min(ny - 1, Math.floor((Math.max(...ys) + 90) / CELL));
+    for (let x = x0; x <= x1; x++)
+      for (let y = y0; y <= y1; y++) cells[(((x % nx) + nx) % nx) + y * nx].push(k);
+  });
+  const index = { tris, cells, nx, ny };
+  indexCache.set(coast, index);
+  return index;
+}
+
+function inTriangle(x, y, [a, b, c]) {
+  const s1 = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
+  const s2 = (c[0] - b[0]) * (y - b[1]) - (c[1] - b[1]) * (x - b[0]);
+  const s3 = (a[0] - c[0]) * (y - c[1]) - (a[1] - c[1]) * (x - c[0]);
+  return (s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0);
+}
+
+export function isLand(coast, lon, lat) {
+  const { tris, cells, nx, ny } = landIndex(coast);
+  const x = Math.floor((wrapLon(lon) + 180) / CELL) % nx;
+  const y = Math.min(ny - 1, Math.floor((lat + 90) / CELL));
+  for (const k of cells[x + y * nx]) {
+    const t = tris[k];
+    // triangle longitudes may be unwrapped: try the point a turn either way
+    for (const d of [0, 360, -360, 720, -720]) if (inTriangle(lon + d, lat, t)) return true;
+  }
+  return false;
+}
+
+const GOLDEN = 180 * (3 - Math.sqrt(5)); // golden angle, degrees
+
+// Evenly spaced points on land: a Fibonacci lattice over the whole sphere,
+// dense enough that about `count` of its points fall on land, keeping those.
+// Every point has the same area of sphere to itself, so the spacing is
+// sqrt(4 pi / total) radians. The seed turns the lattice about the pole.
+export function evenLand(coast, count, seed = 1) {
+  const frac = landFraction(coast);
+  const total = Math.max(1, Math.round(count / frac));
+  const pts = [];
+  for (let i = 0; i < total; i++) {
+    const lat = Math.asin(1 - (2 * i + 1) / total) / D2R;
+    const lon = wrapLon(i * GOLDEN + (seed - 1) * GOLDEN / 7);
+    if (isLand(coast, lon, lat)) pts.push([lon, lat]);
+  }
+  return pts;
+}
+
+// Spacing of the even lattice, in degrees, for about `count` points on land.
+export function evenSpacing(coast, count) {
+  const total = Math.max(1, Math.round(count / landFraction(coast)));
+  return Math.sqrt((4 * Math.PI) / total) / D2R;
+}
+
+export function landFraction(coast) {
+  return landMesh(coast).cents.reduce((s, c) => s + c[2], 0) * D2R * D2R / (4 * Math.PI);
+}
+
 // Ray targets: "coast" (random coastline vertices, the original sampling),
-// "vert" (vertices of the land mesh) or "tri" (land triangle centres).
+// "vert" (vertices of the land mesh), "tri" (land triangle centres), or
+// "even" (evenly spaced land points, all of them: count sets the density).
 export function samplePoints(coast, mode, seed, count) {
+  if (mode === "even") return evenLand(coast, count, seed);
   const rand = mulberry32(seed);
   if (mode === "vert" || mode === "tri") {
     const mesh = landMesh(coast);
@@ -236,4 +307,4 @@ export function samplePoints(coast, mode, seed, count) {
   return pool;
 }
 
-export const SAMPLE_MODES = ["tri", "vert", "coast"];
+export const SAMPLE_MODES = ["tri", "vert", "coast", "even"];
