@@ -196,3 +196,33 @@ export function unfold(ico, landOn) {
   }
   return { pos, cut: dual.filter((e) => !tree[e.f].includes(e)) };
 }
+
+// ---------------------------------------------------------------- true size
+
+// Mercator at scale s (pixels per unit sphere radius) and translate t, by
+// hand, so longitudes can be unwrapped about a centre first.
+export function mercator(s, t) {
+  return ([lon, lat]) => {
+    const p = Math.max(-85, Math.min(85, lat)) * D2R;
+    return [t[0] + s * lon * D2R, t[1] - s * Math.log(Math.tan(Math.PI / 4 + p / 2))];
+  };
+}
+
+// One polygon (rings of [lon, lat]) drawn at its true size: a Lambert
+// azimuthal equal-area map about its own centroid, at the scale Mercator
+// has on the equator, moved so the centroid sits where Mercator puts it.
+// k blends from Mercator's shape (0) to the true one (1), vertex by vertex.
+// After Michael Sumner's gist (2026), laea-vs-mercator.
+export function trueSize(d3, rings, s, t, k = 1) {
+  const c = d3.geoCentroid({ type: "Polygon", coordinates: rings });
+  const merc = mercator(s, t);
+  const local = d3.geoAzimuthalEqualArea().rotate([-c[0], -c[1]]).scale(s).translate(merc(c));
+  const unwrap = (lon) => c[0] + ((((lon - c[0]) % 360) + 540) % 360) - 180;
+  return {
+    centre: c,
+    rings: rings.map((r) => r.map(([lon, lat]) => {
+      const a = merc([unwrap(lon), lat]), b = local([lon, lat]);
+      return [a[0] + k * (b[0] - a[0]), a[1] + k * (b[1] - a[1])];
+    }))
+  };
+}

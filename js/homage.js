@@ -7,7 +7,7 @@
 
 import { loadCoastline } from "./geo.js";
 import { coastRings, landPolygons } from "./landmesh.js";
-import { worldProjection, polar, slide, PROJ, icosahedron, unfold } from "./homage-geo.js";
+import { worldProjection, polar, slide, PROJ, icosahedron, unfold, trueSize } from "./homage-geo.js";
 
 const d3 = window.d3;
 const D2R = Math.PI / 180;
@@ -83,6 +83,7 @@ function fitBox(w, h, r, pad = 30, below = 30) {
 
 let land = null;          // MultiPolygon, d3 winding
 let greenland = null;     // Polygon
+let countries = null;     // Natural Earth country parts, each rings of [lon, lat]
 let dymax = null;         // the unfolded icosahedron
 
 const XKCD = [
@@ -146,6 +147,37 @@ const steps = [
       const lat = HOME[1] + t * (AWAY[1] - HOME[1]);
       label(ctx, `+proj=merc: at home Greenland is drawn ${(mercInflation(HOME[1]) / mercInflation(lat)).toFixed(1)} times the area of the copy`,
         w / 2, box[1][1] + 10);
+    }
+  },
+  {
+    title: "Every country at its true size",
+    caption: "Do it for every country at once. Each one is drawn in a Lambert azimuthal equal-area projection about " +
+      "its own centre, at the scale Mercator has on the equator, and set down where Mercator puts that centre. The " +
+      "grey map behind is Mercator; the outlines are the countries as they are. Near the equator the two agree, and " +
+      "towards the poles the true shapes shrink inside their Mercator selves. The slider blends each shape from " +
+      "Mercator's to its true one. After Michael Sumner's laea-vs-mercator gist (2026); others have drawn the same idea.",
+    param: { label: "Shape", min: 0, max: 1, value: 1, fmt: (k) => (k < 0.01 ? "Mercator" : k > 0.99 ? "true size" : "blending") },
+    draw(ctx, w, h, k) {
+      const box = fitBox(w, h, 1);
+      const p = d3.geoMercator().fitExtent(box, { type: "Sphere" });
+      const path = d3.geoPath(p, ctx);
+      fillGeo(ctx, path, { type: "Sphere" }, C.sphere);
+      strokeGeo(ctx, path, d3.geoGraticule10(), "rgba(74,98,134,0.6)", 0.7);
+      if (!countries) return;
+      for (const rings of countries) fillGeo(ctx, path, { type: "Polygon", coordinates: rings }, "rgba(138,151,171,0.35)");
+      ctx.save();
+      ctx.beginPath(); ctx.rect(box[0][0], box[0][1], box[1][0] - box[0][0], box[1][1] - box[0][1]); ctx.clip();
+      for (const rings of countries) {
+        const ts = trueSize(d3, rings, p.scale(), p.translate(), k);
+        if (Math.abs(ts.centre[1]) > 80) continue;     // Antarctica has no Mercator centre
+        ctx.beginPath();
+        for (const r of ts.rings) r.forEach((q, i) => (i ? ctx.lineTo(...q) : ctx.moveTo(...q)));
+        ctx.fillStyle = "rgba(106,183,135,0.45)"; ctx.fill("evenodd");
+        ctx.strokeStyle = C.cut; ctx.lineWidth = 0.8; ctx.stroke();
+      }
+      ctx.restore();
+      strokeGeo(ctx, path, { type: "Sphere" }, C.muted, 1);
+      label(ctx, "+proj=laea +lon_0 +lat_0 at each centroid, placed by +proj=merc", w / 2, box[1][1] + 10);
     }
   },
   {
@@ -457,6 +489,13 @@ async function loadLand() {
   land = { type: "MultiPolygon", coordinates: polys };
   const g = polys.find((rings) => d3.geoContains({ type: "Polygon", coordinates: rings }, HOME));
   greenland = g ? { type: "Polygon", coordinates: g } : null;
+  // country parts (Natural Earth 110m via world-atlas), flat rings
+  const parts = await fetch(new URL("../data/countries-110m.json", import.meta.url)).then((r) => r.json());
+  countries = parts.map((rings) => rings.map((r) => {
+    const o = [];
+    for (let i = 0; i < r.length; i += 2) o.push([r[i], r[i + 1]]);
+    return o;
+  }));
 }
 
 readHash();
