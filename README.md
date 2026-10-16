@@ -274,6 +274,36 @@ degrees), `plat`, `plon` (rotated pole, CF grid north pole), `join`, `tlon`
 (tripolar join latitude and pole longitude), `eq` (0 for plain gnomonic cube
 faces), `cell` (patch, i, j), `coast`, `grat`, `cam`.
 
+## Index space
+
+`indexspace.html` shows an ocean model grid as the model sees it and as the
+ocean has it. A ROMS-style grid is curvilinear in the horizontal (an array of
+(i, j) vertices that each carry a longitude and latitude) and
+terrain-following in the vertical (N layers in every column, spaced by the
+s-coordinate), so each cell (i, j, k) is a cube in index space and a bent,
+squashed box in the ocean. Two sliders move every vertex between the two:
+Horizontal from the index box to the sphere, Vertical from the even k layers
+to depth. The colours (synthetic temperature with a seasonal mixed layer and
+drifting eddies, depth, or layer thickness) belong to the index and ride along.
+
+Two conformal synthetic grids: a Mercator ring round Antarctica that wraps in
+i, and a log-polar fan off New South Wales, finest at the coast. Bathymetry is
+the GEBCO 2026 overview (or an idealized sea floor), masked on land and
+smoothed to rx0 <= 0.2 by the minimal positive method of Sikiric et al.
+(2009); the page reports rx0 and Haney's rx1. The vertical grid is ROMS's
+Vtransform 1 or 2 with Vstretching 1, 2 or 4, shown as ocean.in lines, with a
+plot of the layer interfaces against water depth. A ROMS grid in Zarr (v2 or
+v3, uncompressed, zlib or gzip; `lon_rho`, `lat_rho`, `h`, and optionally
+`mask_rho`, `s_rho` and the vertical settings) can be loaded instead.
+`js/roms.js` holds the s-coordinate, grids, smoothing, synthetic data and Zarr
+reader; `test/check-roms.mjs` checks the depths against a NumPy port of ROMS
+`set_scoord`/`set_depth` and the reader against stores written by zarr-python
+(`test/make-roms-fixture.py`). Hash keys: `g` (`so`, `fan`, `file`), `wh`,
+`wv` (warps), `day`, `f` (`temp`, `z`, `hz`), `si`, `sj` (sections), `top`,
+`bot`, `walls`, `sec`, `coast`, `N`, `vt`, `vs`, `ts`, `tb`, `hc`, `n` (cells
+along i), `dz` (depth scale), `bathy` (`gebco`, `ideal`), `sm`, `zu` (Zarr
+URL), `cell` (i, j, k), `cam`.
+
 ## Tiles and overviews
 
 `structure.html` shows how a raster is stored: its pixel grid, the tiles (or
@@ -363,6 +393,40 @@ projection against pyproj). Hash keys: `at` (`tas`, `ice`, `mad`, `gb`,
 `crs` (`ll`, `laea`, `merc`, `polar`, `utm`, `file`, `custom` with `def`),
 `n` (cells across), `sx`, `sy` (shift, in cells), `tile`, `left`
 (`centre`, `touched`, `warp`), `src` and `lvl` (raster and level).
+
+## Regular in what?
+
+`regular.html` is a storyline in eight steps. The first four are the
+geostationary view in 3D, with the light at the satellite as on the
+Perspective page: the cap a satellite sees from any height; why its pixels are
+equal steps of scan angle (`+proj=geos`, x and y in radians times h) and not
+of a flat image (`+proj=nsper`), 21 GOES pixels apart at the edge of the disc
+and far more from low orbit; the two gimbal orders PROJ calls `sweep=x` (GOES)
+and `sweep=y` (Meteosat, Himawari), up to 15 pixels apart, magnified; and the
+disc unfolded into the regular scan-angle grid the data are stored on.
+
+The last four are about the 2D longitude and latitude arrays many datasets
+ship for grids that are regular in some CRS: the two arrays as stored, the
+grid lines and coast moved from lon/lat back to the CRS they came from (where
+every cell is the same), and a test that finds that CRS from the arrays alone.
+`js/regular.js` projects the samples with each candidate (lon/lat, Mercator,
+cylindrical equal-area, sinusoidal, transverse Mercator, polar and oblique
+stereographic and Lambert azimuthal, Lambert conformal conic, geostationary in
+both sweeps, rotated pole; sphere and ellipsoid), fits an affine transform of
+column and row, and reports what the fit misses in cells. Only parameters that
+bend the grid are searched (Nelder-Mead): the cone constant, a satellite's
+longitude and height, a pole. lon_0 is then turned to make the grid north-up,
+and the cell size is checked against common radii and lat_ts values for a
+round number. From float32 lon/lat alone it gets back, for example,
+`+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 +a=6378273 +b=6356889.449` with
+geotransform `-3850000, 25000, 0, 5850000, 0, -25000` for the NSIDC arrays,
+GOES-East's 56 microradians from 35786023 m, and HRRR's 3000 m on the 6371229 m
+sphere. Ten examples are built in (with their cell centres checked against PROJ
+in `test/check-regular.mjs`); the last step takes pasted `i j lon lat` rows,
+`lon lat` rows with a row length, or JSON `{"lon": [[...]], "lat": [[...]]}`.
+An example is a few lines in `EXAMPLES` in `js/regular.js`: a CRS, the centre
+of the first cell, the steps and the size. Hash keys: `s` (step), `sat`, `h`,
+`h2`, `mag`, `t`, `m`, `ex`, `pick`.
 
 ## L3 bins
 
@@ -490,7 +554,11 @@ js/mishaps.js               catastrophe steps, vertex-by-vertex and spherical dr
 cells.html, js/cells.js     s2 cells page
 js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
 grids.html, js/grids-page.js  model grids page
+indexspace.html, js/indexspace.js  index space page
+js/roms.js                  ROMS s-coordinate, synthetic grids and data, Zarr grid reader
 structure.html, js/structure-page.js  tiles and overviews page
+regular.html, js/regular-page.js  regular in what? storyline: geostationary, lon/lat arrays
+js/regular.js               which CRS makes a lon/lat array regular; example grids; geos scan angles
 js/structure.js             grid, tile and file structure of COG, Zarr, WMTS, ArcGIS, XYZ and specs
 rasterize.html, js/rasterize-page.js  rasterize page
 js/rasterize.js             centre-in scanline fill, exact coverage fractions, runs, tiles and bytes
@@ -533,6 +601,7 @@ globals, their interruptions and the butterfly's faces. `test/check-mishaps.mjs`
 frames against d3-geo and the areas behind its captions. `test/check-s2.mjs` checks
 cell tokens and corners against `test/fixtures/s2-cells.json`, made with
 s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js.
+`test/check-roms.mjs` checks the s-coordinate against ROMS and the Zarr grid reader against zarr-python.
 `test/check-structure.mjs` checks the tile and overview readers against
 GDAL, tifffile and zarr-python. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
 GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid.

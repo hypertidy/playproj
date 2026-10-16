@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: index space</title>
+<meta name="description" content="An ocean model grid in index space and in the ocean: a curvilinear grid with terrain-following layers, warped continuously from a regular box of cells to its true shape on the sphere, with data carried along.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/indexspace.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./indexspace.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Tissot</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html" aria-current="page">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./regular.html">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <div id="kinds" class="presets" role="group" aria-label="Grid"></div>
+      <label class="row" for="wh"><span>Horizontal</span><output id="wh-out"></output></label>
+      <input id="wh" type="range" min="0" max="1" step="0.005" aria-label="Index i, j to the sphere">
+      <label class="row" for="wv"><span>Vertical</span><output id="wv-out"></output></label>
+      <input id="wv" type="range" min="0" max="1" step="0.005" aria-label="Index k to depth">
+      <div class="buttons">
+        <button id="play" type="button">To index space</button>
+      </div>
+      <label class="row" for="day"><span>Time</span><output id="day-out"></output></label>
+      <input id="day" type="range" min="0" max="365" step="1" aria-label="Day of the year">
+      <div class="buttons">
+        <button id="play-time" type="button" class="small">Run time</button>
+        <select id="field" aria-label="Colour by">
+          <option value="temp">Temperature</option>
+          <option value="z">Depth</option>
+          <option value="hz">Layer thickness</option>
+        </select>
+      </div>
+      <canvas id="legend" class="inset" width="640" height="56" aria-label="Colour scale"></canvas>
+    </section>
+
+    <section>
+      <label class="row" for="si"><span>Section along j</span><output id="si-out"></output></label>
+      <input id="si" type="range" min="0" max="1" step="0.001" aria-label="Section at column i">
+      <label class="row" for="sj"><span>Section along i</span><output id="sj-out"></output></label>
+      <input id="sj" type="range" min="0" max="1" step="0.001" aria-label="Section at row j">
+      <div class="toggles">
+        <label><input id="top" type="checkbox"> Sea surface</label>
+        <label><input id="bot" type="checkbox"> Sea floor</label>
+        <label><input id="walls" type="checkbox"> Walls</label>
+        <label><input id="sec" type="checkbox"> Sections</label>
+        <label><input id="coast" type="checkbox"> Coastline</label>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="N"><span>Layers N</span><output id="N-out"></output></label>
+      <input id="N" type="range" min="3" max="60" step="1" aria-label="Number of layers">
+      <div class="buttons">
+        <label class="row" style="margin:0;gap:6px">Vtransform <select id="vt"><option value="1">1</option><option value="2">2</option></select></label>
+        <label class="row" style="margin:0;gap:6px">Vstretching <select id="vs"><option value="1">1</option><option value="2">2</option><option value="4">4</option></select></label>
+      </div>
+      <label class="row" for="ts"><span>theta_s (surface)</span><output id="ts-out"></output></label>
+      <input id="ts" type="range" min="0" max="10" step="0.1" aria-label="Surface stretching theta_s">
+      <label class="row" for="tb"><span>theta_b (bottom)</span><output id="tb-out"></output></label>
+      <input id="tb" type="range" min="0" max="4" step="0.05" aria-label="Bottom stretching theta_b">
+      <label class="row" for="hc"><span>hc (critical depth)</span><output id="hc-out"></output></label>
+      <input id="hc" type="range" min="0" max="1" step="0.005" aria-label="Critical depth hc">
+      <canvas id="profile" class="inset" width="640" height="300" aria-label="Layer depths against water depth"></canvas>
+      <p class="badge">Layer interfaces against water depth h (log scale), from the shallowest to the deepest column; dashed is hc.</p>
+    </section>
+
+    <section>
+      <label class="row" for="n"><span>Cells along i</span><output id="n-out"></output></label>
+      <input id="n" type="range" min="16" max="360" step="4" aria-label="Cells along i">
+      <label class="row" for="dz"><span>Depth scale</span><output id="dz-out"></output></label>
+      <input id="dz" type="range" min="0.25" max="2.5" step="0.05" aria-label="Vertical exaggeration">
+      <label class="row" for="bathy"><span>Bathymetry</span></label>
+      <select id="bathy" class="wide">
+        <option value="gebco">GEBCO 2026 overview</option>
+        <option value="ideal">Idealized (no download)</option>
+      </select>
+      <div class="toggles"><label><input id="sm" type="checkbox"> Smooth h to rx0 &lt;= 0.2</label></div>
+      <p id="bathy-status" class="badge"></p>
+    </section>
+
+    <section>
+      <div class="projline">
+        <code id="projstring" style="white-space:pre-wrap;word-break:normal"></code>
+        <button id="copy-proj" type="button" class="small">Copy</button>
+      </div>
+      <p id="describe" class="describe"></p>
+      <p id="stats" class="badge"></p>
+      <p id="cell-info" class="badge"></p>
+    </section>
+
+    <section>
+      <details id="zarr-box">
+        <summary>Load a ROMS grid from Zarr</summary>
+        <p class="badge">A Zarr store (v2 or v3, uncompressed, zlib or gzip) with lon_rho, lat_rho, h and optionally
+          mask_rho, s_rho, Vtransform, Vstretching, theta_s, theta_b and hc. Large grids are subsampled.</p>
+        <input id="zarr-url" type="url" placeholder="https://.../roms_grid.zarr" style="width:100%">
+        <div class="buttons"><button id="zarr-load" type="button" class="small">Load</button></div>
+        <p id="zarr-status" class="badge"></p>
+      </details>
+    </section>
+
+    <section>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>An ocean model computes on an array of cells indexed i, j and k, and time. In index space that
+          array is a box of identical cubes. In the ocean each cell is somewhere else entirely: the
+          horizontal grid is curvilinear, a bent and stretched net of quadrilaterals on the sphere, and the
+          vertical grid follows the terrain, so every column has the same N layers whether it is 20 m or
+          5000 m deep.</p>
+        <p>Horizontal carries each column from its place in the array to its place on the globe; Vertical
+          carries each layer from its place in the array to its depth. Halfway, or one without the other,
+          is where the model's view and the map's view can be compared. The data come along unchanged: a
+          cell's value belongs to its index, wherever the cell is drawn.</p>
+        <p>The layers are ROMS's s-coordinate. A stretching function C(s) of the fraction s from -1 at the
+          floor to 0 at the surface sets where the layers go (theta_s crowds them to the surface, theta_b
+          to the floor), and the transform blends that with plain sigma, an even split of the column,
+          down to the critical depth hc. Steep bathymetry is the classic trouble: neighbouring columns'
+          layers slope steeply, measured by rx0 (the slope of the floor) and rx1 (Haney's number, the
+          slope of the layers), so models smooth the sea floor first.</p>
+        <p>The grids and temperature here are synthetic. The two grids are conformal (square cells
+          everywhere): a Mercator ring round Antarctica that wraps in i, and a log-polar fan off New South
+          Wales, finest at the coast. The temperature has a seasonal mixed layer, a thermocline and
+          eddies that drift along i.</p>
+        <ul class="credits">
+          <li>Formulas from the <a href="https://www.myroms.org/wiki/Vertical_S-coordinate">ROMS wiki, Vertical S-coordinate</a>:
+            Song and Haidvogel (1994), Shchepetkin and McWilliams (2005, 2009).</li>
+          <li>Smoothing: the minimal positive rx0 method of Sikiric, Janekovic and Kuzmic (2009).</li>
+          <li>In the spirit of an <a href="https://www.youtube.com/watch?v=TUJTIRcfEXM">Eonfusion visualization</a>
+            of the GEMS Southern Ocean model (Meijers and Bindoff).</li>
+          <li>Bathymetry: GEBCO Compilation Group (2026) GEBCO 2026 Grid, from
+            <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
