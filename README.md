@@ -127,6 +127,42 @@ checked against s2sphere in `test/fixtures/s2-cells.json`. Hash keys: `lvl`
 (0 to 12), `t` (unfold, 0 globe, 0.5 cube, 1 net), `cell` (a token),
 `curve`, `grid`, `coast`, `uvgrid`, `cam`.
 
+## MGRS and Sentinel-2
+
+`sentinel.html` shows UTM as one transverse Mercator cylinder laid on its
+side round the globe and turned 6 degrees at a time to make the 60 zones.
+"Unroll" lifts the current zone off the globe onto its cylinder and opens it
+flat; "Turn the cylinder" steps it round all 60 zones. The cylinder is scaled
+by 0.9996, so it cuts the globe along two lines (amber) about 180 km either
+side of the central meridian, where the scale is exactly 1.
+
+The zone carries the MGRS grid in its own UTM coordinates: 8-degree latitude
+bands (grid zones such as 32V), 100 km squares and their two-letter names,
+and the two exceptions (32V widened over Norway, and 31X, 33X, 35X, 37X
+widened over Svalbard so that 32X, 34X and 36X do not exist). Over it are the
+Sentinel-2 tiles of that zone and of the zones either side. A tile is an
+MGRS 100 km square 109.8 km wide, so tiles overlap by 9.8 km east and south;
+drawn translucent, the overlaps glow brighter. Tiles at a zone's edge run on
+past it, so near the edge the same ground is in tiles from two zones, in two
+coordinate systems.
+
+Click the globe or the zone, or paste a lon, lat, an MGRS reference or a
+tile name, for the point's UTM coordinates and EPSG code, its MGRS reference,
+and every tile containing it; GeoJSON copies the point and those tiles.
+
+`js/mgrs.js` has UTM (Krueger's series to sixth order, as in PROJ), MGRS
+references both ways, and the tiling rules, which reproduce all 56,686 tiles
+of ESA's tiling grid: the tile's top left corner is its square's, moved onto a
+60 m grid from easting 0 and the equator, and its band letter is the band of
+the square's centre. Which squares are tiles (ESA leaves out edge squares
+that are mostly outside their zone) is in `data/s2-tiles.json`, a bitmask per
+grid zone. `test/check-mgrs.mjs` checks UTM against PROJ, references against
+GeoTrans and tile lookups against the footprints in ESA's grid, using
+`test/fixtures/mgrs-points.json` from `test/make-mgrs-fixtures.py`. Hash
+keys: `zone` (1 to 60), `t` (0 globe, 0.5 cylinder, 1 flat), `pt` (lon,lat),
+`tile`, `s2`, `nb` (next zones' tiles), `sq` (100 km squares), `coast`,
+`cyl`, `cam`.
+
 ## For example
 
 `example.html` is a storyboard: eight short steps retelling the first part of
@@ -208,6 +244,9 @@ js/mishaps.js               catastrophe steps, vertex-by-vertex and spherical dr
 cells.html, js/cells.js     s2 cells page
 js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
 example.html, js/example.js For example storyboard
+sentinel.html, js/sentinel.js  MGRS and Sentinel-2 page
+js/mgrs.js                  UTM, MGRS references and Sentinel-2 tiles
+data/s2-tiles.json          which MGRS squares are Sentinel-2 tiles (ESA tiling grid)
 test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-proj.mjs         ray construction vs proj4js
@@ -232,7 +271,8 @@ constructions against proj4js. proj4js has no Spilhaus, so
 `test/fixtures/spilhaus-proj.json`. `test/check-mishaps.mjs` checks the catastrophes page's map
 frames against d3-geo and the areas behind its captions. `test/check-s2.mjs` checks
 cell tokens and corners against `test/fixtures/s2-cells.json`, made with
-s2sphere. `test/check-inverse.mjs` round-trips project and inverse for every light
+s2sphere. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
+GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid. `test/check-inverse.mjs` round-trips project and inverse for every light
 position. To check that GDAL reads the exported CRS (needs rasterio):
 
 ```sh
@@ -249,3 +289,6 @@ Contributions are welcome. Please note that this project is released with a
 [Contributor Code of Conduct](CODE_OF_CONDUCT.md).
 
 Coastlines are from [Natural Earth](https://www.naturalearthdata.com/) (public domain).
+The Sentinel-2 tiling grid is ESA's (Copernicus Sentinel data), read from the
+shapefile conversion at
+[justinelliotmeyers/Sentinel-2-Shapefile-Index](https://github.com/justinelliotmeyers/Sentinel-2-Shapefile-Index).
