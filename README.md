@@ -127,6 +127,22 @@ checked against s2sphere in `test/fixtures/s2-cells.json`. Hash keys: `lvl`
 (0 to 12), `t` (unfold, 0 globe, 0.5 cube, 1 net), `cell` (a token),
 `curve`, `grid`, `coast`, `uvgrid`, `cam`.
 
+## For example
+
+`example.html` is a storyboard: eight short steps retelling the first part of
+Mike Bostock's 2013 Eyeo talk
+[For Example](https://bost.ocks.org/mike/example/) (text archived at
+[mdsumner/flawedexample](https://github.com/mdsumner/flawedexample)), whose
+live examples no longer run. It starts from his "flawed example" of adaptive
+resampling in d3-geo, explains what it shows (graticule, plate carree, the
+transverse aspect, the midpoint test and its dependence on scale), then why
+it matters: Antarctica turning inside out in Albers without resampling, and
+any land crossing the seam once the globe is rotated. Back and Next (or the
+arrow keys) step through it; each step has at most one slider, and some can
+be dragged. Hash keys: `s` (step, from 0), `p` (the step's slider), `rot`.
+The midpoint test is redrawn by `resampleArc` in `js/mishaps.js`, which
+`test/check-mishaps.mjs` checks keeps the same points as d3-geo.
+
 ## Basemaps and GeoTIFF export
 
 The plane can carry a basemap, reprojected pixel by pixel by casting each
@@ -190,6 +206,7 @@ catastrophes.html, js/catastrophes.js  map catastrophes page
 js/mishaps.js               catastrophe steps, vertex-by-vertex and spherical drawing
 cells.html, js/cells.js     s2 cells page
 js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
+example.html, js/example.js For example storyboard
 test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-proj.mjs         ray construction vs proj4js
