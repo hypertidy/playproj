@@ -12,7 +12,8 @@ const P = (p) => ({ fam: persp, p }), C = (p) => ({ fam: conic, p }), A = (p) =>
 const cases = [
   P({ a: -1, lat0: -90, lon0: 0 }), P({ a: -1, lat0: -42, lon0: 147 }),
   P({ a: 0, lat0: 35, lon0: -120 }), P({ a: Infinity, lat0: 10, lon0: 20 }),
-  P({ a: 2.5, lat0: -42, lon0: 147 }), P({ a: 0.4, lat0: 0, lon0: 0 })
+  P({ a: 2.5, lat0: -42, lon0: 147 }), P({ a: 0.4, lat0: 0, lon0: 0 }),
+  P({ a: -1, lat0: -90, lon0: 0, ts: 71 }), P({ a: -1, lat0: -42, lon0: 147, ts: 45 })
 ];
 for (const prop of ["eqd", "conf", "area"])
   for (const lat1 of [0, -40, 35, 90, -90]) cases.push(C({ prop, lat1, lon0: 147 }));
