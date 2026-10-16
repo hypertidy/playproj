@@ -9,13 +9,14 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import * as persp from "./families/perspective.js";
 import * as azi from "./families/azimuthal.js";
-import { samplePoints, SAMPLE_MODES } from "./landmesh.js";
+import { samplePoints, evenSpacing, SAMPLE_MODES } from "./landmesh.js";
 import { loadCoastline, graticule, sceneFrame } from "./geo.js";
 import { sources, loadWorld, reproject, sampleElev } from "./basemap.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
 
 const RAY_REACH = 6;      // rays from lights further than this start at the edge of the scene
-const RAY_POOL = 4000;    // candidate ray targets, sampled once per seed
+const MAX_RAYS = 5000; // the slider's top end
+const RAY_POOL = MAX_RAYS;    // candidate ray targets, sampled once per seed
 const DEG = "\u00b0";
 
 const CONSTRUCTIONS = ["light", "laea", "aeqd"];
@@ -60,7 +61,7 @@ function readHash() {
   state.lat = Math.max(-90, Math.min(90, state.lat));
   state.lon = ((state.lon + 540) % 360) - 180;
   state.w = Math.max(1, Math.min(8, state.w));
-  state.rays = Math.max(0, Math.min(1000, Math.round(state.rays)));
+  state.rays = Math.max(0, Math.min(MAX_RAYS, Math.round(state.rays)));
   state.relief = Math.max(0, Math.min(100, state.relief));
 }
 
@@ -382,7 +383,8 @@ function rebuild() {
   const rays = [], arcs = [], hitsS = [], hitsP = [];
   let n = 0;
   for (const [lon, lat] of rayPool) {
-    if (n >= state.rays) break;
+    // the even lattice is all drawn: its density is what the slider sets
+    if (n >= state.rays && state.from !== "even") break;
     const xy = fam.project(lon, lat, p);
     if (!inPlane(xy)) continue;
     toScene(lon, lat, B);
@@ -711,7 +713,9 @@ function updatePanel(p) {
   ui.latOut.textContent = state.lat + DEG;
   ui.lonOut.textContent = state.lon + DEG;
   ui.wOut.textContent = `${state.w} R`;
-  ui.raysOut.textContent = state.rays;
+  ui.raysOut.textContent = state.from === "even" && coast.length
+    ? `${state.rays} on land, ${evenSpacing(coast, state.rays).toFixed(1)}${DEG} apart`
+    : state.rays;
   ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail; ui.from.value = state.from;
   ui.bm.value = state.bm;
   ui.spin.checked = !!state.spin;
@@ -742,7 +746,7 @@ ui.v.addEventListener("input", () => { stopSweep(); state.v = persp.snapSlider(+
 ui.lat.addEventListener("input", () => { state.lat = +ui.lat.value; sync(); });
 ui.lon.addEventListener("input", () => { state.lon = +ui.lon.value; sync(); });
 ui.w.addEventListener("input", () => { state.w = +ui.w.value; sync(); });
-ui.rays.addEventListener("input", () => { state.rays = +ui.rays.value; sync(); });
+ui.rays.addEventListener("input", () => { state.rays = +ui.rays.value; if (state.from === "even") buildRayPool(); sync(); });
 ui.grat.addEventListener("change", () => { state.grat = ui.grat.checked ? 1 : 0; sync(); });
 ui.globe.addEventListener("change", () => { state.globe = ui.globe.checked ? 1 : 0; globe.visible = !!state.globe; sync(); });
 ui.detail.addEventListener("change", async () => { state.detail = ui.detail.value; await loadData(); sync(); });

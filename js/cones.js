@@ -9,7 +9,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as fam from "./families/conic.js";
-import { samplePoints, SAMPLE_MODES } from "./landmesh.js";
+import { samplePoints, evenSpacing, SAMPLE_MODES } from "./landmesh.js";
 import { loadCoastline, graticule } from "./geo.js";
 import { sources, loadWorld, reprojectBox } from "./basemap.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
@@ -18,7 +18,8 @@ import { displace, hasElevation } from "./relief.js";
 const D2R = Math.PI / 180;
 const DEG = "\u00b0";
 const LIMIT = 3.2;        // how far (sphere radii) the surface reaches from the standard parallel
-const LINK_POOL = 4000;
+const MAX_RAYS = 5000; // the slider's top end
+const LINK_POOL = MAX_RAYS;
 
 const COLORS = {
   bg: 0x05070d,
@@ -55,7 +56,7 @@ function readHash() {
   state.lat1 = Math.max(-90, Math.min(90, state.lat1));
   state.lon = ((state.lon + 540) % 360) - 180;
   state.t = Math.max(0, Math.min(1, state.t));
-  state.links = Math.max(0, Math.min(1000, Math.round(state.links)));
+  state.links = Math.max(0, Math.min(MAX_RAYS, Math.round(state.links)));
   state.relief = Math.max(0, Math.min(100, state.relief));
 }
 
@@ -312,7 +313,8 @@ function rebuild() {
   const links = [];
   let count = 0;
   for (const [lon, lat] of linkPool) {
-    if (count >= state.links) break;
+    // the even lattice is all drawn: its density is what the slider sets
+    if (count >= state.links && state.from !== "even") break;
     const fp = fam.flatPolar(lon, lat, p);
     if (!inReach(fp)) continue;
     roll(fp, A); onGlobe(lon, lat, B);
@@ -552,7 +554,9 @@ function updatePanel(p) {
   ui.lat1Out.textContent = `${state.lat1}${DEG} (${surfaceName(p)})`;
   ui.tOut.textContent = state.t === 0 ? "wrapped" : state.t === 1 ? "flat" : `${Math.round(state.t * 100)}%`;
   ui.lonOut.textContent = state.lon + DEG;
-  ui.linksOut.textContent = state.links;
+  ui.linksOut.textContent = state.from === "even" && coast.length
+    ? `${state.links} on land, ${evenSpacing(coast, state.links).toFixed(1)}${DEG} apart`
+    : state.links;
   ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail; ui.from.value = state.from;
   ui.bm.value = state.bm;
   ui.spin.checked = !!state.spin;
@@ -579,7 +583,7 @@ const snapLat = (v) => (Math.abs(v) < 1 ? 0 : Math.abs(Math.abs(v) - 90) < 1 ? M
 ui.lat1.addEventListener("input", () => { stopAnim(); state.lat1 = snapLat(+ui.lat1.value); sync(); });
 ui.t.addEventListener("input", () => { stopAnim(); state.t = +ui.t.value; sync(); });
 ui.lon.addEventListener("input", () => { state.lon = +ui.lon.value; sync(); });
-ui.links.addEventListener("input", () => { state.links = +ui.links.value; sync(); });
+ui.links.addEventListener("input", () => { state.links = +ui.links.value; if (state.from === "even") buildLinkPool(); sync(); });
 ui.grat.addEventListener("change", () => { state.grat = ui.grat.checked ? 1 : 0; sync(); });
 ui.globe.addEventListener("change", () => { state.globe = ui.globe.checked ? 1 : 0; sync(); });
 ui.detail.addEventListener("change", async () => { state.detail = ui.detail.value; await loadData(); sync(); });

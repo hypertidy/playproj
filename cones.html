@@ -81,7 +81,7 @@
       <label class="row" for="lon"><span>Central meridian</span><output id="lon-out"></output></label>
       <input id="lon" type="range" min="-180" max="180" step="1">
       <label class="row" for="links"><span>Links to the surface</span><output id="links-out"></output></label>
-      <input id="links" type="range" min="0" max="600" step="10">
+      <input id="links" type="range" min="0" max="5000" step="10">
       <div class="buttons">
         <button id="reseed" type="button">New links</button>
         <button id="reset-view" type="button">Reset view</button>
@@ -101,6 +101,7 @@
             <option value="tri">land triangle centres</option>
             <option value="vert">land mesh vertices</option>
             <option value="coast">coastline vertices</option>
+            <option value="even">evenly spaced on land</option>
           </select>
         </label>
       </div>
