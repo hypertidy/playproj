@@ -35,7 +35,7 @@ const COLORS = {
 
 // ---------------------------------------------------------------- state
 
-const defaults = { prop: "conf", lat1: 40, lon: 0, t: 0, links: 120, seed: 1, from: "tri", detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
+const defaults = { prop: "conf", lat1: 40, lon: 0, tilt: 0, t: 0, links: 120, seed: 1, from: "tri", detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -55,6 +55,7 @@ function readHash() {
   }
   state.lat1 = Math.max(-90, Math.min(90, state.lat1));
   state.lon = ((state.lon + 540) % 360) - 180;
+  state.tilt = Math.max(-90, Math.min(90, state.tilt));
   state.t = Math.max(0, Math.min(1, state.t));
   state.links = Math.max(0, Math.min(MAX_RAYS, Math.round(state.links)));
   state.relief = Math.max(0, Math.min(100, state.relief));
@@ -75,16 +76,25 @@ function writeHash() {
   }, 200);
 }
 
-const params = () => ({ prop: state.prop, lat1: state.lat1, lon0: state.lon });
+const params = () => ({ prop: state.prop, lat1: state.lat1, lon0: state.lon, tilt: state.tilt });
 
 // ---------------------------------------------------------------- geometry
 
-// Globe: the central meridian faces the camera (+z), north is +y.
+// Globe: the central point (0, lon) faces the camera (+z) and the surface's
+// axis is +y; with no tilt that is the north pole. The globe turns about z.
 function onGlobe(lon, lat, out, i = 0) {
-  const cp = Math.cos(lat * D2R), dl = (lon - state.lon) * D2R;
-  out[i] = cp * Math.sin(dl);
-  out[i + 1] = Math.sin(lat * D2R);
+  const cp = Math.cos(lat * D2R), dl = (lon - state.lon) * D2R, t = state.tilt * D2R;
+  const e = cp * Math.sin(dl), n = Math.sin(lat * D2R);
+  out[i] = e * Math.cos(t) + n * Math.sin(t);
+  out[i + 1] = -e * Math.sin(t) + n * Math.cos(t);
   out[i + 2] = cp * Math.cos(dl);
+  return out;
+}
+
+// A point given in the surface's own frame (lon relative to the centre).
+function onGlobeAxis(lonA, latA, out, i = 0) {
+  const cp = Math.cos(latA * D2R);
+  out[i] = cp * Math.sin(lonA * D2R); out[i + 1] = Math.sin(latA * D2R); out[i + 2] = cp * Math.cos(lonA * D2R);
   return out;
 }
 
@@ -179,11 +189,26 @@ function gridIndex(nx, ny, ok) {
   return idx;
 }
 
-function gridUV(nx, ny, lon0, lat0, dlon, dlat) {
-  const uv = [];
-  for (let j = 0; j <= ny; j++)
-    for (let i = 0; i <= nx; i++) uv.push((lon0 + i * dlon + 180) / 360, (lat0 - j * dlat + 90) / 180);
-  return uv;
+// Longitude about the surface's axis, relative to the centre.
+const axisLon = (lon, lat) => (state.tilt ? fam.toAxis(lon, lat, params())[0] : ((lon - state.lon + 540) % 360) - 180);
+
+// Give triangles that cross the antimeridian (in texture u) their own
+// vertices, with u carried past 1 so the texture does not smear back.
+function seamSplit(pos, uv, ll, ok, index) {
+  const P = Array.from(pos), U = Array.from(uv), L = Array.from(ll), O = Array.from(ok), idx = [];
+  for (let t = 0; t < index.length; t += 3) {
+    const tri = [index[t], index[t + 1], index[t + 2]];
+    const us = tri.map((v) => U[2 * v]);
+    if (Math.max(...us) - Math.min(...us) <= 0.5) { idx.push(...tri); continue; }
+    for (const v of tri) {
+      const nvx = P.length / 3;
+      P.push(P[3 * v], P[3 * v + 1], P[3 * v + 2]);
+      U.push(U[2 * v] < 0.5 ? U[2 * v] + 1 : U[2 * v], U[2 * v + 1]);
+      L.push(L[2 * v], L[2 * v + 1]); O.push(O[v]);
+      idx.push(nvx);
+    }
+  }
+  return { pos: new Float32Array(P), uv: U, ll: L, ok: O, index: idx };
 }
 
 // lon/lat grids for the globe, cached by size
@@ -259,25 +284,30 @@ function rebuild() {
   globe.material.depthWrite = relief;
   globe.material.opacity = relief ? 0.95 : world ? GLOBE_OPACITY_MAP : GLOBE_OPACITY;
 
-  // surface: a lon/lat grid from the back meridian round to the back meridian
-  const lonStart = state.lon - 180, latStart = 89;
+  // surface: a grid in the surface's own lon/lat, from the back meridian
+  // round to the back meridian, textured by the geographic lon/lat of each
+  // vertex (triangles across the antimeridian get their own copies of it)
+  const latStart = 89;
   const nv = (SURF_NX + 1) * (SURF_NY + 1);
-  const sp = new Float32Array(nv * 3), ok = new Uint8Array(nv), ll = new Float32Array(nv * 2);
+  const sp = new Float32Array(nv * 3), ok = new Uint8Array(nv), ll = new Float32Array(nv * 2), uv = new Float32Array(nv * 2);
   for (let j = 0, k = 0; j <= SURF_NY; j++)
     for (let i = 0; i <= SURF_NX; i++, k++) {
-      const lon = Math.max(state.lon - 179.999, Math.min(lonStart + i * SURF_DLON, state.lon + 179.999));
-      const lat = latStart - j * SURF_DLAT;
+      const lonA = Math.max(-179.999, Math.min(-180 + i * SURF_DLON, 179.999));
+      const latA = latStart - j * SURF_DLAT;
+      const [lon, lat] = state.tilt ? fam.fromAxis(lonA, latA, p) : [state.lon + lonA, latA];
+      ll[2 * k] = lon; ll[2 * k + 1] = lat;
+      uv[2 * k] = (lon + 180) / 360; uv[2 * k + 1] = (lat + 90) / 180;
       const fp = fam.flatPolar(lon, lat, p);
-      if (inReach(fp)) { roll(fp, sp, k * 3); ok[k] = 1; ll[2 * k] = lon; ll[2 * k + 1] = lat; }
+      if (inReach(fp)) { roll(fp, sp, k * 3); ok[k] = 1; }
     }
-  const surfIndex = gridIndex(SURF_NX, SURF_NY, ok);
-  if (relief) displace(sp, surfIndex, (k) => (ok[k] ? [ll[2 * k], ll[2 * k + 1]] : null), world, state.relief);
-  setMesh(surface, sp, gridUV(SURF_NX, SURF_NY, lonStart, latStart, SURF_DLON, SURF_DLAT), surfIndex);
+  const surf = seamSplit(sp, uv, ll, ok, gridIndex(SURF_NX, SURF_NY, ok));
+  if (relief) displace(surf.pos, surf.index, (k) => (surf.ok[k] ? [surf.ll[2 * k], surf.ll[2 * k + 1]] : null), world, state.relief);
+  setMesh(surface, surf.pos, surf.uv, surf.index);
 
   // coastlines on the globe and the surface, and the graticule
   const drawOn = (lines, globeOut, surfOut) => {
     for (const line of lines) {
-      let prevF = null, prevLon = 0;
+      let prevF = null, prevLon = 0, prevLat = 0;
       for (let i = 0; i < line.length; i += 2) {
         const lon = line[i], lat = line[i + 1];
         onGlobe(lon, lat, B);
@@ -285,11 +315,11 @@ function rebuild() {
         const f = inReach(fp) ? roll(fp, [0, 0, 0]) : null;
         if (i > 0) {
           if (globeOut) globeOut.push(A[0], A[1], A[2], B[0], B[1], B[2]);
-          const dl = Math.abs(((lon - state.lon + 540) % 360) - ((prevLon - state.lon + 540) % 360));
+          const dl = Math.abs(axisLon(lon, lat) - axisLon(prevLon, prevLat));
           if (f && prevF && dl < 90) surfOut.push(prevF[0], prevF[1], prevF[2], f[0], f[1], f[2]);
         }
         A[0] = B[0]; A[1] = B[1]; A[2] = B[2];
-        prevF = f; prevLon = lon;
+        prevF = f; prevLon = lon; prevLat = lat;
       }
     }
   };
@@ -304,7 +334,7 @@ function rebuild() {
   // the standard parallel, where the cone touches the sphere
   const sp1 = [];
   for (let k = 0; k < 180; k++) {
-    onGlobe(-180 + 2 * k, p.lat1, A); onGlobe(-178 + 2 * k, p.lat1, B);
+    onGlobeAxis(-180 + 2 * k, p.lat1, A); onGlobeAxis(-178 + 2 * k, p.lat1, B);
     sp1.push(A[0], A[1], A[2], B[0], B[1], B[2]);
   }
   setLines("stdParallel", sp1, COLORS.parallel, 0.95, 3);
@@ -333,9 +363,9 @@ function rebuild() {
 // The flat map box: everything within reach of the standard parallel.
 function mapBox(p) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (let lat = -89; lat <= 89; lat += 1)
-    for (let lon = state.lon - 180; lon <= state.lon + 180; lon += 2) {
-      const l = Math.max(state.lon - 179.999, Math.min(state.lon + 179.999, lon));
+  for (let latA = -89; latA <= 89; latA += 1)
+    for (let lonA = -180; lonA <= 180; lonA += 2) {
+      const [l, lat] = fam.fromAxis(Math.max(-179.999, Math.min(179.999, lonA)), latA, p);
       const fp = fam.flatPolar(l, lat, p);
       if (!inReach(fp)) continue;
       const xy = fam.project(l, lat, p);
@@ -482,11 +512,15 @@ function drawMap(p) {
   let maxDiff = 0, compared = 0;
   const fwd = (lon, lat) => {
     // the cut meridian belongs to either edge; leave it out of the check
-    if (Math.abs(((lon - p.lon0 + 540) % 360) - 180) > 179.9) return null;
+    const lonA = fam.toAxis(lon, lat, p)[0];
+    if (Math.abs(lonA) > 179.9) return null;
     const fp = fam.flatPolar(lon, lat, p);
     if (!inReach(fp)) return null;
     const geo = fam.project(lon, lat, p);
     if (!tr) return geo;
+    // proj4js's omerc flips sign exactly 90 degrees round the axis from the
+    // centre (it divides by zero there; PROJ does not): skip those points
+    if (p.tilt && Math.abs(Math.abs(lonA) - 90) < 1e-9) return geo;
     let q;
     try { q = tr.forward([lon, lat]); } catch (e) { return null; }
     if (!q || !isFinite(q[0]) || !isFinite(q[1])) return null;
@@ -515,6 +549,9 @@ function drawMap(p) {
   if (tr) {
     badge.className = "badge ok";
     badge.textContent = `Drawn by proj4js. Agrees with the construction to ${maxDiff < 1e-6 ? "< 1e-6" : maxDiff.toExponential(1)} m over ${compared} points.`;
+  } else if (!fam.proj4String(p)) {
+    badge.className = "badge none";
+    badge.textContent = "proj4js has no ob_tran: map drawn from the construction (checked against PROJ in the tests).";
   } else {
     badge.className = "badge none";
     badge.textContent = "proj4js unavailable: map drawn from the construction.";
@@ -525,7 +562,7 @@ function drawMap(p) {
 
 const $ = (id) => document.getElementById(id);
 const ui = {
-  lat1: $("lat1"), t: $("t"), lon: $("lon"), links: $("links"),
+  lat1: $("lat1"), t: $("t"), lon: $("lon"), tilt: $("tilt"), tiltOut: $("tilt-out"), links: $("links"),
   lat1Out: $("lat1-out"), tOut: $("t-out"), lonOut: $("lon-out"), linksOut: $("links-out"),
   proj: $("projstring"), describe: $("describe"), props: $("props"),
   grat: $("grat"), globe: $("globe"), detail: $("detail"), from: $("from"),
@@ -554,6 +591,8 @@ function updatePanel(p) {
   ui.lat1Out.textContent = `${state.lat1}${DEG} (${surfaceName(p)})`;
   ui.tOut.textContent = state.t === 0 ? "wrapped" : state.t === 1 ? "flat" : `${Math.round(state.t * 100)}%`;
   ui.lonOut.textContent = state.lon + DEG;
+  ui.tilt.value = state.tilt;
+  ui.tiltOut.textContent = state.tilt === 0 ? "0\u00b0 (normal)" : Math.abs(state.tilt) === 90 ? `${state.tilt}${DEG} (transverse)` : `${state.tilt}${DEG} (oblique)`;
   ui.linksOut.textContent = state.from === "even" && coast.length
     ? `${state.links} on land, ${evenSpacing(coast, state.links).toFixed(1)}${DEG} apart`
     : state.links;
@@ -583,6 +622,7 @@ const snapLat = (v) => (Math.abs(v) < 1 ? 0 : Math.abs(Math.abs(v) - 90) < 1 ? M
 ui.lat1.addEventListener("input", () => { stopAnim(); state.lat1 = snapLat(+ui.lat1.value); sync(); });
 ui.t.addEventListener("input", () => { stopAnim(); state.t = +ui.t.value; sync(); });
 ui.lon.addEventListener("input", () => { state.lon = +ui.lon.value; sync(); });
+ui.tilt.addEventListener("input", () => { state.tilt = +ui.tilt.value; sync(); });
 ui.links.addEventListener("input", () => { state.links = +ui.links.value; if (state.from === "even") buildLinkPool(); sync(); });
 ui.grat.addEventListener("change", () => { state.grat = ui.grat.checked ? 1 : 0; sync(); });
 ui.globe.addEventListener("change", () => { state.globe = ui.globe.checked ? 1 : 0; sync(); });
