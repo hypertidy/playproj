@@ -105,13 +105,12 @@ any PROJ string proj4js can read, click a point for its scale factors, and
 colour the globe and map by areal scale or angular distortion. "Projected
 circles" draws the true image of each circle next to the linearised ellipse.
 
-`js/tissot.js` computes the factors from nothing but a forward function, so it
-works on PROJ strings and on the ray constructions alike. It differences the
-projection at the same four points round the target that PROJ's
-`proj_factors()` uses and applies the same formulas (Snyder 1987), giving h,
-k, s, a, b, omega, theta' and convergence. The method is Bill Huber's
-([GIS Stack Exchange](https://gis.stackexchange.com/a/5075)), ported to R in
-[hypertidy/tissot](https://github.com/hypertidy/tissot). The perspective and
+The numbers are those of [PROJ](https://proj.org/)'s `proj_factors()`: h, k,
+s, a, b, omega, theta' and convergence. `js/tissot.js` computes them from
+nothing but a forward function, so it works on PROJ strings and on the ray
+constructions alike: it differences the projection at the same four points
+round the target that PROJ does and applies the same formulas (Snyder 1987),
+as in Bill Huber's [GIS Stack Exchange answer](https://gis.stackexchange.com/a/5075). The perspective and
 cones pages have a "Tissot indicatrix" toggle that draws them on their maps
 from the constructions. Hash keys: `proj` (preset, or `custom` with `def`),
 `lon`, `lat`, `size` (circle radius, degrees), `step` (15 or 30), `color`

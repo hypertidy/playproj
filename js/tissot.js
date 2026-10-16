@@ -8,10 +8,9 @@
 // The numbers follow PROJ's proj_factors() exactly (src/factors.cpp): the
 // derivatives come from the same four-point difference about the point, and
 // h, k, s, omega, theta' and convergence from the same formulas (Snyder 1987,
-// pp. 20-26). The method is Bill Huber's, https://gis.stackexchange.com/a/5075,
-// as ported to R in https://github.com/hypertidy/tissot. Unlike PROJ it needs
-// nothing but a forward function, so it works on a ray construction or any
-// other projection that has no PROJ string.
+// pp. 20-26), as in Bill Huber's https://gis.stackexchange.com/a/5075.
+// Unlike PROJ it needs nothing but a forward function, so it works on a ray
+// construction or any other projection that has no PROJ string.
 //
 // A forward function takes lon, lat in degrees and returns [x, y] in units of
 // the semi-major axis (sphere radius), or null where the point does not
