@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: s2 cells</title>
+<meta name="description" content="S2 cells: the globe projected onto a cube, unfolded, and numbered along a Hilbert curve.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/cells.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./cells.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./spilhaus.html">Spilhaus</a><a href="./catastrophes.html">Catastrophes</a><a href="./cells.html" aria-current="page">s2 cells</a><a href="./example.html">For example</a></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="lvl"><span>Level</span><output id="lvl-out"></output></label>
+      <input id="lvl" type="range" min="0" max="12" step="1" aria-label="Cell level">
+      <label class="row" for="t"><span>Unfold</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Sphere to cube to net">
+      <div class="buttons">
+        <button id="play" type="button">Unfold</button>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="token"><span>Cell</span><output id="cell-level"></output></label>
+      <div class="projline">
+        <input id="token" class="token" type="text" spellcheck="false" autocomplete="off" placeholder="click the globe or paste a token" aria-label="Cell token">
+        <button id="copy-geojson" type="button" class="small" disabled>GeoJSON</button>
+      </div>
+      <p id="cell-info" class="badge"></p>
+      <div class="buttons">
+        <button id="cell-up" type="button" class="small" disabled>Parent</button>
+        <button id="cell-down" type="button" class="small" disabled>Child</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="toggles">
+        <label><input id="curve" type="checkbox"> Hilbert curve</label>
+        <label><input id="grid" type="checkbox"> Cell grid</label>
+        <label><input id="coast" type="checkbox"> Coastline</label>
+        <label><input id="uvgrid" type="checkbox"> Without the stretch</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>Put a light at the centre of the globe and a cube round it: each point casts onto one of six faces.
+          That is the gnomonic projection, six times over, and it is how
+          <a href="https://s2geometry.io/">S2</a> starts. Unfold shows it: the globe swells to the cube, then
+          the cube opens into a staircase of faces 0 to 5.</p>
+        <p>Gnomonic cells are much bigger in the middle of a face than at its corners, so S2 stretches each
+          face with a quadratic before cutting it into a grid. Tick "Without the stretch" to see the
+          unstretched grid. Each level splits every cell into four.</p>
+        <p>The cells are numbered along a Hilbert curve that runs through face 0, then 1, and on to 5, so
+          cells close in number are close on the globe. A cell's id is its face and its path down the
+          curve; the token is that id in hexadecimal without its trailing zeros.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
