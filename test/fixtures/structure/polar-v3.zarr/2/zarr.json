@@ -1,0 +1,18 @@
+{
+  "attributes": {
+    "spatial:transform": [
+      6000.0,
+      0.0,
+      -3072000.0,
+      0.0,
+      -6000.0,
+      3072000.0
+    ],
+    "spatial:shape": [
+      1024,
+      1024
+    ]
+  },
+  "zarr_format": 3,
+  "node_type": "group"
+}

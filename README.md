@@ -234,7 +234,8 @@ of ESA's tiling grid: the tile's top left corner is its square's, moved onto a
 60 m grid from easting 0 and the equator, and its band letter is the band of
 the square's centre. Which squares are tiles (ESA leaves out edge squares
 that are mostly outside their zone) is in `data/s2-tiles.json`, a bitmask per
-grid zone. `test/check-mgrs.mjs` checks UTM against PROJ, references against
+grid zone. `test/check-structure.mjs` checks the tile and overview readers against
+GDAL, tifffile and zarr-python. `test/check-mgrs.mjs` checks UTM against PROJ, references against
 GeoTrans and tile lookups against the footprints in ESA's grid, using
 `test/fixtures/mgrs-points.json` from `test/make-mgrs-fixtures.py`, and UPS
 against PROJ and GeoTrans with `test/fixtures/ups-points.json` from
@@ -272,6 +273,43 @@ Hash keys: `g` (`rot`, `tri`, `cube`, `yy`), `t` (unfold), `step` (spacing in
 degrees), `plat`, `plon` (rotated pole, CF grid north pole), `join`, `tlon`
 (tripolar join latitude and pole longitude), `eq` (0 for plain gnomonic cube
 faces), `cell` (patch, i, j), `coast`, `grat`, `cam`.
+
+## Tiles and overviews
+
+`structure.html` shows how a raster is stored: its pixel grid, the tiles (or
+strips, or chunks) the pixels are cut into, and the overviews, each half the
+resolution of the one before. Give it a URL or a local file:
+
+| Source                     | What is read                                                |
+|----------------------------|-------------------------------------------------------------|
+| GeoTIFF or COG             | TIFF tags and geokeys, with HTTP range requests (classic and BigTIFF) |
+| Zarr v2 or v3              | `zarr.json` or `.zarray`/`.zattrs`/`.zmetadata`; multiscales as OME-NGFF datasets, a GeoZarr `layout` or a `tile_matrix_set`; shards and their inner chunks |
+| WMTS                       | the capabilities document: a layer's tile matrix set        |
+| ArcGIS MapServer or ImageServer | the service JSON (`?f=json`): the tile cache's levels, as a window on each |
+| XYZ template               | nothing: `{z}/{x}/{y}` means Web Mercator, 256 pixel tiles  |
+| OGC TileMatrixSet JSON     | the tile matrices                                           |
+
+Or type a grid spec: CRS, extent (xmin, xmax, ymin, ymax), dimension, tile
+size and number of levels (blank halves until a level fits in one tile, as
+GDAL's COG driver does). No pixel data is read. "Unfold" takes the grid from
+the globe to its own CRS, "Stack the levels" pulls the pyramid apart, and a
+click gives the pixel and tile under the pointer at every level, with the
+tile's byte range in a GeoTIFF (a COG puts every IFD before the data and the
+smallest overview first; the bar under the levels shows it), its chunk key in
+Zarr and its URL in a tile service. GEBCO 2026 is the default example.
+
+The CRS comes from an EPSG code (a table of common ones, then
+spatialreference.org or epsg.io), from the PROJ parameters in the geokeys of a
+user-defined GeoTIFF CRS, from `proj:code`, `crs_wkt` or `spatial_ref` in Zarr
+attributes, or from what is typed. `js/structure.js` holds the readers;
+`test/check-structure.mjs` checks them against GeoTIFFs written by GDAL's COG
+driver and described by rasterio and tifffile, and Zarr stores written by
+zarr-python (`test/fixtures/structure`, made by
+`test/make-structure-fixtures.py`). Hash keys: `src`, `kind` (`tiff`, `zarr`,
+`wmts`, `arcgis`, `xyz`, `tmsjson`), `var` (Zarr variable), `layer`, `tms`
+(WMTS), `zmax` (deepest XYZ zoom), `spec=1` with `crs`, `ext`, `dim`, `tile`,
+`lev`, then `lvl`, `t` (unfold), `ex` (stack), `pick` (x,y in the CRS),
+`tiles`, `pix`, `coast`, `grat`, `cam`.
 
 ## L3 bins
 
@@ -399,6 +437,8 @@ js/mishaps.js               catastrophe steps, vertex-by-vertex and spherical dr
 cells.html, js/cells.js     s2 cells page
 js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
 grids.html, js/grids-page.js  model grids page
+structure.html, js/structure-page.js  tiles and overviews page
+js/structure.js             grid, tile and file structure of COG, Zarr, WMTS, ArcGIS, XYZ and specs
 js/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 example.html, js/example.js For example storyboard
 homage.html, js/homage.js   homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977
@@ -438,7 +478,8 @@ globals, their interruptions and the butterfly's faces. `test/check-mishaps.mjs`
 frames against d3-geo and the areas behind its captions. `test/check-s2.mjs` checks
 cell tokens and corners against `test/fixtures/s2-cells.json`, made with
 s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js.
-`test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
+`test/check-structure.mjs` checks the tile and overview readers against
+GDAL, tifffile and zarr-python. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
 GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid.
 `test/check-tissot.mjs` checks the distortion factors against PROJ's own
 `proj_factors()` for 27 projections, spheres and ellipsoids
