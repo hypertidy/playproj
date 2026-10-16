@@ -17,6 +17,13 @@
 //
 // so one slider for phi1 morphs each row continuously. Southern cones
 // (phi1 < 0) are the mirror image of northern ones.
+//
+// The surface's axis can also be tilted away from the earth's axis
+// (an oblique aspect): the globe turns by `tilt` degrees about the line
+// through the centre and the point (0, lon0), so the north pole leans
+// east (tilt > 0) or west. The cone then sits on that rotated graticule.
+// The conformal cylinder tilted this way is the Oblique Mercator, and at
+// 90 degrees the Transverse Mercator. PROJ writes the others with ob_tran.
 
 import { esriGeoKeys } from "../geotiff-write.js";
 
@@ -73,6 +80,25 @@ const POLAR = {
   area: [(phi) => 2 * Math.sin(Math.PI / 4 - phi / 2), (r) => (r <= 2 ? Math.PI / 2 - 2 * Math.asin(r / 2) : NaN)]
 };
 
+// Geographic lon/lat -> [lon, lat] about the tilted axis, lon relative to
+// the central point (0, lon0). Degrees.
+export function toAxis(lon, lat, p) {
+  const dl = (lon - p.lon0) * D2R, phi = lat * D2R, t = (p.tilt || 0) * D2R;
+  const c = Math.cos(phi) * Math.cos(dl), e = Math.cos(phi) * Math.sin(dl), n = Math.sin(phi);
+  const e2 = e * Math.cos(t) + n * Math.sin(t), n2 = -e * Math.sin(t) + n * Math.cos(t);
+  return [Math.atan2(e2, c) / D2R, Math.asin(Math.max(-1, Math.min(1, n2))) / D2R];
+}
+
+export function fromAxis(lonA, latA, p) {
+  const dl = lonA * D2R, phi = latA * D2R, t = (p.tilt || 0) * D2R;
+  const c = Math.cos(phi) * Math.cos(dl), e2 = Math.cos(phi) * Math.sin(dl), n2 = Math.sin(phi);
+  const e = e2 * Math.cos(t) - n2 * Math.sin(t), n = e2 * Math.sin(t) + n2 * Math.cos(t);
+  const lon = ((p.lon0 + Math.atan2(e, c) / D2R + 540) % 360) - 180;
+  return [lon, Math.asin(Math.max(-1, Math.min(1, n))) / D2R];
+}
+
+const tilted = (p) => !!p.tilt;
+
 export function kind(p) {
   const n = Math.sin(Math.abs(p.lat1) * D2R);
   return n < EPS_N ? 0 : n > 1 - EPS_N ? 2 : 1;
@@ -85,6 +111,7 @@ export function coneConstant(p) {
 // Forward: lon/lat degrees -> flat map x/y in sphere radii, origin at the
 // standard parallel on the central meridian. Null where undefined.
 export function project(lon, lat, p) {
+  if (tilted(p)) { const a = toAxis(lon, lat, p); lon = p.lon0 + a[0]; lat = a[1]; }
   const s = p.lat1 < 0 ? -1 : 1;
   const phi = s * lat * D2R, phi1 = Math.abs(p.lat1) * D2R;
   let dl = ((lon - p.lon0 + 540) % 360) - 180;
@@ -125,6 +152,7 @@ export function inverse(x, y, p) {
     phi = phiOf(p.prop, rho, phi1, n);
   }
   if (!isFinite(phi) || Math.abs(lam) > Math.PI + 1e-12 || Math.abs(phi) > Math.PI / 2) return null;
+  if (tilted(p)) return fromAxis(lam / D2R, s * phi / D2R, p);
   const lon = ((p.lon0 + lam / D2R + 540) % 360) - 180;
   return [lon, s * phi / D2R];
 }
@@ -146,6 +174,17 @@ export function flatPolar(lon, lat, p) {
 }
 
 export function projString(p) {
+  const base = normalString(p);
+  if (!tilted(p)) return base;
+  const t = p.tilt, sg = Math.sign(t);
+  if (kind(p) === 0 && p.prop === "conf")
+    return `+proj=omerc +lat_0=0 +lonc=${fmt(p.lon0)} +alpha=${fmt(sg * (90 - Math.abs(t)))} +gamma=${sg * 90} +no_uoff +R=${R}`;
+  // ob_tran: the rotated pole, and the normal-aspect projection about it
+  const o = base.replace(/^\+proj=(\S+)/, "+o_proj=$1").replace(/ \+lon_0=\S+/, "").replace(/ \+R=\S+/, "");
+  return `+proj=ob_tran ${o} +o_lat_p=${fmt(90 - Math.abs(t))} +o_lon_p=${sg * 90} +lon_0=${fmt(p.lon0 + sg * 90)} +R=${R}`;
+}
+
+function normalString(p) {
   const k = kind(p);
   const name = NAMES[p.prop][k];
   const lon = `+lon_0=${fmt(p.lon0)}`;
@@ -161,8 +200,10 @@ export function projString(p) {
   return `+proj=${name} +lat_0=${l1} +lat_1=${l1} +lat_2=${l1} ${lon} ${tail}`;
 }
 
+// proj4js has omerc but not ob_tran: those are drawn from the construction.
 export function proj4String(p) {
-  return projString(p) + " +x_0=0 +y_0=0";
+  const s = projString(p);
+  return s.startsWith("+proj=ob_tran") ? null : s + " +x_0=0 +y_0=0";
 }
 
 export function describe(p) {
@@ -171,11 +212,23 @@ export function describe(p) {
   const where = k === 0 ? "A cylinder touches the equator" :
     k === 2 ? `A plane touches the ${p.lat1 < 0 ? "south" : "north"} pole` :
     `A cone touches the parallel at ${fmt(p.lat1)} degrees, and fills ${fmt(100 * coneConstant(p))}% of a circle when flat`;
-  return `${where}. ${prop.label}: ${prop.note}.`;
+  const omerc = kind(p) === 0 && p.prop === "conf";
+  const axis = !tilted(p) ? "" : Math.abs(p.tilt) === 90 ? ` Its axis is tilted 90 degrees, into the equator: the transverse aspect${omerc ? ", the Transverse Mercator" : ""}.` :
+    ` Its axis is tilted ${fmt(Math.abs(p.tilt))} degrees ${p.tilt > 0 ? "east" : "west"} of the pole: an oblique aspect${omerc ? ", the Oblique Mercator" : ""}.`;
+  const surf = !tilted(p) ? where : where.replace("the equator", "a great circle round the tilted axis")
+    .replace("the parallel at", "the small circle round the tilted axis at").replace(/the (north|south) pole/, "the tilted axis");
+  return `${surf}. ${prop.label}: ${prop.note}.${axis}`;
 }
 
 export function geoKeys(p) {
   const k = kind(p), name = NAMES[p.prop][k];
+  // a tilted axis goes in as the PROJ string, which GDAL hands to PROJ
+  if (tilted(p)) {
+    const wkt = `PROJCS["playproj_oblique_${name}",GEOGCS["GCS_Sphere",DATUM["D_Sphere",SPHEROID["Sphere",${R},0.0]],` +
+      `PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["custom_proj4"],UNIT["Meter",1.0],` +
+      `EXTENSION["PROJ4","${projString(p)} +units=m +no_defs"]]`;
+    return esriGeoKeys(wkt, R, `playproj ${projString(p)}`);
+  }
   const sph = `GEOGCS["GCS_Sphere",DATUM["D_Sphere",SPHEROID["Sphere",${R},0.0]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]`;
   const fe = `PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0]`;
   const cm = `PARAMETER["Central_Meridian",${p.lon0}]`;

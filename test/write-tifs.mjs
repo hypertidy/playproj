@@ -19,6 +19,7 @@ for (const prop of ["eqd", "conf", "area"])
   for (const lat1 of [0, -40, 35, 90, -90]) cases.push(C({ prop, lat1, lon0: 147 }));
 for (const mode of ["laea", "aeqd"])
   for (const [lat0, lon0] of [[-90, 0], [-42, 147], [35, -120]]) cases.push(A({ mode, lat0, lon0 }));
+cases.push(C({ prop: "conf", lat1: 0, lon0: 147, tilt: 30 }), C({ prop: "conf", lat1: 0, lon0: 100, tilt: 90 }), C({ prop: "area", lat1: 40, lon0: 20, tilt: -35 }));
 cases.push({ fam: spil, p: {} }, { fam: spil, p: { lon0: 147, lat0: -42, azi: 0 } });
 const manifest = [];
 for (const [i, { fam, p }] of cases.entries()) {
