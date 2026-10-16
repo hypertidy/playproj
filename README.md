@@ -155,20 +155,30 @@ drawn translucent, the overlaps glow brighter. Tiles at a zone's edge run on
 past it, so near the edge the same ground is in tiles from two zones, in two
 coordinate systems.
 
+"UPS north" and "UPS south" show the polar caps, where MGRS switches to
+Universal Polar Stereographic (north of 84 N, south of 80 S): a light at one
+pole casts the other cap down its rays onto a plane, lowered to scale 0.994 so
+it cuts the globe near 81.1 degrees. The caps are split at Greenwich into grid
+zones A and B (south) and Y and Z (north), with their own 100 km square
+letters. Sentinel-2 has no UPS tiles; its UTM tiles in band C run on to about
+84 S, and they are carried onto the plane too.
+
 Click the globe or the zone, or paste a lon, lat, an MGRS reference or a
 tile name, for the point's UTM coordinates and EPSG code, its MGRS reference,
 and every tile containing it; GeoJSON copies the point and those tiles.
 
-`js/mgrs.js` has UTM (Krueger's series to sixth order, as in PROJ), MGRS
-references both ways, and the tiling rules, which reproduce all 56,686 tiles
+`js/mgrs.js` has UTM (Krueger's series to sixth order, as in PROJ), UPS,
+MGRS references both ways (polar ones too), and the tiling rules, which reproduce all 56,686 tiles
 of ESA's tiling grid: the tile's top left corner is its square's, moved onto a
 60 m grid from easting 0 and the equator, and its band letter is the band of
 the square's centre. Which squares are tiles (ESA leaves out edge squares
 that are mostly outside their zone) is in `data/s2-tiles.json`, a bitmask per
 grid zone. `test/check-mgrs.mjs` checks UTM against PROJ, references against
 GeoTrans and tile lookups against the footprints in ESA's grid, using
-`test/fixtures/mgrs-points.json` from `test/make-mgrs-fixtures.py`. Hash
-keys: `zone` (1 to 60), `t` (0 globe, 0.5 cylinder, 1 flat), `pt` (lon,lat),
+`test/fixtures/mgrs-points.json` from `test/make-mgrs-fixtures.py`, and UPS
+against PROJ and GeoTrans with `test/fixtures/ups-points.json` from
+`test/make-ups-fixture.py`. Hash
+keys: `mode` (`utm`, `upsn` or `upss`), `zone` (1 to 60), `t` (0 globe, 0.5 cylinder, 1 flat), `pt` (lon,lat),
 `tile`, `s2`, `nb` (next zones' tiles), `sq` (100 km squares), `coast`,
 `cyl`, `cam`.
 
