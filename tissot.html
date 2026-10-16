@@ -103,13 +103,12 @@
           projects the actual circle point by point, and the two part company as the circles grow. The red
           and blue lines are where the parallel and the meridian through the point go, with scales
           <i>k</i> and <i>h</i>; they cross at right angles only where &theta;&prime; is 90&deg;.</p>
-        <p>The numbers are found from any forward projection by differencing it at four points around the
-          picked one, as PROJ's <code>proj_factors()</code> does, and they match it to about 1e-8.
-          That method is Bill Huber's, from his
-          <a href="https://gis.stackexchange.com/a/5075">answer on GIS Stack Exchange</a>, and his
-          Mathematica code was ported to R as the
-          <a href="https://github.com/hypertidy/tissot">tissot</a> package, which now asks PROJ for the
-          factors. The map is drawn by <a href="https://github.com/proj4js/proj4js">proj4js</a>.</p>
+        <p>The numbers are the ones <a href="https://proj.org/">PROJ</a> reports from
+          <a href="https://proj.org/en/stable/development/reference/functions.html#c.proj_factors"><code>proj_factors()</code></a>,
+          worked out here from any forward projection by differencing it at the same four points around the
+          picked one, with the same formulas (Snyder 1987); they match PROJ to about 1e-8. The calculation
+          follows Bill Huber's <a href="https://gis.stackexchange.com/a/5075">answer on GIS Stack Exchange</a>.
+          The map is drawn by <a href="https://github.com/proj4js/proj4js">proj4js</a>.</p>
         <table>
           <tr><th>Symbol</th><th>Meaning</th></tr>
           <tr><td><i>h</i>, <i>k</i></td><td>scale along the meridian, along the parallel</td></tr>
