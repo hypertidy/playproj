@@ -14,6 +14,14 @@
 //
 // Other values of `a` are valid perspective constructions with no PROJ
 // equivalent, and the playground draws them anyway.
+//
+// The plane can also be lowered from the tangent point to cut the sphere
+// (a secant plane). It then sits at height h = sin(lat_ts) above the centre
+// and meets the sphere in the circle at lat_ts (in the polar sense: 90 - c
+// degrees from the tangent point), where the map is at true scale along the
+// circle. Every map point scales by k0 = (h - a) / (1 - a), the ratio of the
+// two planes' distances from the light; parallel rays (orthographic) give
+// the same map on every parallel plane.
 
 import { esriGeoKeys } from "../geotiff-write.js";
 
@@ -56,6 +64,22 @@ export function horizonCos(a) {
   return Math.abs(a) <= 1 ? a : 1 / a;
 }
 
+// Height of the plane above the sphere centre, from lat_ts in degrees
+// (90 = tangent). It is kept on the far side of a light inside the sphere,
+// so the rays still head out to it.
+export function planeY(p) {
+  let h = Math.sin((p.ts ?? 90) * D2R);
+  if (isFinite(p.a) && p.a < 1) h = Math.max(h, Math.min(1, p.a + 0.02));
+  return h;
+}
+
+// Scale of the plane at planeY relative to the tangent plane: k0.
+export function planeScale(p) {
+  return isFinite(p.a) ? (planeY(p) - p.a) / (1 - p.a) : 1;
+}
+
+const secant = (p) => planeY(p) < 1 - 1e-12;
+
 // Project lon/lat (degrees) to plane x/y in sphere radii (east, north of the
 // tangent point). Returns null where the ray never reaches the plane.
 export function project(lon, lat, p, eps = 1e-6) {
@@ -66,7 +90,7 @@ export function project(lon, lat, p, eps = 1e-6) {
   const cdl = Math.cos(dlam);
   const cosc = sp0 * sp + cp0 * cp * cdl;
   if (cosc <= horizonCos(a) + eps) return null;
-  const k = isFinite(a) ? (1 - a) / (cosc - a) : 1;
+  const k = (isFinite(a) ? (1 - a) / (cosc - a) : 1) * planeScale(p);
   return [k * cp * Math.sin(dlam), k * (cp0 * sp - sp0 * cp * cdl)];
 }
 
@@ -76,6 +100,9 @@ export function project(lon, lat, p, eps = 1e-6) {
 // one the forward projection uses. Returns null where the ray misses.
 export function inverse(x, y, p, eps = 1e-6) {
   const { a, lat0, lon0 } = p;
+  // the same ray meets the tangent plane at x / k0, y / k0
+  const s = planeScale(p);
+  x /= s; y /= s;
   // scene frame: tangent point at +Y, plane point at (x, 1, -y)
   let ox, oy, oz, dx, dy, dz, tmin;
   if (isFinite(a)) {
@@ -110,7 +137,8 @@ export function inverse(x, y, p, eps = 1e-6) {
   return [lon, lat];
 }
 
-export function projString(p) {
+// The projection on the tangent plane.
+function tangentString(p) {
   const { a, lat0, lon0 } = p;
   const c = `+lat_0=${fmt(lat0)} +lon_0=${fmt(lon0)} +R=${R}`;
   if (!isFinite(a)) return `+proj=ortho ${c}`;
@@ -120,14 +148,41 @@ export function projString(p) {
   return null;
 }
 
+// With a secant plane: stere takes +lat_ts at the poles and +k_0 elsewhere,
+// ortho does not change, and gnom and nsper (which ignore +k_0) are scaled
+// by an affine step in a pipeline.
+export function projString(p) {
+  const t = tangentString(p);
+  if (!t || !secant(p) || t.startsWith("+proj=ortho")) return t;
+  const k = fmt(planeScale(p), 14);
+  if (t.startsWith("+proj=stere")) {
+    if (Math.abs(Math.abs(p.lat0) - 90) < 1e-9) return `${t} +lat_ts=${fmt(Math.sign(p.lat0) * Math.asin(planeY(p)) / D2R)}`;
+    return `${t} +k_0=${k}`;
+  }
+  return `+proj=pipeline +step ${t} +step +proj=affine +s11=${k} +s22=${k}`;
+}
+
 // proj4js has no "nsper", but "tpers" with no tilt is the same projection.
-// Its gnom and ortho need explicit false origins or they return NaN.
+// Its gnom and ortho need explicit false origins or they return NaN. This is
+// always the tangent-plane projection: multiply by proj4Scale(p) for the
+// secant plane.
 export function proj4String(p) {
-  const s = projString(p);
+  const s = tangentString(p);
   return s && s.replace("+proj=nsper", "+proj=tpers +tilt=0 +azi=0") + " +x_0=0 +y_0=0";
 }
 
+export const proj4Scale = planeScale;
+
 export function describe(p) {
+  const base = describeLight(p);
+  if (!secant(p)) return base;
+  const ts = Math.asin(planeY(p)) / D2R;
+  const where = Math.abs(Math.abs(p.lat0) - 90) < 1e-9 ? `latitude ${fmt(Math.sign(p.lat0) * ts)}` : `the circle ${fmt(90 - ts)} degrees from the tangent point`;
+  const k = isFinite(p.a) ? ` Everything shrinks by k0 = ${fmt(planeScale(p))}.` : " Parallel rays draw the same map on any parallel plane.";
+  return `${base} The plane is lowered to cut the sphere along ${where}, where the scale is true.${k}`;
+}
+
+function describeLight(p) {
   const { a } = p;
   if (!isFinite(a)) return "Orthographic: the light is infinitely far away, so the rays are parallel.";
   if (Math.abs(a + 1) < 1e-9) return "Stereographic: the light sits on the far side of the sphere, at the antipode of the tangent point.";
@@ -137,8 +192,8 @@ export function describe(p) {
   return "Internal perspective: the light is inside the sphere. This is a valid construction with no PROJ equivalent.";
 }
 
-function fmt(x) {
-  return String(+x.toFixed(4));
+function fmt(x, digits = 4) {
+  return String(+x.toFixed(digits));
 }
 
 // GeoTIFF georeferencing for the current construction, as geokeys for
@@ -150,6 +205,9 @@ const CT = { stere: 14, gnom: 19, ortho: 21 };
 export function geoKeys(p) {
   const s = projString(p);
   const name = s ? s.split(" ")[0].slice(6) : null;
+  // GeoTIFF's stereographic carries a scale factor; a scaled gnom or nsper
+  // has no geokeys, so it gets a citation with its PROJ pipeline
+  if (name === "pipeline") return [[1025, 1], [1026, { ascii: `playproj ${s}` }]];
   const sphere = [
     [2048, 32767], [2049, { ascii: `Sphere R=${R}` }], [2050, 32767], [2051, 8901],
     [2054, 9102], [2056, 32767], [2057, { double: R }], [2058, { double: R }]
@@ -161,7 +219,7 @@ export function geoKeys(p) {
       [3080, { double: p.lon0 }], [3081, { double: p.lat0 }],
       [3082, { double: 0 }], [3083, { double: 0 }],
       [3088, { double: p.lon0 }], [3089, { double: p.lat0 }],
-      [3092, { double: 1 }]
+      [3092, { double: planeScale(p) }]
     ];
   }
   if (name === "nsper") {

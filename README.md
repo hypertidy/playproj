@@ -156,6 +156,7 @@ index.html#v=0.75&lat=-42&lon=147&w=2&rays=200&cam=4.6,2.6,6.2,0,0.5,0
 | `az`     | construction: `light` (default), `laea` (compass) or `aeqd` (string) |
 | `v`      | light position on the slider, -1 to 1 (-0.5 antipode, 0 centre, 1 infinity) |
 | `lat`, `lon` | tangent point in degrees                                   |
+| `ts`     | true scale (lat_ts), 0 to 90: 90 is the tangent plane, lower values drop it to cut the sphere (polar stere `+lat_ts`, oblique stere `+k_0`, gnom and nsper an affine step) |
 | `w`      | plane half-width in sphere radii                               |
 | `rays`   | number of rays drawn, up to 5000                               |
 | `seed`   | which random points get rays                                   |
@@ -193,6 +194,7 @@ js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
 test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-proj.mjs         ray construction vs proj4js
+test/check-secant.mjs       secant planes vs PROJ (fixture made with PROJ 9.8)
 legacy/pproj/               the original R package and experiments
 ```
 

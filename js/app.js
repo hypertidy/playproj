@@ -33,13 +33,14 @@ const COLORS = {
   ray: 0x9aa3ad,
   light: 0xffd34d,
   horizon: 0xffb347,
+  trueScale: 0xffe08a,
   compass: 0xff7ab8,
   string: 0x7ad7ff
 };
 
 // ---------------------------------------------------------------- state
 
-const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, seed: 1, from: "tri", detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
+const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, ts: 90, seed: 1, from: "tri", detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -61,6 +62,7 @@ function readHash() {
   state.lat = Math.max(-90, Math.min(90, state.lat));
   state.lon = ((state.lon + 540) % 360) - 180;
   state.w = Math.max(1, Math.min(8, state.w));
+  state.ts = Math.max(0, Math.min(90, state.ts));
   state.rays = Math.max(0, Math.min(MAX_RAYS, Math.round(state.rays)));
   state.relief = Math.max(0, Math.min(100, state.relief));
 }
@@ -83,9 +85,11 @@ function writeHash() {
 // The light construction is the perspective family; the compass and string
 // constructions are the azimuthal family, on the same sphere and plane.
 let fam = persp;
+// height of the plane in the scene: lowered to cut the sphere when secant
+const planeY = (p) => (fam.planeY ? fam.planeY(p) : 1);
 const params = () => {
   fam = state.az === "light" ? persp : azi;
-  return { a: persp.lightFromSlider(state.v), mode: state.az, lat0: state.lat, lon0: state.lon };
+  return { a: persp.lightFromSlider(state.v), mode: state.az, lat0: state.lat, lon0: state.lon, ts: state.ts };
 };
 
 // ---------------------------------------------------------------- scene
@@ -196,14 +200,14 @@ planeRelief.visible = false;
 scene.add(planeRelief);
 
 function placePlaneRelief(p) {
-  const G = state.wire ? PLANE_WIRE_GRID : PLANE_GRID, w = state.w, n = G.nx;
+  const G = state.wire ? PLANE_WIRE_GRID : PLANE_GRID, w = state.w, n = G.nx, PY = planeY(p);
   const pos = new Float32Array((n + 1) * (n + 1) * 3);
   for (let j = 0, k = 0; j <= n; j++) {
     const y = w - (2 * w * j) / n;
     for (let i = 0; i <= n; i++, k += 3) {
       const x = -w + (2 * w * i) / n;
       const ll = fam.inverse(x, y, p);
-      pos[k] = x; pos[k + 1] = 1 + (ll ? lift(sampleElev(world, ll[0], ll[1])) : 0); pos[k + 2] = -y;
+      pos[k] = x; pos[k + 1] = PY + (ll ? lift(sampleElev(world, ll[0], ll[1])) : 0); pos[k + 2] = -y;
     }
   }
   planeRelief.geometry.dispose();
@@ -291,6 +295,7 @@ function rebuild() {
   const p = params();
   const toScene = sceneFrame(p.lat0, p.lon0);
   const thr = fam.horizonCos(p.a);
+  const PY = planeY(p);
   const A = [0, 0, 0], B = [0, 0, 0];
   placeGlobe(toScene);
   scheduleBasemap(p);
@@ -305,7 +310,7 @@ function rebuild() {
       const xy = fam.project(line[i], line[i + 1], p);
       if (i > 0) {
         (ok && prevOk ? on : off).push(A[0], A[1], A[2], B[0], B[1], B[2]);
-        if (inPlane(xy) && inPlane(prevXY)) flat.push(prevXY[0], 1, -prevXY[1], xy[0], 1, -xy[1]);
+        if (inPlane(xy) && inPlane(prevXY)) flat.push(prevXY[0], PY, -prevXY[1], xy[0], PY, -xy[1]);
       }
       A[0] = B[0]; A[1] = B[1]; A[2] = B[2];
       prevOk = ok; prevXY = xy;
@@ -324,7 +329,7 @@ function rebuild() {
       const xy = fam.project(line[i], line[i + 1], p);
       if (i > 0) {
         gs.push(A[0], A[1], A[2], B[0], B[1], B[2]);
-        if (inPlane(xy) && inPlane(prevXY)) gp.push(prevXY[0], 1, -prevXY[1], xy[0], 1, -xy[1]);
+        if (inPlane(xy) && inPlane(prevXY)) gp.push(prevXY[0], PY, -prevXY[1], xy[0], PY, -xy[1]);
       }
       A[0] = B[0]; A[1] = B[1]; A[2] = B[2];
       prevXY = xy;
@@ -355,7 +360,7 @@ function rebuild() {
   // plane, axis and light
   const w = state.w;
   planeMesh.scale.set(2 * w, 2 * w, 1);
-  planeMesh.position.set(0, 1, 0);
+  planeMesh.position.set(0, PY, 0);
   const relief = reliefOn();
   planeRelief.visible = relief;
   planeMesh.visible = !relief;
@@ -365,9 +370,21 @@ function rebuild() {
   globe.material.depthWrite = relief;
   globe.material.opacity = relief ? 0.95 : world ? 0.7 : 0.28;
   setLines("planeEdge", [
-    -w, 1, -w, w, 1, -w, w, 1, -w, w, 1, w, w, 1, w, -w, 1, w, -w, 1, w, -w, 1, -w
+    -w, PY, -w, w, PY, -w, w, PY, -w, w, PY, w, w, PY, w, -w, PY, w, -w, PY, w, -w, PY, -w
   ], 0x8899aa, 0.8);
-  planeLabel.position.set(w * 0.98, 1.05, w * 0.98);
+  planeLabel.position.set(w * 0.98, PY + 0.05, w * 0.98);
+  planeLabel.element.textContent = PY < 1 - 1e-9 ? "secant plane" : "tangent plane";
+
+  // a secant plane meets the sphere in the circle of true scale
+  const tsl = [];
+  if (PY < 1 - 1e-9 && PY > -1) {
+    const r = Math.sqrt(1 - PY * PY);
+    for (let k = 0; k < 128; k++) {
+      const t0 = (k / 128) * 2 * Math.PI, t1 = ((k + 1) / 128) * 2 * Math.PI;
+      tsl.push(r * Math.cos(t0), PY + 0.002, r * Math.sin(t0), r * Math.cos(t1), PY + 0.002, r * Math.sin(t1));
+    }
+  }
+  setLines("trueScale", tsl, COLORS.trueScale, 0.95);
   tangentLabel.position.set(0, 1.02, 0);
 
   const lit = state.az === "light";
@@ -388,7 +405,7 @@ function rebuild() {
     const xy = fam.project(lon, lat, p);
     if (!inPlane(xy)) continue;
     toScene(lon, lat, B);
-    const P = [xy[0], 1, -xy[1]];
+    const P = [xy[0], PY, -xy[1]];
     if (!lit) {
       construct(state.az, B, P, rays, arcs);
       hitsS.push(B[0], B[1], B[2]);
@@ -603,7 +620,8 @@ function drawMap(p) {
     let q;
     try { q = tr.forward([lon, lat]); } catch (e) { return null; }
     if (!q || !isFinite(q[0]) || !isFinite(q[1])) return null;
-    const xy = [q[0] / fam.R, q[1] / fam.R];
+    const k0 = fam.proj4Scale ? fam.proj4Scale(p) : 1;
+    const xy = [k0 * q[0] / fam.R, k0 * q[1] / fam.R];
     if (geo && inPlane(geo)) {
       maxDiff = Math.max(maxDiff, Math.hypot(xy[0] - geo[0], xy[1] - geo[1]) * fam.R);
       compared++;
@@ -641,7 +659,7 @@ function drawMap(p) {
   // horizon circle
   const thr = fam.horizonCos(p.a);
   if (thr > -1 + 1e-9 || fam.edgeRadius) {
-    const k = isFinite(p.a) ? (1 - p.a) / (thr - p.a) : 1;
+    const k = (isFinite(p.a) ? (1 - p.a) / (thr - p.a) : 1) * (fam.planeScale ? fam.planeScale(p) : 1);
     const rho = fam.edgeRadius ? fam.edgeRadius(p) : k * Math.sqrt(1 - thr * thr);
     if (isFinite(rho) && rho < 4 * w) {
       ctx.setLineDash([5, 4]);
@@ -649,6 +667,12 @@ function drawMap(p) {
       ctx.beginPath(); ctx.arc(X(0), Y(0), rho * s, 0, 2 * Math.PI); ctx.stroke();
       ctx.setLineDash([]);
     }
+  }
+  // circle of true scale, where a secant plane cuts the sphere
+  const PY = planeY(p);
+  if (PY < 1 - 1e-9 && PY > -1) {
+    ctx.strokeStyle = "#ffe08a"; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(X(0), Y(0), Math.sqrt(1 - PY * PY) * s, 0, 2 * Math.PI); ctx.stroke();
   }
   ctx.restore();
 
@@ -676,7 +700,7 @@ function drawMap(p) {
 
 const $ = (id) => document.getElementById(id);
 const ui = {
-  v: $("v"), lat: $("lat"), lon: $("lon"), w: $("w"), rays: $("rays"),
+  v: $("v"), ts: $("ts"), tsOut: $("ts-out"), lat: $("lat"), lon: $("lon"), w: $("w"), rays: $("rays"),
   vOut: $("v-out"), latOut: $("lat-out"), lonOut: $("lon-out"), wOut: $("w-out"), raysOut: $("rays-out"),
   proj: $("projstring"), describe: $("describe"), presets: $("presets"), az: $("construction"), lightControls: $("light-controls"),
   grat: $("grat"), globe: $("globe"), detail: $("detail"), from: $("from"),
@@ -710,6 +734,9 @@ function lightText(a) {
 function updatePanel(p) {
   ui.v.value = state.v; ui.lat.value = state.lat; ui.lon.value = state.lon; ui.w.value = state.w; ui.rays.value = state.rays;
   ui.vOut.textContent = lightText(p.a);
+  ui.ts.value = state.ts;
+  ui.tsOut.textContent = persp.planeY(p) >= 1 - 1e-9 ? "90\u00b0 (tangent)"
+    : `${+(Math.asin(persp.planeY(p)) * 180 / Math.PI).toFixed(1)}${DEG} (secant, k0 = ${persp.planeScale(p).toFixed(3)})`;
   ui.latOut.textContent = state.lat + DEG;
   ui.lonOut.textContent = state.lon + DEG;
   ui.wOut.textContent = `${state.w} R`;
@@ -743,6 +770,7 @@ function sync() {
 }
 
 ui.v.addEventListener("input", () => { stopSweep(); state.v = persp.snapSlider(+ui.v.value); sync(); });
+ui.ts.addEventListener("input", () => { state.ts = +ui.ts.value; sync(); });
 ui.lat.addEventListener("input", () => { state.lat = +ui.lat.value; sync(); });
 ui.lon.addEventListener("input", () => { state.lon = +ui.lon.value; sync(); });
 ui.w.addEventListener("input", () => { state.w = +ui.w.value; sync(); });
