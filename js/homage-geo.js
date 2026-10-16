@@ -212,7 +212,7 @@ export function mercator(s, t) {
 // azimuthal equal-area map about its own centroid, at the scale Mercator
 // has on the equator, moved so the centroid sits where Mercator puts it.
 // k blends from Mercator's shape (0) to the true one (1), vertex by vertex.
-// After Michael Sumner's gist (2026), laea-vs-mercator.
+// The same construction in R: https://gist.github.com/mdsumner/045b19365f605492baed2fe85b15afd5
 export function trueSize(d3, rings, s, t, k = 1) {
   const c = d3.geoCentroid({ type: "Polygon", coordinates: rings });
   const merc = mercator(s, t);

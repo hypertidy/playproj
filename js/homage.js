@@ -155,7 +155,7 @@ const steps = [
       "its own centre, at the scale Mercator has on the equator, and set down where Mercator puts that centre. The " +
       "grey map behind is Mercator; the outlines are the countries as they are. Near the equator the two agree, and " +
       "towards the poles the true shapes shrink inside their Mercator selves. The slider blends each shape from " +
-      "Mercator's to its true one. After Michael Sumner's laea-vs-mercator gist (2026); others have drawn the same idea.",
+      "Mercator's to its true one.",
     param: { label: "Shape", min: 0, max: 1, value: 1, fmt: (k) => (k < 0.01 ? "Mercator" : k > 0.99 ? "true size" : "blending") },
     draw(ctx, w, h, k) {
       const box = fitBox(w, h, 1);

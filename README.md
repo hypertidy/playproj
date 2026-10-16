@@ -292,7 +292,7 @@ in public, as a small homage to the people who kept explaining them: the UN
 emblem (a north polar azimuthal equidistant map to 60 S, beside the Lambert
 azimuthal equal-area), both carried on to the antipode; Greenland slid down to
 the Congo in Mercator; every country at its true size in place on Mercator
-(each in laea about its own centroid, after Michael Sumner's
+(each in laea about its own centroid, as in this
 [laea-vs-mercator gist](https://gist.github.com/mdsumner/045b19365f605492baed2fe85b15afd5),
 countries from `data/countries-110m.json`, Natural Earth 110m via
 world-atlas); Gall-Peters and south-up, after the Cartographers for Social
