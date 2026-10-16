@@ -326,7 +326,7 @@ function updatePanel() {
   $("next").disabled = state.s === steps.length - 1;
   [...ui.steps.children].forEach((li, k) => li.classList.toggle("active", k === state.s));
   const pr = st.param;
-  ui.paramRow.hidden = ui.param.hidden = !pr;
+  ui.paramRow.style.display = ui.param.style.display = pr ? "" : "none";
   if (pr) {
     const v = paramValue();
     ui.paramLabel.textContent = pr.label;
