@@ -4,7 +4,7 @@
   "description": "Map projections traced as rays from a point of light, through a sphere, onto a plane",
   "type": "module",
   "scripts": {
-    "test": "node test/check-proj.mjs && node test/check-inverse.mjs && node test/check-conic.mjs && node test/check-azimuthal.mjs && node test/check-spilhaus.mjs && node test/check-mishaps.mjs && node test/check-landmesh.mjs",
+    "test": "node test/check-proj.mjs && node test/check-inverse.mjs && node test/check-conic.mjs && node test/check-azimuthal.mjs && node test/check-spilhaus.mjs && node test/check-mishaps.mjs && node test/check-landmesh.mjs && node test/check-s2.mjs",
     "serve": "python3 -m http.server 8000"
   },
   "devDependencies": {
