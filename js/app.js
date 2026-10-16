@@ -9,7 +9,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import * as persp from "./families/perspective.js";
 import * as azi from "./families/azimuthal.js";
-import { loadCoastline, graticule, mulberry32, sceneFrame } from "./geo.js";
+import { samplePoints, SAMPLE_MODES } from "./landmesh.js";
+import { loadCoastline, graticule, sceneFrame } from "./geo.js";
 import { sources, loadWorld, reproject, sampleElev } from "./basemap.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
 
@@ -37,7 +38,7 @@ const COLORS = {
 
 // ---------------------------------------------------------------- state
 
-const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, seed: 1, detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
+const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, seed: 1, from: "tri", detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -47,6 +48,7 @@ function readHash() {
     if (!h.has(k)) continue;
     const raw = h.get(k);
     if (k === "detail") state.detail = raw === "50m" ? "50m" : "110m";
+    else if (k === "from") state.from = SAMPLE_MODES.includes(raw) ? raw : "tri";
     else if (k === "bm") state.bm = raw in sources ? raw : "none";
     else if (k === "az") state.az = CONSTRUCTIONS.includes(raw) ? raw : "light";
     else if (k === "cam") {
@@ -277,17 +279,7 @@ const grat = graticule(15, 2);
 let rayPool = [];
 
 function buildRayPool() {
-  const rand = mulberry32(state.seed);
-  rayPool = [];
-  const total = coast.reduce((s, l) => s + l.length / 2, 0);
-  for (let k = 0; k < RAY_POOL; k++) {
-    let idx = Math.floor(rand() * total);
-    for (const line of coast) {
-      const n = line.length / 2;
-      if (idx < n) { rayPool.push([line[2 * idx], line[2 * idx + 1]]); break; }
-      idx -= n;
-    }
-  }
+  rayPool = samplePoints(coast, state.from, state.seed, RAY_POOL);
 }
 
 // ---------------------------------------------------------------- rebuild
@@ -685,7 +677,7 @@ const ui = {
   v: $("v"), lat: $("lat"), lon: $("lon"), w: $("w"), rays: $("rays"),
   vOut: $("v-out"), latOut: $("lat-out"), lonOut: $("lon-out"), wOut: $("w-out"), raysOut: $("rays-out"),
   proj: $("projstring"), describe: $("describe"), presets: $("presets"), az: $("construction"), lightControls: $("light-controls"),
-  grat: $("grat"), globe: $("globe"), detail: $("detail"),
+  grat: $("grat"), globe: $("globe"), detail: $("detail"), from: $("from"),
   spin: $("spin"), relief: $("relief"), reliefOut: $("relief-out"), wire: $("wire"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
 };
 
@@ -720,7 +712,7 @@ function updatePanel(p) {
   ui.lonOut.textContent = state.lon + DEG;
   ui.wOut.textContent = `${state.w} R`;
   ui.raysOut.textContent = state.rays;
-  ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail;
+  ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail; ui.from.value = state.from;
   ui.bm.value = state.bm;
   ui.spin.checked = !!state.spin;
   ui.relief.value = state.relief; ui.wire.checked = !!state.wire;
@@ -754,6 +746,7 @@ ui.rays.addEventListener("input", () => { state.rays = +ui.rays.value; sync(); }
 ui.grat.addEventListener("change", () => { state.grat = ui.grat.checked ? 1 : 0; sync(); });
 ui.globe.addEventListener("change", () => { state.globe = ui.globe.checked ? 1 : 0; globe.visible = !!state.globe; sync(); });
 ui.detail.addEventListener("change", async () => { state.detail = ui.detail.value; await loadData(); sync(); });
+ui.from.addEventListener("change", () => { state.from = ui.from.value; buildRayPool(); sync(); });
 ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; setBasemap(); });
 ui.spin.addEventListener("change", () => { state.spin = ui.spin.checked ? 1 : 0; controls.autoRotate = !!state.spin; writeHash(); });
 ui.tif.addEventListener("click", downloadTIF);

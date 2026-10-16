@@ -10,7 +10,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as fam from "./families/spilhaus.js";
-import { loadCoastline, graticule, mulberry32 } from "./geo.js";
+import { samplePoints, SAMPLE_MODES } from "./landmesh.js";
+import { loadCoastline, graticule } from "./geo.js";
 import { sources, loadWorld, reprojectBox } from "./basemap.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
 import { displace, hasElevation } from "./relief.js";
@@ -40,7 +41,7 @@ const COLORS = {
 
 const defaults = {
   lat: +fam.defaults.lat0.toFixed(4), lon: +fam.defaults.lon0.toFixed(4), azi: +fam.defaults.azi.toFixed(4),
-  t: 0.5, links: 120, net: 1, seed: 1, detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null
+  t: 0.5, links: 120, net: 1, seed: 1, from: "tri", detail: "110m", grat: 1, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null
 };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
@@ -51,6 +52,7 @@ function readHash() {
     if (!h.has(k)) continue;
     const raw = h.get(k);
     if (k === "detail") state.detail = raw === "50m" ? "50m" : "110m";
+    else if (k === "from") state.from = SAMPLE_MODES.includes(raw) ? raw : "tri";
     else if (k === "bm") state.bm = raw in sources ? raw : "none";
     else if (k === "cam") {
       const c = raw.split(",").map(Number);
@@ -249,17 +251,7 @@ const grat = graticule(15, 2);
 let linkPool = [];
 
 function buildLinkPool() {
-  const rand = mulberry32(state.seed);
-  const total = coast.reduce((s, l) => s + l.length / 2, 0);
-  linkPool = [];
-  for (let k = 0; k < LINK_POOL; k++) {
-    let idx = Math.floor(rand() * total);
-    for (const line of coast) {
-      const n = line.length / 2;
-      if (idx < n) { linkPool.push([line[2 * idx], line[2 * idx + 1]]); break; }
-      idx -= n;
-    }
-  }
+  linkPool = samplePoints(coast, state.from, state.seed, LINK_POOL);
 }
 
 // The interpolated inverse depends only on the centre and azimuth.
@@ -535,7 +527,7 @@ const ui = {
   t: $("t"), lat: $("lat"), lon: $("lon"), azi: $("azi"), links: $("links"),
   tOut: $("t-out"), latOut: $("lat-out"), lonOut: $("lon-out"), aziOut: $("azi-out"), linksOut: $("links-out"),
   proj: $("projstring"), describe: $("describe"), centre: $("centre"),
-  net: $("net"), grat: $("grat"), globe: $("globe"), detail: $("detail"),
+  net: $("net"), grat: $("grat"), globe: $("globe"), detail: $("detail"), from: $("from"),
   spin: $("spin"), relief: $("relief"), reliefOut: $("relief-out"), wire: $("wire"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
 };
 
@@ -552,7 +544,7 @@ function updatePanel(p) {
   ui.lonOut.textContent = (+state.lon.toFixed(2)) + DEG;
   ui.aziOut.textContent = (+state.azi.toFixed(2)) + DEG;
   ui.linksOut.textContent = state.links;
-  ui.net.checked = !!state.net; ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail;
+  ui.net.checked = !!state.net; ui.grat.checked = !!state.grat; ui.globe.checked = !!state.globe; ui.detail.value = state.detail; ui.from.value = state.from;
   ui.bm.value = state.bm;
   ui.spin.checked = !!state.spin;
   ui.relief.value = state.relief; ui.wire.checked = !!state.wire;
@@ -582,6 +574,7 @@ ui.net.addEventListener("change", () => { state.net = ui.net.checked ? 1 : 0; sy
 ui.grat.addEventListener("change", () => { state.grat = ui.grat.checked ? 1 : 0; sync(); });
 ui.globe.addEventListener("change", () => { state.globe = ui.globe.checked ? 1 : 0; sync(); });
 ui.detail.addEventListener("change", async () => { state.detail = ui.detail.value; await loadData(); sync(); });
+ui.from.addEventListener("change", () => { state.from = ui.from.value; buildLinkPool(); sync(); });
 ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; setBasemap(); });
 ui.spin.addEventListener("change", () => { state.spin = ui.spin.checked ? 1 : 0; controls.autoRotate = !!state.spin; writeHash(); });
 ui.tif.addEventListener("click", downloadTIF);
