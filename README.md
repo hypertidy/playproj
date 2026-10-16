@@ -166,6 +166,24 @@ degrees), `plat`, `plon` (rotated pole, CF grid north pole), `join`, `tlon`
 (tripolar join latitude and pole longitude), `eq` (0 for plain gnomonic cube
 faces), `cell` (patch, i, j), `coast`, `grat`, `cam`.
 
+## L3 bins
+
+`bins.html` shows the level-3 bin grid of SeaWiFS, MODIS and their
+successors (NASA Technical Memorandum 104566 vol. 32, Campbell, Blaisdell
+and Darzi 1995): rows of equal height, each holding a whole number of bins
+as wide as those at the equator, so every bin has nearly the same area.
+"Unwrap" swells the globe to a cylinder, opens it with each row shrunk to
+its bin count (the integerized sinusoidal, stepped where the count changes),
+then slides the rows left into the ragged array the bins are stored in,
+numbered from 1 in the south-west, west to east, south to north. A coarse
+grid is drawn (6 to 180 rows); the lookup works on 2160 (SeaWiFS, 9.28 km),
+4320 (MODIS, 4.64 km), 8640 or 17280 rows: click the globe, or type a bin
+number or a lon, lat, for the bin's row, column, bounds and area, and copy it
+as GeoJSON. `js/l3bin.js` holds the grid; `test/check-l3bin.mjs` checks the
+published bin totals (5,940,422 and 23,761,676) and round trips. Hash keys:
+`rows` (index of the drawn grid), `t` (unwrap), `grid` (rows for the
+lookup), `bin`, `lines`, `coast`, `cam`.
+
 ## For example
 
 `example.html` is a storyboard: eight short steps retelling the first part of
@@ -249,6 +267,8 @@ js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
 grids.html, js/grids-page.js  model grids page
 js/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 example.html, js/example.js For example storyboard
+bins.html, js/bins.js       L3 bins page
+js/l3bin.js                 SeaWiFS / MODIS level-3 bin grid
 test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-proj.mjs         ray construction vs proj4js
