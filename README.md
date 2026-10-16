@@ -314,8 +314,12 @@ The midpoint test is redrawn by `resampleArc` in `js/mishaps.js`, which
 in public, as a small homage to the people who kept explaining them: the UN
 emblem (a north polar azimuthal equidistant map to 60 S, beside the Lambert
 azimuthal equal-area), both carried on to the antipode; Greenland slid down to
-the Congo in Mercator; Gall-Peters and south-up, after the Cartographers for
-Social Equality in The West Wing (season 2, episode 16); Equal Earth (Savric,
+the Congo in Mercator; every country at its true size in place on Mercator
+(each in laea about its own centroid, as in this
+[laea-vs-mercator gist](https://gist.github.com/mdsumner/045b19365f605492baed2fe85b15afd5),
+countries from `data/countries-110m.json`, Natural Earth 110m via
+world-atlas); Gall-Peters and south-up, after the Cartographers for Social
+Equality in The West Wing (season 2, episode 16); Equal Earth (Savric,
 Jenny and Patterson 2018); Fuller's Dymaxion; and the projections named in
 [xkcd 977](https://xkcd.com/977/). The credits are in the page's About panel.
 Robinson, Winkel tripel, Van der Grinten and cylindrical equal-area (Gall-Peters,
@@ -402,6 +406,7 @@ homage.html, js/homage.js   homage storyboard: UN emblem, Gall-Peters, Equal Ear
 js/homage-geo.js            Robinson, Winkel tripel, Van der Grinten, cea; Dymaxion icosahedron and net
 sentinel.html, js/sentinel.js  MGRS and Sentinel-2 page
 js/mgrs.js                  UTM, MGRS references and Sentinel-2 tiles
+data/countries-110m.json    Natural Earth 110m country parts as flat [lon, lat] rings
 data/s2-tiles.json          which MGRS squares are Sentinel-2 tiles (ESA tiling grid)
 bins.html, js/bins.js       L3 bins page
 tissot.html, js/tissot-page.js  Tissot's indicatrix page

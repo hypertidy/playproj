@@ -2,7 +2,7 @@
 // and the Greenland slide keeping area.
 import fs from "fs";
 import * as d3 from "d3-geo";
-import { worldProjection, polar, slide, icosahedron, unfold, FULLER_VERTICES } from "../js/homage-geo.js";
+import { worldProjection, polar, slide, icosahedron, unfold, FULLER_VERTICES, trueSize, mercator } from "../js/homage-geo.js";
 
 const fx = JSON.parse(fs.readFileSync(new URL("./fixtures/homage-proj.json", import.meta.url)));
 let fails = 0;
@@ -42,6 +42,24 @@ for (let i = 0; i < 12; i++) {
 }
 const net = unfold(ico, (a, b) => (a * 7 + b * 13) % 5);
 check(net && net.cut.length === 30 - 19, "net from a spanning tree has 19 joins and 11 cuts");
+
+// true size: a small square at 70N keeps its spherical area at k = 1 and
+// has Mercator's at k = 0; the centroid lands where Mercator puts it
+{
+  const ring = [];
+  for (let x = 0; x <= 10; x += 0.5) ring.push([20 + x, 65]);
+  for (let y = 0; y <= 10; y += 0.5) ring.push([30, 65 + y]);
+  for (let x = 10; x >= 0; x -= 0.5) ring.push([20 + x, 75]);
+  for (let y = 10; y >= 0; y -= 0.5) ring.push([20, 65 + y]);
+  const rings = [ring.reverse()], s = 100, t = [500, 500];
+  const shoelace = (r) => Math.abs(r.reduce((a, p, i) => { const q = r[(i + 1) % r.length]; return a + p[0] * q[1] - q[0] * p[1]; }, 0) / 2);
+  const sphere = d3.geoArea({ type: "Polygon", coordinates: rings }) * s * s;
+  const one = trueSize(d3, rings, s, t, 1), zero = trueSize(d3, rings, s, t, 0);
+  check(Math.abs(shoelace(one.rings[0]) / sphere - 1) < 1e-3, `true size area ${shoelace(one.rings[0])} vs sphere ${sphere}`);
+  check(shoelace(zero.rings[0]) / sphere > 7, `Mercator inflates at 70N: ${shoelace(zero.rings[0]) / sphere}`);
+  const m = mercator(s, t)(one.centre), p = d3.geoMercator().scale(s).translate(t)(one.centre);
+  check(Math.hypot(m[0] - p[0], m[1] - p[1]) < 1e-9, "hand Mercator matches d3");
+}
 
 if (fails) { console.log(`${fails} failures`); process.exit(1); }
 console.log("homage: ok");
