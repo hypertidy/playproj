@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: homage</title>
+<meta name="description" content="Map projections argued about in public: the UN emblem, Greenland and Africa, Gall-Peters on The West Wing, Equal Earth, Dymaxion and xkcd 977.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/dist/d3-geo.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/homage.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <canvas id="view" class="view" aria-label="The current step"></canvas>
+    <a id="open-full" class="open-full" href="./homage.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./sentinel.html">MGRS and Sentinel-2</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html" aria-current="page">Homage</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <p id="step-title" class="step-title"></p>
+      <p id="caption" class="describe"></p>
+      <label class="row" for="param" id="param-row"><span id="param-label"></span><output id="param-out"></output></label>
+      <input id="param" type="range" min="0" max="1" step="0.001" aria-label="Step parameter">
+      <div class="buttons">
+        <button id="prev" type="button">Back</button>
+        <button id="next" type="button">Next</button>
+        <span id="count" class="hint"></span>
+      </div>
+    </section>
+
+    <section>
+      <ol id="steps" class="steps"></ol>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>About</summary>
+        <p>Map projections that have been argued about in public, as a small homage to the people who kept
+          explaining them. Every map is drawn here with <a href="https://github.com/d3/d3-geo">d3-geo</a> from
+          Natural Earth coastlines and checked against <a href="https://proj.org">PROJ</a>; the PROJ string is
+          under each map. Nothing is copied: the UN emblem is redrawn from coastlines, the West Wing scene is
+          described in our own words, and the comic is only linked.</p>
+      </details>
+      <details open>
+        <summary>Champions</summary>
+        <ul class="credits">
+          <li>James Gall (1855) and Arno Peters (1973), for the cylinder cut at 45 degrees and the argument that came with it.</li>
+          <li>Arthur H. Robinson, for his projection (1963) and for leading the 1989 resolution of North American geographic societies against rectangular world maps.</li>
+          <li>John P. Snyder, for <a href="https://pubs.usgs.gov/publication/pp1395">Map Projections: A Working Manual</a> (1987) and Flattening the Earth (1993).</li>
+          <li>Waldo Tobler, for decades of teaching what a projection does to the world.</li>
+          <li>Mark Monmonier, for How to Lie with Maps (1991) and Rhumb Lines and Map Wars (2004).</li>
+          <li>Bojan Savric, Bernhard Jenny and Tom Patterson, for <a href="https://doi.org/10.1080/13658816.2018.1504949">Equal Earth</a> (2018), and for Flex Projector and Projection Wizard.</li>
+          <li>Daniel Strebe, for Geocart and years of patient explanation of the trade-offs.</li>
+          <li>R. Buckminster Fuller, for the Dymaxion map, and Robert W. Gray, for working out its mathematics.</li>
+          <li>James Talmage and Damon Maneice, for <a href="https://www.thetruesize.com">The True Size Of</a>; the Greenland slide here is a nod to it.</li>
+          <li>Randall Munroe, for <a href="https://xkcd.com/977/">xkcd 977, Map Projections</a> (2011).</li>
+          <li>Aaron Sorkin and the writers of The West Wing, for the Cartographers for Social Equality (season 2, episode 16, 2001).</li>
+          <li>The Correct The Map campaign (Africa No Filter and Speak Up Africa), backed by the African Union in 2025.</li>
+          <li>Gerald Evenden, Frank Warmerdam, Even Rouault, Kristian Evers and everyone who keeps PROJ going; Mike Bostock and Jason Davies for d3-geo.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
