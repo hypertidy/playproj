@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: L3 bins</title>
+<meta name="description" content="The SeaWiFS and MODIS level-3 bins: an integerized sinusoidal equal-area grid, unwrapped from the globe to the rows it is stored in.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/bins.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./bins.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./spilhaus.html">Spilhaus</a><a href="./catastrophes.html">Catastrophes</a><a href="./cells.html">s2 cells</a><a href="./bins.html" aria-current="page">L3 bins</a><a href="./example.html">For example</a></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="rows"><span>Rows drawn</span><output id="rows-out"></output></label>
+      <input id="rows" type="range" min="0" max="8" step="1" aria-label="Rows drawn">
+      <label class="row" for="t"><span>Unwrap</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Globe to sinusoidal rows to storage">
+      <div class="buttons">
+        <button id="play" type="button">Unwrap</button>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="grid-rows"><span>Bin grid</span></label>
+      <select id="grid-rows" class="wide">
+        <option value="2160">2160 rows: SeaWiFS, 9.28 km</option>
+        <option value="4320">4320 rows: MODIS, 4.64 km</option>
+        <option value="8640">8640 rows: 2.32 km</option>
+        <option value="17280">17280 rows: 1.16 km</option>
+        <option value="drawn">The rows drawn</option>
+      </select>
+      <label class="row" for="bin"><span>Bin</span><output id="bin-row"></output></label>
+      <div class="projline">
+        <input id="bin" class="token" type="text" spellcheck="false" autocomplete="off" placeholder="bin number, or lon, lat" aria-label="Bin number or lon, lat">
+        <button id="copy-geojson" type="button" class="small" disabled>GeoJSON</button>
+      </div>
+      <p id="bin-info" class="badge"></p>
+      <p id="grid-info" class="hint"></p>
+    </section>
+
+    <section>
+      <div class="toggles">
+        <label><input id="gridlines" type="checkbox"> Bin edges</label>
+        <label><input id="coast" type="checkbox"> Coastline</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>The level-3 products from SeaWiFS, MODIS and their successors are stored on a grid from
+          NASA Technical Memorandum 104566, volume 32 (Campbell, Blaisdell and Darzi, 1995), described for
+          today's files in the <a href="https://oceancolor.gsfc.nasa.gov/resources/docs/format/l3bins/">L3 bin
+          format notes</a>. The globe is cut into rows of
+          equal height. Each row holds a whole number of bins, as many as fit round its middle latitude at the
+          width of the bins at the equator, so every bin has nearly the same area.</p>
+        <p>Unwrap shows it in three moves: the globe swells to a cylinder, the cylinder opens with each row
+          shrunk to its own width (an integerized sinusoidal projection, stepped where the bin count changes),
+          and the rows slide left into the ragged array the bins are stored in, numbered from 1 in the south-west
+          corner, west to east, south to north.</p>
+        <p>Click anywhere for the bin under the pointer, or type a bin number, or a longitude and latitude.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
