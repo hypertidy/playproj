@@ -28,7 +28,7 @@
   <aside id="panel">
     <header>
       <h1>playproj</h1>
-      <nav class="pages"><a href="./">Perspective</a><a href="./cones.html" aria-current="page">Cones and cylinders</a><a href="./spilhaus.html">Spilhaus</a><a href="./catastrophes.html">Catastrophes</a><a href="./cells.html">s2 cells</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./example.html">For example</a></nav>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html" aria-current="page">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./sentinel.html">MGRS and Sentinel-2</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span></nav>
     </header>
 
     <section class="embed-keep">
@@ -36,6 +36,9 @@
       <label class="row" for="lat1"><span>Standard parallel</span><output id="lat1-out"></output></label>
       <input id="lat1" type="range" min="-90" max="90" step="0.5" aria-label="Standard parallel">
       <div class="scale"><span>plane</span><span>cone</span><span>cylinder</span><span>cone</span><span>plane</span></div>
+      <label class="row" for="tilt"><span>Axis tilt</span><output id="tilt-out"></output></label>
+      <input id="tilt" type="range" min="-90" max="90" step="1" aria-label="Tilt the surface's axis away from the earth's axis">
+      <div class="scale"><span>transverse</span><span>oblique</span><span>normal</span><span>oblique</span><span>transverse</span></div>
       <label class="row" for="t"><span>Unroll</span><output id="t-out"></output></label>
       <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Unroll the surface">
       <div class="buttons">
