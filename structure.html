@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: tiles and overviews</title>
+<meta name="description" content="The pixel grid, tiles and overviews of a COG, Zarr store, tile service or typed grid spec, drawn on the globe and in its own CRS from the header alone.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/structure-page.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./structure.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Tissot</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./structure.html" aria-current="page">Tiles and overviews</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a></span></nav>
+    </header>
+
+    <section>
+      <div id="presets" class="presets" role="group" aria-label="Examples"></div>
+      <div class="projline">
+        <input id="src" class="token" type="text" spellcheck="false" autocomplete="off" placeholder="COG, Zarr, WMTS, ArcGIS or {z}/{x}/{y} URL" aria-label="Source URL">
+        <button id="load" type="button" class="small">Read</button>
+      </div>
+      <div class="buttons">
+        <select id="kind" aria-label="Kind of source">
+          <option value="">Guess the kind</option>
+          <option value="tiff">GeoTIFF or COG</option>
+          <option value="zarr">Zarr</option>
+          <option value="wmts">WMTS capabilities</option>
+          <option value="arcgis">ArcGIS MapServer or ImageServer</option>
+          <option value="xyz">XYZ tile template</option>
+          <option value="tmsjson">TileMatrixSet JSON</option>
+        </select>
+        <label class="small-file"><input id="file" type="file" accept=".tif,.tiff,image/tiff" hidden><button id="file-btn" type="button" class="small">Local GeoTIFF</button></label>
+      </div>
+      <div id="zarr-ctl" hidden>
+        <label class="row" for="var"><span>Variable</span></label>
+        <input id="var" class="token" type="text" spellcheck="false" placeholder="the array in each level, if the store does not list it" aria-label="Zarr variable">
+      </div>
+      <div id="wmts-ctl" hidden>
+        <select id="layer" class="wide" aria-label="WMTS layer"></select>
+        <select id="tms" class="wide" aria-label="Tile matrix set"></select>
+      </div>
+      <div id="xyz-ctl" hidden>
+        <label class="row" for="zmax"><span>Deepest zoom</span><output id="zmax-out"></output></label>
+        <input id="zmax" type="range" min="0" max="24" step="1" aria-label="Deepest zoom level">
+      </div>
+      <p id="status" class="status"></p>
+      <p id="reads" class="hint"></p>
+    </section>
+
+    <section>
+      <details id="spec-box">
+        <summary>Grid spec</summary>
+        <p class="hint">Filled in from what was read; change it and draw the grid you have in mind.</p>
+        <label class="row" for="s-crs"><span>CRS</span></label>
+        <input id="s-crs" class="token" type="text" spellcheck="false" placeholder="EPSG:3031 or a PROJ string" aria-label="CRS">
+        <label class="row" for="s-ext"><span>Extent: xmin, xmax, ymin, ymax</span></label>
+        <input id="s-ext" class="token" type="text" spellcheck="false" aria-label="Extent">
+        <label class="row" for="s-dim"><span>Dimension: columns, rows</span></label>
+        <input id="s-dim" class="token" type="text" spellcheck="false" aria-label="Dimension">
+        <div class="buttons">
+          <label class="inline">Tile <input id="s-tile" class="token" type="number" min="1" step="1" style="width:6em" aria-label="Tile size"></label>
+          <label class="inline">Levels <input id="s-lev" class="token" type="number" min="0" max="40" step="1" style="width:5em" placeholder="auto" aria-label="Number of levels"></label>
+          <button id="s-draw" type="button" class="small">Draw spec</button>
+        </div>
+      </details>
+    </section>
+
+    <section class="embed-keep">
+      <label class="row" for="t"><span>Unfold</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Globe to the native CRS">
+      <label class="row" for="lvl"><span>Level</span><output id="lvl-out"></output></label>
+      <input id="lvl" type="range" min="0" max="0" step="1" aria-label="Level">
+      <label class="row" for="ex"><span>Stack the levels</span><output id="ex-out"></output></label>
+      <input id="ex" type="range" min="0" max="1" step="0.01" aria-label="Separate the levels">
+      <div class="buttons">
+        <button id="play" type="button">Unfold</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="toggles">
+        <label><input id="tiles" type="checkbox"> Tiles</label>
+        <label><input id="pix" type="checkbox"> Pixels</label>
+        <label><input id="coast" type="checkbox"> Coastline</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="projline">
+        <code id="projstring"></code>
+        <button id="copy-proj" type="button" class="small">Copy</button>
+      </div>
+      <p id="describe" class="describe"></p>
+      <p id="ghost" class="hint"></p>
+      <table id="levels" class="readout levels"></table>
+      <div id="layout-box" hidden>
+        <p class="hint">Where the bytes are, start of the file to the end:</p>
+        <div id="layout" class="layout-bar"></div>
+        <p id="layout-note" class="hint"></p>
+      </div>
+    </section>
+
+    <section>
+      <p id="pick-info" class="badge"></p>
+      <canvas id="inset" class="inset" width="560" height="280" hidden></canvas>
+      <p id="inset-cap" class="hint"></p>
+      <table id="pick-levels" class="readout"></table>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A raster is a grid of pixels: an extent, a number of columns and rows, and a CRS that says
+          what the numbers mean. A file stores it in tiles (or strips, or chunks), so a reader can fetch
+          one piece without the rest, and in overviews, the same extent at half the resolution and half
+          again, so a reader zoomed out has fewer pixels to fetch.</p>
+        <p>Everything here comes from the header or the metadata: TIFF tags read with HTTP range
+          requests, Zarr's JSON, a WMTS capabilities document or an ArcGIS service's JSON. No pixel is
+          read. Unfold takes the grid from the globe to its own CRS, where it is a plain rectangle and
+          the coastline bends instead; stack the levels to see the pyramid.</p>
+        <p>Click the grid for the pixel and tile under the pointer at every level, with the tile's byte
+          range in a GeoTIFF, its chunk key in Zarr and its address in a tile service.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
