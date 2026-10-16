@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Globals and interrupteds</title>
+<meta name="description" content="Whole-world map projections and their interruptions: the globe cut open into Goode's lobes, gores and Cahill's butterfly.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/globals.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./globals.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html" aria-current="page">Globals and interrupteds</a><a href="./tissot.html">Tissot</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./sentinel.html">MGRS and Sentinel-2</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="base"><span>Projection</span></label>
+      <select id="base" class="wide"></select>
+      <label class="row" for="lobes"><span>Interruption</span></label>
+      <select id="lobes" class="wide"></select>
+      <div id="gores-row">
+        <label class="row" for="gores"><span>Gores per hemisphere</span><output id="gores-out"></output></label>
+        <input id="gores" type="range" min="2" max="24" step="1" aria-label="Number of gores in each hemisphere">
+      </div>
+      <div id="s-row">
+        <label class="row" for="s"><span>Interrupt</span><output id="s-out"></output></label>
+        <input id="s" type="range" min="0" max="1" step="0.005" aria-label="Move each lobe to its own central meridian">
+        <div class="scale"><span>one map</span><span>lobes</span></div>
+      </div>
+      <label class="row" for="lon0"><span id="lon0-label">Central meridian</span><output id="lon0-out"></output></label>
+      <input id="lon0" type="range" min="-180" max="180" step="0.5" aria-label="Central meridian, which moves the seam">
+      <label class="row" for="t"><span>Unfold</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Unfold the globe into the map">
+      <div class="scale"><span id="t-from">globe</span><span id="t-mid"></span><span>map</span></div>
+      <div class="buttons">
+        <button id="play-unfold" type="button">Unfold</button>
+        <button id="play-interrupt" type="button">Interrupt</button>
+      </div>
+    </section>
+
+    <section class="embed-map">
+      <canvas id="map2d" aria-label="The flat map"></canvas>
+      <p id="badge" class="badge ok">Every map here is checked against PROJ itself.</p>
+    </section>
+
+    <section>
+      <div class="projline">
+        <code id="projstring"></code>
+        <button id="copy-proj" type="button" class="small">Copy</button>
+      </div>
+      <p id="describe" class="describe"></p>
+    </section>
+
+    <section>
+      <label class="row" for="basemap"><span>Basemap</span></label>
+      <select id="basemap" class="wide"></select>
+      <p id="bm-status" class="status" role="status"></p>
+      <label class="row" for="relief"><span>Relief</span><output id="relief-out"></output></label>
+      <input id="relief" type="range" min="0" max="100" step="1" aria-label="Relief exaggeration">
+      <div class="toggles"><label><input id="wire" type="checkbox"> Wireframe</label></div>
+      <div class="buttons">
+        <label class="inline" for="tif-size">Size
+          <select id="tif-size">
+            <option value="1024">1024 px</option>
+            <option value="2048" selected>2048 px</option>
+            <option value="4096">4096 px</option>
+          </select>
+        </label>
+        <button id="download-tif" type="button" disabled>Download GeoTIFF</button>
+      </div>
+      <p id="tif-hint" class="hint">The flat map with its basemap, as RGBA with its CRS, readable by GDAL.</p>
+    </section>
+
+    <section>
+      <label class="row" for="links"><span>Links to the surface</span><output id="links-out"></output></label>
+      <input id="links" type="range" min="0" max="5000" step="10">
+      <div class="buttons">
+        <button id="reseed" type="button">New links</button>
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+      <div class="toggles">
+        <label><input id="cuts" type="checkbox"> Cuts and lobe edges</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+        <label><input id="globe" type="checkbox"> Globe</label>
+        <label><input id="spin" type="checkbox"> Spin view</label>
+        <label>Coastline
+          <select id="detail">
+            <option value="110m">1:110m</option>
+            <option value="50m">1:50m</option>
+          </select>
+        </label>
+        <label>Links from
+          <select id="from">
+            <option value="tri">land triangle centres</option>
+            <option value="vert">land mesh vertices</option>
+            <option value="coast">coastline vertices</option>
+            <option value="even">evenly spaced on land</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>No light, cone or cylinder makes Mollweide's map, or Robinson's, or Equal Earth. They are
+          formulas for the whole sphere at once, and every one of them has to cut the globe somewhere
+          to lay it flat. The plain ones cut once, along the seam opposite the central meridian.
+          Unfold rolls the globe out into the map, and the seam opens at the back.</p>
+        <p>Goode's answer, in 1923, was to cut more. Each lobe of his homolosine gets its own central
+          meridian, so shapes near the middle of each lobe stay good, and the cuts go through the
+          oceans (or, for an ocean map, through the land). Interrupt slides every lobe's central
+          meridian from the map's own to the lobe's: at the left end it is one unbroken map with the
+          cuts drawn on it, at the right end the lobes have opened and straightened.</p>
+        <p>Gores take it to the limit: many narrow sinusoidal lobes, as on the paper strips glued
+          onto a globe. The octahedral butterfly is Cahill's 1909 map: the globe is projected from its
+          centre onto the eight faces of an octahedron around it, and the faces are unfolded around the
+          North Pole. Unfold shows both steps: the globe falls onto the octahedron, then the faces
+          open flat.</p>
+        <p>Each formula follows PROJ's own code (<code>moll</code>, <code>goode</code>,
+          <code>igh</code>, <code>igh_o</code>, <code>imoll</code>, <code>imoll_o</code> and the rest,
+          and <code>gnom</code> for each butterfly face), checked against PROJ.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

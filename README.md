@@ -118,6 +118,45 @@ from the constructions. Hash keys: `proj` (preset, or `custom` with `def`),
 (`none`, `area`, `angle`), `pt` (picked lon,lat), `ell`, `circ`, `unit`,
 `axes`, `grat`; `tissot=1` on the perspective and cones pages.
 
+## Globals and interrupteds
+
+`globals.html` takes the whole-world formulas: Mollweide, Goode homolosine,
+sinusoidal, Eckert IV, Equal Earth, Robinson, Natural Earth, Hammer and
+Winkel tripel. Nothing physical makes them, so the surface is the map: a grid
+over each lobe in longitude and latitude, every node with its place on the
+globe and on the map. "Unfold" rolls the map out from the globe onto a
+cylinder that flattens as it grows, so the seam opens at the back.
+
+"Interruption" cuts the map into lobes: Goode's land lobes (PROJ's `igh` for
+the homolosine, `imoll` for Mollweide), his ocean lobes (`igh_o`, `imoll_o`),
+or any number of gores. Any base with a straight, evenly divided equator can
+be interrupted (Hammer and Winkel tripel cannot: their lobes would not meet).
+"Interrupt" slides every lobe's central meridian from the map's own to the
+lobe's, so at 0 it is one unbroken map with the cuts drawn on it and at 1 the
+interrupted map. Lobes are offset along x so they meet on the equator; for
+Mollweide lobes this follows PROJ's anchoring on the first northern lobe, so
+`imoll` and `imoll_o` match PROJ exactly.
+
+The octahedral butterfly is Cahill's: the globe projected from its centre
+onto the eight faces of a circumscribed octahedron (`+proj=gnom` from each
+face centre), unfolded around the North Pole with each southern face hanging
+from its northern twin. Its Unfold has two halves: the globe falls onto the
+octahedron along rays from the centre, then the octahedron opens like a paper
+model, northern faces turning about the pole and southern faces on their
+equator hinges. The edge meridian defaults to 20 W, as in Cahill-Keyes.
+
+`js/families/globals.js` follows PROJ's code for every formula (including
+Robinson's single-precision table) and `test/check-globals.mjs` compares it
+with PROJ 9.8 itself (`test/fixtures/globals-proj.json`, made by
+`test/make-globals-fixture.py`). The basemap image and GeoTIFF export are the
+surface laid flat and drawn by the GPU, so no inverse is needed; exports are
+offered when PROJ has a name for the map. Winkel tripel's string spells out
+`+lat_1=50.4597762521898`: PROJ's own default, but a PROJ string read as a
+CRS (as GDAL reads it) otherwise gets `lat_1=0`. Hash keys: `base`, `lobes`
+(`none`, `land`, `ocean`, `gores`), `gores`, `s` (interrupt, 0 to 1), `lon0`
+(central meridian, or the butterfly's edge meridian), `t` (unfold), `cuts`,
+plus the shared ones below.
+
 ## Catastrophes
 
 `catastrophes.html` lets the usual map catastrophes happen. The globe and the
@@ -178,20 +217,30 @@ drawn translucent, the overlaps glow brighter. Tiles at a zone's edge run on
 past it, so near the edge the same ground is in tiles from two zones, in two
 coordinate systems.
 
+"UPS north" and "UPS south" show the polar caps, where MGRS switches to
+Universal Polar Stereographic (north of 84 N, south of 80 S): a light at one
+pole casts the other cap down its rays onto a plane, lowered to scale 0.994 so
+it cuts the globe near 81.1 degrees. The caps are split at Greenwich into grid
+zones A and B (south) and Y and Z (north), with their own 100 km square
+letters. Sentinel-2 has no UPS tiles; its UTM tiles in band C run on to about
+84 S, and they are carried onto the plane too.
+
 Click the globe or the zone, or paste a lon, lat, an MGRS reference or a
 tile name, for the point's UTM coordinates and EPSG code, its MGRS reference,
 and every tile containing it; GeoJSON copies the point and those tiles.
 
-`js/mgrs.js` has UTM (Krueger's series to sixth order, as in PROJ), MGRS
-references both ways, and the tiling rules, which reproduce all 56,686 tiles
+`js/mgrs.js` has UTM (Krueger's series to sixth order, as in PROJ), UPS,
+MGRS references both ways (polar ones too), and the tiling rules, which reproduce all 56,686 tiles
 of ESA's tiling grid: the tile's top left corner is its square's, moved onto a
 60 m grid from easting 0 and the equator, and its band letter is the band of
 the square's centre. Which squares are tiles (ESA leaves out edge squares
 that are mostly outside their zone) is in `data/s2-tiles.json`, a bitmask per
 grid zone. `test/check-mgrs.mjs` checks UTM against PROJ, references against
 GeoTrans and tile lookups against the footprints in ESA's grid, using
-`test/fixtures/mgrs-points.json` from `test/make-mgrs-fixtures.py`. Hash
-keys: `zone` (1 to 60), `t` (0 globe, 0.5 cylinder, 1 flat), `pt` (lon,lat),
+`test/fixtures/mgrs-points.json` from `test/make-mgrs-fixtures.py`, and UPS
+against PROJ and GeoTrans with `test/fixtures/ups-points.json` from
+`test/make-ups-fixture.py`. Hash
+keys: `mode` (`utm`, `upsn` or `upss`), `zone` (1 to 60), `t` (0 globe, 0.5 cylinder, 1 flat), `pt` (lon,lat),
 `tile`, `s2`, `nb` (next zones' tiles), `sq` (100 km squares), `coast`,
 `cyl`, `cam`.
 
@@ -259,6 +308,27 @@ be dragged. Hash keys: `s` (step, from 0), `p` (the step's slider), `rot`.
 The midpoint test is redrawn by `resampleArc` in `js/mishaps.js`, which
 `test/check-mishaps.mjs` checks keeps the same points as d3-geo.
 
+## Homage
+
+`homage.html` is a storyboard of map projections that have been argued about
+in public, as a small homage to the people who kept explaining them: the UN
+emblem (a north polar azimuthal equidistant map to 60 S, beside the Lambert
+azimuthal equal-area), both carried on to the antipode; Greenland slid down to
+the Congo in Mercator; Gall-Peters and south-up, after the Cartographers for
+Social Equality in The West Wing (season 2, episode 16); Equal Earth (Savric,
+Jenny and Patterson 2018); Fuller's Dymaxion; and the projections named in
+[xkcd 977](https://xkcd.com/977/). The credits are in the page's About panel.
+Robinson, Winkel tripel, Van der Grinten and cylindrical equal-area (Gall-Peters,
+Hobo-Dyer) are written as d3 raw projections in `js/homage-geo.js`;
+`test/check-homage.mjs` checks them and the rest against PROJ 9.8
+(`test/fixtures/homage-proj.json`, from `test/make-homage-fixture.py`).
+PROJ's `+proj=wintri` defaults to `lat_1=0`, so Winkel's own
+`lat_1=acos(2/pi)` is given explicitly. The Dymaxion faces are gnomonic about
+each face centre on Fuller's icosahedron (Fuller's own face transform differs a
+little), and the net is found rather than copied: a maximum spanning tree of the
+faces weighted by the land each edge crosses, so the cuts fall in the sea. Hash
+keys: `s` (step, from 0), `p` (the step's slider).
+
 ## Basemaps and GeoTIFF export
 
 The plane can carry a basemap, reprojected pixel by pixel by casting each
@@ -319,6 +389,8 @@ cones.html, js/cones.js     cones and cylinders page
 js/families/azimuthal.js    compass (laea) and string (aeqd) constructions
 js/families/spilhaus.js     Spilhaus / Adams World in a Square II, from PROJ
 spilhaus.html, js/spilhaus.js  Spilhaus page
+js/families/globals.js      whole-world formulas, their lobes, and the octahedral butterfly, from PROJ
+globals.html, js/globals.js globals and interrupteds page
 catastrophes.html, js/catastrophes.js  map catastrophes page
 js/mishaps.js               catastrophe steps, vertex-by-vertex and spherical drawing
 cells.html, js/cells.js     s2 cells page
@@ -326,6 +398,8 @@ js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
 grids.html, js/grids-page.js  model grids page
 js/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 example.html, js/example.js For example storyboard
+homage.html, js/homage.js   homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977
+js/homage-geo.js            Robinson, Winkel tripel, Van der Grinten, cea; Dymaxion icosahedron and net
 sentinel.html, js/sentinel.js  MGRS and Sentinel-2 page
 js/mgrs.js                  UTM, MGRS references and Sentinel-2 tiles
 data/s2-tiles.json          which MGRS squares are Sentinel-2 tiles (ESA tiling grid)
@@ -355,7 +429,8 @@ properties, cylinder and plane limits, both hemispheres) and round-trips its
 inverse. `test/check-azimuthal.mjs` checks the compass and string
 constructions against proj4js. proj4js has no Spilhaus, so
 `test/check-spilhaus.mjs` compares with points projected by PROJ itself, in
-`test/fixtures/spilhaus-proj.json`. `test/check-mishaps.mjs` checks the catastrophes page's map
+`test/fixtures/spilhaus-proj.json`; `test/check-globals.mjs` does the same for the
+globals, their interruptions and the butterfly's faces. `test/check-mishaps.mjs` checks the catastrophes page's map
 frames against d3-geo and the areas behind its captions. `test/check-s2.mjs` checks
 cell tokens and corners against `test/fixtures/s2-cells.json`, made with
 s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js.
@@ -376,7 +451,8 @@ node test/write-tifs.mjs /tmp/tifs && python3 test/check-geotiff.py /tmp/tifs
 
 - A family module format so new projection families are one file each.
 - Projections with no physical construction (Mollweide, Robinson and so on),
-  shown through their distortion: started with the Tissot page.
+  shown through their distortion: started with the Tissot page (the
+  globals page shows them unrolled).
 
 Contributions are welcome. Please note that this project is released with a
 [Contributor Code of Conduct](CODE_OF_CONDUCT.md).
