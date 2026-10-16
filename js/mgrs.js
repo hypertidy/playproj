@@ -169,7 +169,8 @@ const pad = (v, d) => String(Math.floor(v)).padStart(5, "0").slice(0, d);
 // MGRS reference for a point, `digits` per coordinate (5 = 1 m, 0 = the
 // 100 km square only). Valid from 80 S to 84 N.
 export function toMGRS(lon, lat, digits = 5) {
-  if (!(lat >= -80 && lat < 84)) return null;
+  if (!(lat >= -90 && lat <= 90)) return null;
+  if (lat < -80 || lat >= 84) return polarMGRS(lon, lat, digits);
   const u = toUTM(lon, lat);
   const col = Math.floor(u.e / 1e5), row = Math.floor(u.n / 1e5);
   const sq = squareLetters(u.zone, col, row);
@@ -185,6 +186,8 @@ export function toMGRS(lon, lat, digits = 5) {
 // lon/lat, with the UTM coordinates and the cell size in metres. Spaces are
 // ignored; returns null if it cannot be read.
 export function parseMGRS(text) {
+  const polar = parsePolarMGRS(text);
+  if (polar) return polar;
   const m = /^(\d{1,2})([C-HJ-NP-X])([A-HJ-NP-Z])([A-HJ-NP-V])(\d*)$/.exec(text.replace(/\s+/g, "").toUpperCase());
   if (!m || m[5].length % 2 || m[5].length > 10) return null;
   const zone = +m[1], band = m[2];
@@ -210,6 +213,90 @@ export function parseMGRS(text) {
   if (!best || best.score > 1e3) return null;
   delete best.score;
   return best;
+}
+
+// ---------------------------------------------------------------- UPS
+
+// Universal Polar Stereographic: the ellipsoidal polar stereographic
+// projection, scale 0.994 at the pole (so the plane cuts the ellipsoid near
+// 81.1 degrees), false easting and northing 2000 km. MGRS uses it north of
+// 84 N and south of 80 S. EPSG 32661 (north) and 32761 (south).
+export const UPS_K0 = 0.994, UPS_FALSE = 2e6;
+const CPS = Math.sqrt(Math.pow(1 + ECC, 1 + ECC) * Math.pow(1 - ECC, 1 - ECC));
+
+export function toUPS(lon, lat, north = lat >= 0) {
+  const phi = (north ? lat : -lat) * D2R, lam = lon * D2R, s = ECC * Math.sin(phi);
+  const t = Math.tan(Math.PI / 4 - phi / 2) / Math.pow((1 - s) / (1 + s), ECC / 2);
+  const rho = (2 * A * UPS_K0 * t) / CPS;
+  return { north, e: UPS_FALSE + rho * Math.sin(lam), n: UPS_FALSE + (north ? -1 : 1) * rho * Math.cos(lam) };
+}
+
+export function fromUPS(north, e, nn) {
+  const dx = e - UPS_FALSE, dy = nn - UPS_FALSE;
+  const t = (Math.hypot(dx, dy) * CPS) / (2 * A * UPS_K0);
+  let phi = Math.PI / 2 - 2 * Math.atan(t);
+  for (let i = 0; i < 15; i++) {
+    const s = ECC * Math.sin(phi);
+    const next = Math.PI / 2 - 2 * Math.atan(t * Math.pow((1 - s) / (1 + s), ECC / 2));
+    if (Math.abs(next - phi) < 1e-14) { phi = next; break; }
+    phi = next;
+  }
+  const lon = Math.atan2(dx, north ? -dy : dy) / D2R;
+  return [lon, (north ? phi : -phi) / D2R];
+}
+
+// MGRS in the polar caps: the zone letter is A or B in the south and Y or
+// Z in the north (west and east of Greenwich), then two letters for the
+// 100 km square, from GeoTrans's table: columns skip the letters that
+// would be confused with the UTM squares nearby (D, E, M, N, O, V, W and
+// I), rows run A-P without I and O.
+const UPS_TABLE = {
+  A: { lo: 9, fe: 8e5, fn: 8e5 }, B: { lo: 0, fe: 2e6, fn: 8e5 },
+  Y: { lo: 9, fe: 8e5, fn: 1.3e6 }, Z: { lo: 0, fe: 2e6, fn: 1.3e6 }
+};
+const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+export function upsZoneLetter(lon, north) {
+  return north ? (lon < 0 ? "Y" : "Z") : (lon < 0 ? "A" : "B");
+}
+
+export function upsSquareLetters(letter, e, nn) {
+  const T = UPS_TABLE[letter];
+  let c = T.lo + Math.floor((e - T.fe) / 1e5);
+  if (e < UPS_FALSE) { if (c > 11) c += 3; if (c > 20) c += 2; }
+  else { if (c > 2) c += 2; if (c > 7) c += 1; if (c > 11) c += 3; }
+  let r = Math.floor((nn - T.fn) / 1e5);
+  if (r > 7) r += 1;
+  if (r > 13) r += 1;
+  return c >= 0 && c < 26 && r >= 0 && r < 26 ? LETTERS[c] + LETTERS[r] : null;
+}
+
+function polarMGRS(lon, lat, digits) {
+  const north = lat >= 0, u = toUPS(lon, lat, north), letter = upsZoneLetter(lon, north);
+  const sq = upsSquareLetters(letter, u.e, u.n);
+  const ze = u.e - Math.floor(u.e / 1e5) * 1e5, zn = u.n - Math.floor(u.n / 1e5) * 1e5;
+  return {
+    ups: true, north, e: u.e, n: u.n, zone: 0, south: !north, band: letter, square: sq, gzd: letter,
+    epsg: north ? 32661 : 32761,
+    ref: letter + sq + (digits ? pad(ze, digits) + pad(zn, digits) : "")
+  };
+}
+
+function parsePolarMGRS(text) {
+  const m = /^([ABYZ])([A-Z])([A-Z])(\d*)$/.exec(text.replace(/\s+/g, "").toUpperCase());
+  if (!m || m[4].length % 2 || m[4].length > 10) return null;
+  const letter = m[1], north = letter >= "Y", T = UPS_TABLE[letter];
+  const d = m[4].length / 2, size = 10 ** (5 - d);
+  const de = d ? +m[4].slice(0, d) * size : 0, dn = d ? +m[4].slice(d) * size : 0;
+  // find the 100 km square by its letters
+  for (let ci = 0; ci < 40; ci++)
+    for (let ri = 0; ri < 40; ri++) {
+      const e = T.fe + ci * 1e5, nn = T.fn + ri * 1e5;
+      if (upsSquareLetters(letter, e + 5e4, nn + 5e4) !== m[2] + m[3]) continue;
+      const [lon, lat] = fromUPS(north, e + de, nn + dn);
+      return { lon, lat, ups: true, north, south: !north, band: letter, zone: 0, e: e + de, n: nn + dn, size };
+    }
+  return null;
 }
 
 // ---------------------------------------------------------------- Sentinel-2 tiles

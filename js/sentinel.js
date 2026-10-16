@@ -7,6 +7,9 @@
 // globe onto the zone's transverse cylinder (0 to 0.5), then opens the
 // cylinder flat by letting its radius grow (0.5 to 1), keeping the line
 // where it touches the equator fixed.
+//
+// The UPS modes do the same for a polar cap: the cap slides down the rays
+// from a light at the other pole onto the polar stereographic plane.
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -28,7 +31,7 @@ const COLORS = {
 
 // ---------------------------------------------------------------- state
 
-const defaults = { zone: 32, t: 0, pt: "5.3221,60.3913", tile: "", s2: 1, nb: 1, sq: 1, coast: 1, cyl: 1, cam: null };
+const defaults = { mode: "utm", zone: 32, t: 0, pt: "5.3221,60.3913", tile: "", s2: 1, nb: 1, sq: 1, coast: 1, cyl: 1, cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -43,7 +46,8 @@ function readHash() {
   for (const k of Object.keys(defaults)) {
     if (!h.has(k)) continue;
     const raw = h.get(k);
-    if (k === "pt") state.pt = raw === "" || parsePt(raw) ? raw : defaults.pt;
+    if (k === "mode") state.mode = ["utm", "upsn", "upss"].includes(raw) ? raw : "utm";
+    else if (k === "pt") state.pt = raw === "" || parsePt(raw) ? raw : defaults.pt;
     else if (k === "tile") state.tile = g.tileByName(raw) ? raw.toUpperCase().replace(/^T/, "") : "";
     else if (k === "cam") {
       const c = raw.split(",").map(Number);
@@ -146,6 +150,13 @@ function setCamera(c) {
 // zone on the globe, turning to look along the cylinder and then at the
 // flat strip from in front as it unrolls.
 function defaultCam() {
+  if (state.mode !== "utm") {
+    // from the side, so the light and the rays show, then down onto the plane
+    const sg = state.mode === "upsn" ? 1 : -1, u = ease(state.t);
+    const d = sph(25, sg * (30 + 45 * u)), dist = 3.3 - 1.9 * u;
+    const T = [0, sg * (0.35 + (UPS_H - 0.35) * u), 0];
+    return [...d.map((v, k) => T[k] + v * dist), ...T];
+  }
   const F = zoneFrame(state.zone), pt = parsePt(state.pt);
   const inZone = pt && g.zoneOf(pt[0], pt[1]) === state.zone && pt[1] >= -80 && pt[1] < 84;
   const lat = inZone ? Math.max(-50, Math.min(50, pt[1] * 0.7)) : 25;
@@ -230,6 +241,14 @@ const globeGeom = (() => {
 })();
 const globe = new THREE.Mesh(globeGeom, new THREE.MeshBasicMaterial({ map: globeTex }));
 scene.add(globe);
+// a faded globe is drawn first and leaves no depth, so the maps that have
+// left its surface (some of them inside it, under a secant surface) show
+function setGlobeFade(f) {
+  const m = globe.material, on = f > 0.001;
+  if (m.transparent !== on) { m.transparent = on; m.depthWrite = !on; m.needsUpdate = true; }
+  m.opacity = 1 - f;
+  globe.renderOrder = on ? -1 : 0;
+}
 
 // ------------------------------------------------ the zone strip
 
@@ -403,7 +422,7 @@ const lineMat = (color, opacity) => new THREE.LineBasicMaterial({ color, transpa
 // tiles as a translucent fill (overlaps add up) and an outline, all in the
 // current zone's transverse Mercator. Each tile is an n x n grid; its
 // outline runs round the grid's edge.
-function tileMeshes(tiles, zone, color, fillOpacity, lineOpacity, n = 4) {
+function tileMeshes(tiles, zone, color, fillOpacity, lineOpacity, n = 4, proj = null) {
   const fm = new Morph(), lm = new Morph(), fidx = [];
   const ring = [];
   for (let i = 0; i < n; i++) ring.push([i, 0]);
@@ -418,7 +437,7 @@ function tileMeshes(tiles, zone, color, fillOpacity, lineOpacity, n = 4) {
         const e = t.xmin + ((t.xmax - t.xmin) * i) / n, nn = t.ymin + ((t.ymax - t.ymin) * j) / n;
         const [lon, lat] = g.fromUTM(t.zone, t.south, e, nn);
         // in its own zone the map coordinates are the tile's own
-        const [X, Y] = t.zone === zone ? [(e - 5e5) / A, (nn - fn) / A] : tmXY(lon, lat, zone);
+        const [X, Y] = proj ? proj(lon, lat) : t.zone === zone ? [(e - 5e5) / A, (nn - fn) / A] : tmXY(lon, lat, zone);
         ll[k] = lon; ll[k + 1] = lat; xy[k] = X; xy[k + 1] = Y;
         fm.add(lon, lat, X, Y);
       }
@@ -470,7 +489,8 @@ function buildPick(zone) {
   if (pickSet) { clearSet(pickSet); pickSet = null; }
   const t = state.tile && g.tileByName(state.tile);
   if (!t) return;
-  pickSet = tileMeshes([t], zone, COLORS.pick, 0.3, 1, 16);
+  const north = state.mode === "upsn";
+  pickSet = tileMeshes([t], zone, COLORS.pick, 0.3, 1, 16, state.mode === "utm" ? null : (lon, lat) => upsXY(lon, lat, north));
   pickSet.lift = 0.0022;
   tileGroup.add(pickSet.fill, pickSet.line);
 }
@@ -537,12 +557,232 @@ function setLines(obj, arr) {
   obj.geometry.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
 }
 
+// ------------------------------------------------ UPS: the polar caps
+
+// The plane sits where a light at the far pole casts the cap at scale
+// 0.994: a tangent plane would be at height 1 (scale 1 at the pole), and
+// lowering it to 2 k0 - 1 shrinks the picture by k0.
+const UPS_H = 2 * g.UPS_K0 - 1;
+const UPS_HALF = 1.2e6;   // the cap texture frame, metres either side of the pole
+const capCanvas = document.createElement("canvas");
+capCanvas.width = capCanvas.height = Math.min(2048, maxTex);
+const capTex = new THREE.CanvasTexture(capCanvas);
+capTex.colorSpace = THREE.SRGBColorSpace;
+capTex.anisotropy = 8;
+
+const upsGroup = new THREE.Group();
+scene.add(upsGroup);
+const cap = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ map: capTex, side: THREE.DoubleSide }));
+const lightBall = new THREE.Mesh(new THREE.SphereGeometry(0.03, 20, 14), new THREE.MeshBasicMaterial({ color: COLORS.pick }));
+const rays = new THREE.LineSegments(new THREE.BufferGeometry(), lineMat(COLORS.pick, 0.35));
+const planeMesh = new THREE.Mesh(new THREE.PlaneGeometry(2 * UPS_HALF / A, 2 * UPS_HALF / A), new THREE.MeshBasicMaterial({
+  color: COLORS.cyl, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false
+}));
+const planeEdge = new THREE.LineSegments(new THREE.EdgesGeometry(planeMesh.geometry), lineMat(COLORS.cyl, 0.45));
+const cutCircle = new THREE.LineLoop(new THREE.BufferGeometry(), lineMat(COLORS.cut, 0.9));
+const surfaceGroup = new THREE.Group();
+surfaceGroup.add(planeMesh, planeEdge, cutCircle);
+upsGroup.add(cap, lightBall, rays, surfaceGroup);
+let capMorph = null, upsTiles = null, builtUps = "";
+
+// UPS easting / northing (globe radii from the pole) to the scene plane:
+// easting towards 90 E, northing towards 180 in the north and towards 0 in
+// the south (the y axis points along the meridian 180 or 0)
+function upsPlacer(t, north, force = false) {
+  const u = force ? 1 : ease(t), sg = north ? 1 : -1;
+  return (P, j, X, Y, lift, out, i) => {
+    const q0 = X, q1 = sg * (UPS_H + lift), q2 = north ? -Y : Y;
+    const s = 1 + lift;
+    out[i] = P ? P[j] * s * (1 - u) + q0 * u : q0;
+    out[i + 1] = P ? P[j + 1] * s * (1 - u) + q1 * u : q1;
+    out[i + 2] = P ? P[j + 2] * s * (1 - u) + q2 * u : q2;
+  };
+}
+const upsXY = (lon, lat, north) => {
+  const u = g.toUPS(lon, lat, north);
+  return [(u.e - g.UPS_FALSE) / A, (u.n - g.UPS_FALSE) / A];
+};
+const capEdge = (north) => (north ? 84 : -80);
+
+function buildCap(north) {
+  const m = new Morph(), uv = [], idx = [], nr = 24, ns = 120, edge = capEdge(north), pole = north ? 90 : -90;
+  for (let j = 0; j <= nr; j++)
+    for (let i = 0; i <= ns; i++) {
+      const lat = edge + ((pole - edge) * j) / nr, lon = -180 + (360 * i) / ns;
+      const u = g.toUPS(lon, lat, north);
+      m.add(lon, lat, (u.e - g.UPS_FALSE) / A, (u.n - g.UPS_FALSE) / A);
+      uv.push((u.e - g.UPS_FALSE + UPS_HALF) / (2 * UPS_HALF), (u.n - g.UPS_FALSE + UPS_HALF) / (2 * UPS_HALF));
+    }
+  for (let j = 0; j < nr; j++)
+    for (let i = 0; i < ns; i++) {
+      const a = j * (ns + 1) + i, b = a + ns + 1;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  m.finish();
+  capMorph = m;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(m.pos, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  cap.geometry.dispose();
+  cap.geometry = geo;
+}
+
+function drawCap(north) {
+  const W = capCanvas.width, ctx = capCanvas.getContext("2d");
+  const cx = (e) => ((e - g.UPS_FALSE + UPS_HALF) / (2 * UPS_HALF)) * W;
+  const cy = (n) => (1 - (n - g.UPS_FALSE + UPS_HALF) / (2 * UPS_HALF)) * W;
+  const P = (lon, lat) => { const u = g.toUPS(lon, lat, north); return [cx(u.e), cy(u.n)]; };
+  const west = north ? "Y" : "A", east = north ? "Z" : "B";
+  ctx.fillStyle = "#1d3253"; ctx.fillRect(0, 0, W / 2, W);
+  ctx.fillStyle = "#243d63"; ctx.fillRect(W / 2, 0, W / 2, W);
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const cell = cx(1e5) - cx(0);
+  if (state.sq) {
+    ctx.strokeStyle = "rgba(200,220,245,0.45)"; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let v = g.UPS_FALSE - 1.2e6; v <= g.UPS_FALSE + 1.2e6; v += 1e5) {
+      ctx.moveTo(cx(v), 0); ctx.lineTo(cx(v), W); ctx.moveTo(0, cy(v)); ctx.lineTo(W, cy(v));
+    }
+    ctx.stroke();
+    ctx.font = `${Math.round(cell * 0.32)}px ui-monospace, Menlo, monospace`;
+    ctx.fillStyle = "rgba(225,235,250,0.75)";
+    for (let e = g.UPS_FALSE - 1.2e6; e < g.UPS_FALSE + 1.2e6; e += 1e5)
+      for (let n = g.UPS_FALSE - 1.2e6; n < g.UPS_FALSE + 1.2e6; n += 1e5) {
+        const letter = e + 5e4 < g.UPS_FALSE ? west : east, sq = g.upsSquareLetters(letter, e + 5e4, n + 5e4);
+        if (sq) ctx.fillText(sq, cx(e + 5e4), cy(n + 5e4));
+      }
+  }
+  // parallels every 2 degrees and meridians every 30
+  ctx.strokeStyle = "rgba(160,190,230,0.5)"; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let lat = capEdge(north); Math.abs(lat) < 90; lat += north ? 2 : -2)
+    for (let lon = -180; lon <= 180; lon += 3) { const [x, y] = P(lon, lat); if (lon === -180) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+  for (let lon = -180; lon < 180; lon += 30) { const [x0, y0] = P(lon, capEdge(north) + (north ? -1 : 1)), [x1, y1] = P(lon, north ? 90 : -90); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); }
+  ctx.stroke();
+  // Greenwich and 180, splitting the cap into its two grid zones
+  ctx.strokeStyle = "rgba(240,246,255,0.95)"; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, W); ctx.stroke();
+  ctx.font = `bold ${Math.round(W / 9)}px system-ui, sans-serif`;
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  ctx.fillText(west, W * 0.36, W / 2); ctx.fillText(east, W * 0.64, W / 2);
+  // where the plane cuts the globe, near 81.1 degrees: scale exactly 1 there
+  const cutLat = (north ? 1 : -1) * Math.asin(UPS_H) / D2R;
+  ctx.strokeStyle = "rgba(255,179,71,0.9)"; ctx.lineWidth = 4; ctx.setLineDash([18, 12]);
+  ctx.beginPath();
+  for (let lon = -180; lon <= 180; lon += 2) { const [x, y] = P(lon, cutLat); if (lon === -180) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+  ctx.stroke(); ctx.setLineDash([]);
+  const lines = coast50 || coastLines;
+  if (state.coast && lines) {
+    ctx.strokeStyle = "rgba(225,240,255,0.95)"; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (const l of lines) {
+      let pen = false;
+      for (let i = 0; i < l.length; i += 2) {
+        if (north ? l[i + 1] < 78 : l[i + 1] > -74) { pen = false; continue; }
+        const [x, y] = P(l[i], l[i + 1]);
+        if (pen) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+        pen = true;
+      }
+    }
+    ctx.stroke();
+  }
+  capTex.needsUpdate = true;
+}
+
+// Sentinel-2 tiles reaching into or near the cap: UTM tiles, carried onto
+// the polar plane. The grid has no UPS tiles.
+const polarTileCache = {};
+function polarTiles(north) {
+  const key = north ? "n" : "s";
+  if (polarTileCache[key]) return polarTileCache[key];
+  const out = [];
+  for (let z = 1; z <= 60; z++)
+    for (const t of grid.inZone(z)) {
+      if (t.south === north) continue;
+      const [, lat] = g.fromUTM(t.zone, t.south, (t.xmin + t.xmax) / 2, north ? t.ymax : t.ymin);
+      if (north ? lat > 82.5 : lat < -79.5) out.push(t);
+    }
+  return (polarTileCache[key] = out);
+}
+
+function buildUps(north) {
+  buildCap(north);
+  drawCap(north);
+  if (upsTiles) clearSet(upsTiles);
+  upsTiles = null;
+  if (grid) {
+    upsTiles = tileMeshes(polarTiles(north), 0, COLORS.own, 0.07, 0.6, 4, (lon, lat) => upsXY(lon, lat, north));
+    upsTiles.lift = 0.0016;
+    tileGroup.add(upsTiles.fill, upsTiles.line);
+  }
+  const ring = [], r = Math.sqrt(1 - UPS_H * UPS_H), sg = north ? 1 : -1;
+  for (let k = 0; k < 128; k++) ring.push(r * Math.cos((2 * Math.PI * k) / 128), sg * UPS_H, r * Math.sin((2 * Math.PI * k) / 128));
+  cutCircle.geometry.dispose();
+  cutCircle.geometry = new THREE.BufferGeometry();
+  cutCircle.geometry.setAttribute("position", new THREE.Float32BufferAttribute(ring, 3));
+  planeMesh.position.set(0, sg * UPS_H, 0); planeMesh.rotation.set(-Math.PI / 2, 0, 0);
+  planeEdge.position.copy(planeMesh.position); planeEdge.rotation.copy(planeMesh.rotation);
+  lightBall.position.set(0, -sg, 0);
+}
+
+// rays from the light through the cap's edge (and the point) to the plane
+function updateRays(north) {
+  const onPlane = upsPlacer(1, north), seg = [], o = [0, 0, 0], L = [0, north ? -1 : 1, 0];
+  const through = (lon, lat) => {
+    onPlane(null, 0, ...upsXY(lon, lat, north), 0, o, 0);
+    seg.push(...L, ...o);
+  };
+  for (let lon = -180; lon < 180; lon += 20) through(lon, capEdge(north));
+  const pt = parsePt(state.pt);
+  if (pt && (north ? pt[1] >= 84 : pt[1] < -80)) through(pt[0], pt[1]);
+  setLines(rays, seg);
+}
+
 // ---------------------------------------------------------------- update
 
-let builtZone = 0, builtTile = null, builtTiles = false;
+let builtZone = 0, builtTile = null, builtTiles = false, builtMode = "utm";
+
+function rebuildUps(north) {
+  if (builtUps !== state.mode || (grid && !upsTiles)) { buildUps(north); builtUps = state.mode; }
+  if (builtMode !== state.mode) { builtMode = state.mode; builtTile = null; }
+  if (builtTile !== state.tile) { buildPick(0); builtTile = state.tile; }
+  const place = upsPlacer(state.t, north);
+  capMorph.update(place, 0.0008);
+  cap.geometry.attributes.position.needsUpdate = true;
+  cap.geometry.computeBoundingSphere();
+  for (const s of [upsTiles, pickSet]) {
+    if (!s) continue;
+    s.fm.update(place, s.lift); s.lm.update(place, s.lift);
+    s.fill.geometry.attributes.position.needsUpdate = true;
+    s.line.geometry.attributes.position.needsUpdate = true;
+    s.fill.geometry.computeBoundingSphere(); s.line.geometry.computeBoundingSphere();
+  }
+  if (upsTiles) upsTiles.fill.visible = upsTiles.line.visible = !!state.s2;
+  const pt = parsePt(state.pt);
+  const inCap = pt && (north ? pt[1] >= 84 : pt[1] < -80);
+  marker.visible = !!pt;
+  if (pt) {
+    const o = [0, 0, 0];
+    if (inCap || (north ? pt[1] > 60 : pt[1] < -60)) place(sph(pt[0], pt[1]), 0, ...upsXY(pt[0], pt[1], north), 0.003, o, 0);
+    else sph(pt[0], pt[1], o);
+    marker.position.set(o[0], o[1], o[2]);
+  }
+  updateRays(north);
+  surfaceGroup.visible = !!state.cyl;
+  cylGroup.visible = false;
+  if (!state.cam) setCamera(defaultCam());
+  setGlobeFade(0.65 * ease(Math.min(1, 2 * state.t)));
+}
 
 function rebuildScene() {
+  const isUps = state.mode !== "utm", north = state.mode === "upsn";
+  strip.visible = !isUps; upsGroup.visible = isUps;
+  for (const s of tileSets) s.fill.visible = s.line.visible = false;
+  if (upsTiles) upsTiles.fill.visible = upsTiles.line.visible = false;
+  if (isUps) return rebuildUps(north);
   const zone = state.zone, F = zoneFrame(zone);
+  if (builtMode !== "utm") { builtMode = "utm"; builtTile = null; }
   if (builtZone !== zone) {
     buildStrip(zone);
     drawStrip(zone);
@@ -579,15 +819,14 @@ function rebuildScene() {
   cylGroup.visible = !!state.cyl;
   if (state.cyl) updateCylinder(F, state.t);
   // fade the globe as the strip leaves it
-  globe.material.transparent = state.t > 0.5;
-  globe.material.opacity = 1 - 0.6 * ease(Math.max(0, 2 * state.t - 1));
+  setGlobeFade(0.6 * ease(Math.max(0, 2 * state.t - 1)));
 }
 
 // ---------------------------------------------------------------- panel
 
 const $ = (id) => document.getElementById(id);
 const ui = {
-  zone: $("zone"), zoneOut: $("zone-out"), t: $("t"), tOut: $("t-out"),
+  zone: $("zone"), zoneOut: $("zone-out"), zoneRow: $("zone-row"), modes: [...document.querySelectorAll("#modes button")], t: $("t"), tOut: $("t-out"),
   lookup: $("lookup"), ptOut: $("pt-out"), info: $("pt-info"), chips: $("tile-chips"), tileInfo: $("tile-info"),
   geojson: $("copy-geojson"),
   s2: $("s2"), nb: $("nb"), sq: $("sq"), coast: $("coast"), cyl: $("cyl")
@@ -610,10 +849,14 @@ function pointTiles() {
 }
 
 function updatePanel() {
+  const isUps = state.mode !== "utm";
+  for (const b of ui.modes) b.classList.toggle("active", b.dataset.mode === state.mode);
+  ui.zoneRow.hidden = isUps; turnBtn.hidden = isUps;
   ui.zone.value = state.zone;
   ui.zoneOut.textContent = `${state.zone} (central meridian ${fmtCM(state.zone)})`;
   ui.t.value = state.t;
-  ui.tOut.textContent = state.t === 0 ? "globe" : state.t === 0.5 ? "cylinder" : state.t === 1 ? "flat" : state.t < 0.5 ? "to the cylinder" : "unrolling";
+  ui.tOut.textContent = isUps ? (state.t === 0 ? "globe" : state.t === 1 ? "on the plane" : "down the rays") :
+    state.t === 0 ? "globe" : state.t === 0.5 ? "cylinder" : state.t === 1 ? "flat" : state.t < 0.5 ? "to the cylinder" : "unrolling";
   for (const k of ["s2", "nb", "sq", "coast", "cyl"]) ui[k].checked = !!state[k];
   ui.lookup.classList.remove("bad");
 
@@ -629,12 +872,14 @@ function updatePanel() {
   ui.ptOut.textContent = fmtLL(pt[0], pt[1]);
   if (document.activeElement !== ui.lookup) ui.lookup.value = `${+pt[0].toFixed(6)}, ${+pt[1].toFixed(6)}`;
   const mg = g.toMGRS(pt[0], pt[1]);
-  if (mg) {
+  if (mg && mg.ups) {
+    const r = mg.ref;
+    ui.info.textContent = `UPS ${mg.north ? "north" : "south"} (EPSG:${mg.epsg}): easting ${fmtM(mg.e)}, northing ${fmtM(mg.n)}. ` +
+      `MGRS ${r.slice(0, 1)} ${r.slice(1, 3)} ${r.slice(3, 8)} ${r.slice(8)}, in grid zone ${mg.gzd}.`;
+  } else if (mg) {
     const r = mg.ref;
     ui.info.textContent = `UTM zone ${mg.zone}${mg.south ? "S" : "N"} (EPSG:${g.epsg(mg.zone, mg.south)}): easting ${fmtM(mg.e)}, northing ${fmtM(mg.n)}. ` +
       `MGRS ${r.slice(0, 3)} ${r.slice(3, 5)} ${r.slice(5, 10)} ${r.slice(10)}.${exceptionNote(pt[0], pt[1], mg.zone)}`;
-  } else {
-    ui.info.textContent = `Outside MGRS's UTM range (80${DEG} S to 84${DEG} N): the polar caps use UPS.`;
   }
 
   const tiles = pointTiles();
@@ -646,9 +891,9 @@ function updatePanel() {
     ui.chips.append(b);
   }
   const zones = new Set(tiles.map((t) => t.zone));
-  let msg = !grid ? "Loading the Sentinel-2 grid." : !tiles.length ? "No Sentinel-2 tile here." :
+  let msg = !grid ? "Loading the Sentinel-2 grid." : !tiles.length ? (mg && mg.ups ? "No Sentinel-2 tile here: the grid has no UPS tiles." : "No Sentinel-2 tile here.") :
     `In ${tiles.length} Sentinel-2 tile${tiles.length > 1 ? "s" : ""}` + (zones.size > 1 ? `, from ${zones.size} zones, so ${zones.size} coordinate systems.` : ".");
-  if (mg && tiles.length && !zones.has(mg.zone))
+  if (mg && !mg.ups && tiles.length && !zones.has(mg.zone))
     msg += ` None is from zone ${mg.zone}: ESA leaves out the squares at a zone's edge that lie mostly outside it, where the next zone's tiles already cover the ground.`;
   const sel = state.tile && g.tileByName(state.tile);
   if (sel) {
@@ -671,7 +916,8 @@ function sync() {
 
 function setPoint(lon, lat, { zone = true, tile = true } = {}) {
   state.pt = `${+lon.toFixed(6)},${+lat.toFixed(6)}`;
-  if (zone && lat >= -80 && lat < 84) state.zone = g.zoneOf(lon, lat);
+  if (zone && lat >= -80 && lat < 84) { state.zone = g.zoneOf(lon, lat); state.mode = "utm"; }
+  if (zone && (lat < -80 || lat >= 84)) state.mode = lat > 0 ? "upsn" : "upss";
   if (tile && grid) {
     // the point's own tile: its own zone's, the square it falls in
     const own = g.toMGRS(lon, lat, 0);
@@ -682,11 +928,17 @@ function setPoint(lon, lat, { zone = true, tile = true } = {}) {
 }
 
 ui.zone.addEventListener("input", () => { state.zone = +ui.zone.value; sync(); });
+for (const b of ui.modes) b.addEventListener("click", () => {
+  if (state.mode === b.dataset.mode) return;
+  state.mode = b.dataset.mode; state.cam = null; stopTurn();
+  sync();
+});
 ui.t.addEventListener("input", () => { stopAnim(); state.t = +ui.t.value; sync(); });
 for (const k of ["s2", "nb", "cyl"]) ui[k].addEventListener("change", () => { state[k] = ui[k].checked ? 1 : 0; sync(); });
 for (const k of ["sq", "coast"]) ui[k].addEventListener("change", () => {
   state[k] = ui[k].checked ? 1 : 0;
   drawStrip(state.zone);
+  if (state.mode !== "utm") drawCap(state.mode === "upsn");
   if (k === "coast") drawGlobe(coastLines);
   sync();
 });
@@ -699,14 +951,14 @@ ui.lookup.addEventListener("change", () => {
   if (tile) {
     const [lon, lat] = g.fromUTM(tile.zone, tile.south, (tile.xmin + tile.xmax) / 2, (tile.ymin + tile.ymax) / 2);
     setPoint(lon, lat, { tile: false });
-    state.zone = tile.zone; state.tile = tile.name;
+    state.zone = tile.zone; state.tile = tile.name; state.mode = "utm";
     return sync();
   }
   const ll = raw.split(/[\s,;]+/).filter(Boolean).map(Number);
   if (ll.length === 2 && ll.every(isFinite) && Math.abs(ll[1]) <= 90) { setPoint(ll[0], ll[1]); return sync(); }
   const m = g.parseMGRS(raw);
   if (m) {
-    const [lon, lat] = g.fromUTM(m.zone, m.south, m.e + m.size / 2, m.n + m.size / 2);
+    const [lon, lat] = m.ups ? g.fromUPS(m.north, m.e + m.size / 2, m.n + m.size / 2) : g.fromUTM(m.zone, m.south, m.e + m.size / 2, m.n + m.size / 2);
     setPoint(lon, lat);
     return sync();
   }
@@ -738,15 +990,20 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   const r = renderer.domElement.getBoundingClientRect();
   ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ptr, camera);
-  const hit = ray.intersectObjects([strip, globe])[0];
+  const hit = ray.intersectObjects(state.mode === "utm" ? [strip, globe] : [cap, globe])[0];
   if (!hit) return;
-  if (hit.object === strip && state.t > 0) {
+  if (hit.object === cap && state.t > 0) {
+    const half = UPS_HALF, e = g.UPS_FALSE - half + hit.uv.x * 2 * half, n = g.UPS_FALSE - half + hit.uv.y * 2 * half;
+    const [lon, lat] = g.fromUPS(state.mode === "upsn", e, n);
+    setPoint(lon, lat, { zone: false });
+  } else if (hit.object === strip && state.t > 0) {
     const ee = FRAME.e0 + hit.uv.x * (FRAME.e1 - FRAME.e0), y = FRAME.y0 + hit.uv.y * (FRAME.y1 - FRAME.y0);
     const [lon, lat] = g.tmercInverse(ee - 5e5, y, g.centralMeridian(state.zone));
     setPoint(lon, lat, { zone: false });
   } else {
     const p = hit.point.clone().normalize();
-    setPoint(Math.atan2(p.x, p.z) / D2R, Math.asin(p.y) / D2R, { zone: hit.object !== strip });
+    // in a UPS mode, clicks keep the mode; in UTM mode a click in a cap switches to it
+    setPoint(Math.atan2(p.x, p.z) / D2R, Math.asin(p.y) / D2R, { zone: state.mode === "utm" && hit.object !== strip });
   }
   sync();
 });
@@ -825,8 +1082,8 @@ drawGlobe(null);
 sync();
 requestAnimationFrame(tick);
 
-loadCoastline("110m").then((lines) => { coastLines = lines; drawGlobe(lines); drawStrip(state.zone); sync(); });
-loadCoastline("50m").then((lines) => { coast50 = lines; drawStrip(state.zone); sync(); }).catch(() => {});
+loadCoastline("110m").then((lines) => { coastLines = lines; drawGlobe(lines); drawStrip(state.zone); builtUps = ""; sync(); });
+loadCoastline("50m").then((lines) => { coast50 = lines; drawStrip(state.zone); builtUps = ""; sync(); }).catch(() => {});
 fetch(new URL("../data/s2-tiles.json", import.meta.url)).then((r) => r.json()).then((json) => {
   grid = g.tileSet(json);
   builtTiles = false;

@@ -45,5 +45,25 @@ const t = m.tileByName("T31UFU");
 if (!t || t.xmin !== 600000 || t.ymax !== 5900040 || t.epsg !== 32631) fail(`31UFU ${JSON.stringify(t)}`);
 if (m.gridZoneLon(32, "X") !== null || m.gridZoneLon(32, "V")[0] !== 3 || m.zoneOf(5, 60) !== 32 || m.zoneOf(10, 78) !== 33) fail("exceptions");
 
+// UPS in the polar caps, against PROJ and GeoTrans
+const ups = JSON.parse(fs.readFileSync(new URL("./fixtures/ups-points.json", import.meta.url)));
+let worstUps = 0;
+for (const [lon, lat, e, n, ref] of ups.points) {
+  const u = m.toUPS(lon, lat);
+  const d = Math.hypot(u.e - e, u.n - n);
+  worstUps = Math.max(worstUps, d);
+  if (d > 1e-3) fail(`${lon},${lat} UPS off by ${d} m`);
+  const [lon2, lat2] = m.fromUPS(lat > 0, u.e, u.n);
+  let dl = Math.abs(lon2 - lon); dl = Math.min(dl, 360 - dl);
+  if (Math.abs(lat2 - lat) > 1e-9 || dl * Math.cos(lat * Math.PI / 180) > 1e-9) fail(`${lon},${lat} UPS inverse ${lon2},${lat2}`);
+  const r = m.toMGRS(lon, lat).ref;
+  // GeoTrans rounds to the metre first; allow a 1 m disagreement on the last digit
+  const near = r.slice(0, 3) === ref.slice(0, 3) && Math.abs(+r.slice(3, 8) - +ref.slice(3, 8)) <= 1 && Math.abs(+r.slice(8) - +ref.slice(8)) <= 1;
+  if (!near) fail(`${lon},${lat} polar MGRS ${r} vs ${ref}`);
+  const p = m.parseMGRS(ref);
+  if (!p || Math.abs(p.e - Math.floor(e)) > 1 || Math.abs(p.n - Math.floor(n)) > 1) fail(`${ref} parsed to ${p && [p.e, p.n]} vs ${e},${n}`);
+}
+console.log(`ups: ${ups.points.length} points vs ${ups.source}; worst ${worstUps.toExponential(2)} m`);
+
 console.log(`mgrs: ${fx.points.length} points vs ${fx.source}; UTM worst ${worst.toExponential(2)} m, inverse ${worstInv.toExponential(2)} deg${worstRef ? ", MGRS within 1 m of GeoTrans" : ""}; ${total} tiles walked; ${fails} failing`);
 process.exit(fails ? 1 : 0);
