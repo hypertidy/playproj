@@ -41,8 +41,8 @@ they agree.
 
 ## Run it
 
-It is a static site with no build step. Libraries (three.js, proj4js) load
-from jsDelivr.
+It is a static site with no build step. Libraries (three.js, proj4js,
+d3-geo) load from jsDelivr.
 
 ```sh
 python3 -m http.server 8000
@@ -85,6 +85,29 @@ exports carry the PROJ string in an ESRI PE string's PROJ4 extension, which
 GDAL reads. Hash keys: `t` (unfold, 0 to 1), `lat`, `lon`, `azi` (the
 centre and azimuth), `net` (0 hides the square grid), `links`, plus the
 shared ones below.
+
+## Catastrophes
+
+`catastrophes.html` lets the usual map catastrophes happen. The globe and the
+flat map are one surface, cut along the map's seam (red) and opened through a
+cylinder, so "Unwrap" shows where each part of the map comes from; the map's
+poles (amber) are points on the globe and lines on the map. The same vertices
+are drawn two ways:
+
+- **Vertex by vertex**: project each vertex and join them with straight lines
+  on the map, filling with the even-odd rule, as planar GIS code does.
+- **On the sphere**: great-circle edges, cut at the seam and closed round the
+  poles, with the winding order deciding which side is inside, as
+  [d3-geo](https://github.com/d3/d3-geo) (and s2) do. d3 draws this side.
+
+Six steps, each with a caption: a polygon crossing the antimeridian, a ring
+round the pole, straight lines against great circles, a counterclockwise
+(GeoJSON order) ring that d3 turns inside out, a circle bigger than a
+hemisphere, and coastlines recentred on the Pacific. The map centre moves the
+seam and the poles while the data stays put. Hash keys: `c` (step), `m`
+(`naive` or `sphere`), `flip` (reverse winding), `ghost` (dashed outline of
+the other way), `lon`, `lat` (map centre), `flat` (`eqc` or `merc`), `t`
+(unwrap), `coast`, `grat`, `cam`.
 
 ## Basemaps and GeoTIFF export
 
@@ -145,6 +168,8 @@ cones.html, js/cones.js     cones and cylinders page
 js/families/azimuthal.js    compass (laea) and string (aeqd) constructions
 js/families/spilhaus.js     Spilhaus / Adams World in a Square II, from PROJ
 spilhaus.html, js/spilhaus.js  Spilhaus page
+catastrophes.html, js/catastrophes.js  map catastrophes page
+js/mishaps.js               catastrophe steps, vertex-by-vertex and spherical drawing
 test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-proj.mjs         ray construction vs proj4js
@@ -165,7 +190,8 @@ properties, cylinder and plane limits, both hemispheres) and round-trips its
 inverse. `test/check-azimuthal.mjs` checks the compass and string
 constructions against proj4js. proj4js has no Spilhaus, so
 `test/check-spilhaus.mjs` compares with points projected by PROJ itself, in
-`test/fixtures/spilhaus-proj.json`. `test/check-inverse.mjs` round-trips project and inverse for every light
+`test/fixtures/spilhaus-proj.json`. `test/check-mishaps.mjs` checks the catastrophes page's map
+frames against d3-geo and the areas behind its captions. `test/check-inverse.mjs` round-trips project and inverse for every light
 position. To check that GDAL reads the exported CRS (needs rasterio):
 
 ```sh
