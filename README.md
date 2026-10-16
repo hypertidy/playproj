@@ -117,7 +117,8 @@ index.html#v=0.75&lat=-42&lon=147&w=2&rays=200&cam=4.6,2.6,6.2,0,0.5,0
 | `lat`, `lon` | tangent point in degrees                                   |
 | `w`      | plane half-width in sphere radii                               |
 | `rays`   | number of rays drawn                                           |
-| `seed`   | which random coastline points get rays                         |
+| `seed`   | which random points get rays                                   |
+| `from`   | where rays start: `tri` land triangle centres (default), `vert` land mesh vertices, `coast` coastline vertices; area-weighted except `coast` |
 | `detail` | coastline scale, `110m` or `50m`                               |
 | `grat`, `globe` | 0 hides the graticule or the globe                      |
 | `bm`     | basemap: `none` (default), `gebco` or `esri`                   |
@@ -135,6 +136,7 @@ index.html                  page
 css/app.css                 styles
 js/app.js                   scene, map and controls
 js/geo.js                   coastline loading, graticule, scene frame
+js/landmesh.js              land triangulated from the coastlines, and ray sampling
 js/basemap.js               basemap sources and per-pixel reprojection
 js/geotiff-write.js         GeoTIFF writer with user-defined CRS keys
 js/families/perspective.js  azimuthal perspective family: rays, PROJ string, GeoTIFF keys

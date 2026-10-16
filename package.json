@@ -4,11 +4,12 @@
   "description": "Map projections traced as rays from a point of light, through a sphere, onto a plane",
   "type": "module",
   "scripts": {
-    "test": "node test/check-proj.mjs && node test/check-inverse.mjs && node test/check-conic.mjs && node test/check-azimuthal.mjs && node test/check-spilhaus.mjs",
+    "test": "node test/check-proj.mjs && node test/check-inverse.mjs && node test/check-conic.mjs && node test/check-azimuthal.mjs && node test/check-spilhaus.mjs && node test/check-landmesh.mjs",
     "serve": "python3 -m http.server 8000"
   },
   "devDependencies": {
-    "proj4": "2.12.1"
+    "proj4": "2.12.1",
+    "three": "0.160.0"
   },
   "license": "MIT"
 }
