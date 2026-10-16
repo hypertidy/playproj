@@ -109,6 +109,24 @@ seam and the poles while the data stays put. Hash keys: `c` (step), `m`
 the other way), `lon`, `lat` (map centre), `flat` (`eqc` or `merc`), `t`
 (unwrap), `coast`, `grat`, `cam`.
 
+## s2 cells
+
+`cells.html` builds [S2](https://s2geometry.io/) cells the way the library
+does. Put a light at the centre of the globe and a cube round it: every point
+casts onto one of six faces (the gnomonic projection, six times). Each face is
+stretched by a quadratic so its cells are closer to equal area, then cut into
+a grid that splits in four at every level, and the cells are numbered along a
+Hilbert curve that runs unbroken from face 0 to face 5. "Unfold" swells the
+globe to the cube and opens the cube into the staircase net the curve
+follows; "Without the stretch" overlays the plain gnomonic grid.
+
+Click a cell for its token, level, centre and area, or paste a token. Parent
+and Child step through levels (0 to 30), and GeoJSON copies the cell as a
+polygon. `js/s2.js` is a port of the parts of s2geometry needed for this,
+checked against s2sphere in `test/fixtures/s2-cells.json`. Hash keys: `lvl`
+(0 to 12), `t` (unfold, 0 globe, 0.5 cube, 1 net), `cell` (a token),
+`curve`, `grid`, `coast`, `uvgrid`, `cam`.
+
 ## Basemaps and GeoTIFF export
 
 The plane can carry a basemap, reprojected pixel by pixel by casting each
@@ -171,6 +189,8 @@ js/families/spilhaus.js     Spilhaus / Adams World in a Square II, from PROJ
 spilhaus.html, js/spilhaus.js  Spilhaus page
 catastrophes.html, js/catastrophes.js  map catastrophes page
 js/mishaps.js               catastrophe steps, vertex-by-vertex and spherical drawing
+cells.html, js/cells.js     s2 cells page
+js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
 test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-proj.mjs         ray construction vs proj4js
@@ -193,7 +213,9 @@ inverse. `test/check-azimuthal.mjs` checks the compass and string
 constructions against proj4js. proj4js has no Spilhaus, so
 `test/check-spilhaus.mjs` compares with points projected by PROJ itself, in
 `test/fixtures/spilhaus-proj.json`. `test/check-mishaps.mjs` checks the catastrophes page's map
-frames against d3-geo and the areas behind its captions. `test/check-inverse.mjs` round-trips project and inverse for every light
+frames against d3-geo and the areas behind its captions. `test/check-s2.mjs` checks
+cell tokens and corners against `test/fixtures/s2-cells.json`, made with
+s2sphere. `test/check-inverse.mjs` round-trips project and inverse for every light
 position. To check that GDAL reads the exported CRS (needs rasterio):
 
 ```sh
