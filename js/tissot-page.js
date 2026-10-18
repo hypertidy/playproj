@@ -4,14 +4,19 @@
 // makes of them (2D canvas, right). The ellipses come from js/tissot.js,
 // which differences the proj4js forward projection the way PROJ's
 // proj_factors() does; "Projected circles" instead projects each circle
-// point by point, so the two can be compared as the circles grow.
+// point by point, so the two can be compared as the circles grow. The same
+// factors, sampled over the whole map by js/distortion.js, colour the
+// image and draw its contours, and download as a float GeoTIFF.
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { loadCoastline } from "./data.js";
 import { graticule } from "./geo.js";
 import * as T from "./tissot.js";
-import { drawIndicatrix } from "./tissot-draw.js";
+import * as D from "./distortion.js";
+import { drawIndicatrix, drawInset, drawContours } from "./tissot-draw.js";
+import { writeFloatGeoTIFF, esriGeoKeys, proj4Wkt } from "./geotiff-write.js";
+import { saveBlob } from "./download.js";
 
 const D2R = Math.PI / 180;
 const DEG = "\u00b0";
@@ -41,7 +46,8 @@ const PRESETS = [
     ["cea", "Lambert cylindrical equal-area", "+proj=cea +lon_0={lon}"],
     ["gall", "Gall-Peters", "+proj=cea +lat_ts=45 +lon_0={lon}"],
     ["mill", "Miller", "+proj=mill +lon_0={lon}"],
-    ["tmerc", "Transverse Mercator", "+proj=tmerc +lat_0={lat} +lon_0={lon}"]
+    ["tmerc", "Transverse Mercator", "+proj=tmerc +lat_0={lat} +lon_0={lon}"],
+    ["utm55s", "UTM zone 55 south (WGS84)", "+proj=utm +zone=55 +south +ellps=WGS84"]
   ]],
   ["Pseudocylindrical", [
     ["sinu", "Sinusoidal", "+proj=sinu +lon_0={lon}"],
@@ -70,7 +76,14 @@ const PRESET = new Map(PRESETS.flatMap(([, list]) => list.map(([id, label, t]) =
 
 // ---------------------------------------------------------------- state
 
-const defaults = { proj: "merc", def: "", lon: 0, lat: 0, size: 6, step: 30, ell: 1, circ: 0, unit: 1, axes: 1, grat: 1, color: "none", pt: "40,50", cam: null };
+// size is the fixed radius in degrees, fit the share of the spacing an
+// auto-sized indicatrix fills; grid is g<degrees> on the globe or
+// m<count> across the map
+const defaults = {
+  proj: "merc", def: "", lon: 0, lat: 0, auto: 1, size: 6, fit: 0.8, grid: "g30", ell: 1, circ: 0, unit: 1, axes: 1,
+  norm: 0, efill: 0, inset: 1, grat: 1, field: "s", img: 0, iso: 0, pt: "40,50", cam: null
+};
+const GRIDS = ["g10", "g15", "g20", "g30", "m8", "m12", "m16", "m24"];
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -82,7 +95,8 @@ function readHash() {
     const raw = h.get(k);
     if (k === "proj") state.proj = PRESET.has(raw) || raw === "custom" ? raw : "merc";
     else if (k === "def" || k === "pt") state[k] = raw;
-    else if (k === "color") state.color = ["none", "area", "angle"].includes(raw) ? raw : "none";
+    else if (k === "grid") state.grid = GRIDS.includes(raw) ? raw : "g30";
+    else if (k === "field") state.field = D.FIELD.has(raw) ? raw : "s";
     else if (k === "cam") {
       const c = raw.split(",").map(Number);
       if (c.length === 6 && c.every(isFinite)) state.cam = c;
@@ -90,8 +104,16 @@ function readHash() {
   }
   state.lon = Math.max(-180, Math.min(180, state.lon));
   state.lat = Math.max(-90, Math.min(90, state.lat));
-  state.size = Math.max(1, Math.min(20, state.size));
-  state.step = state.step === 15 ? 15 : 30;
+  // links from before the distortion field: step, color, and a size that
+  // meant a fixed radius
+  if (h.has("step") && !h.has("grid")) state.grid = h.get("step") === "15" ? "g15" : "g30";
+  if (h.has("color") && !h.has("field")) {
+    const c = h.get("color");
+    if (c === "area" || c === "angle") { state.field = c === "area" ? "s" : "omega"; state.img = 1; }
+  }
+  if (h.has("size") && !h.has("auto")) state.auto = 0;
+  state.size = Math.max(0.5, Math.min(20, state.size));
+  state.fit = Math.max(0.2, Math.min(1.5, state.fit));
   if (state.proj === "custom" && !state.def) state.proj = "merc";
 }
 
@@ -111,9 +133,12 @@ function writeHash() {
   }, 200);
 }
 
-const projDef = () => state.proj === "custom"
-  ? state.def
-  : PRESET.get(state.proj).t.replace("{lon}", state.lon).replace("{lat}", state.lat) + ` +R=${R}`;
+// presets are on a sphere unless they name their own ellipsoid
+const projDef = () => {
+  if (state.proj === "custom") return state.def;
+  const t = PRESET.get(state.proj).t.replace("{lon}", state.lon).replace("{lat}", state.lat);
+  return /\+(ellps|datum)=/.test(t) ? t : t + ` +R=${R}`;
+};
 
 // the central meridian, read back from a custom string
 const centreLon = () => state.proj === "custom"
@@ -143,57 +168,92 @@ function projection() {
   return P;
 }
 
-// Centres of the indicatrices: a lon/lat lattice about the central meridian,
-// stopping short of the seam and the poles.
-function centres(step, lon0) {
-  const out = [];
-  for (let lat = -90 + step; lat < 90; lat += step) {
-    for (let dl = -180 + step; dl < 180; dl += step) out.push([((lon0 + dl + 540) % 360) - 180, lat]);
-  }
-  return out;
-}
-
-// Frame the map on the points where the scale stays under AMAX, and note
-// the range of the factors for the badge.
+// Frame the map on the points where the scale stays under AMAX, and keep
+// the samples (lon, lat, factors): all of them for the summary, those in
+// the frame for the colour scales.
 function frame(p) {
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  const stats = [];
+  const stats = [], samples = [], inFrame = [];
   for (let lat = -88.5; lat < 90; lat += 3) {
     for (let lon = -178.5; lon < 180; lon += 3) {
       const xy = p.fwd(lon, lat);
       if (!xy) continue;
       const f = T.factors(p.fwd, lon, lat, { es: p.es });
-      if (!f || f.a > AMAX) continue;
+      if (!f) continue;
+      samples.push([lon, lat, f]);
+      if (f.a > AMAX) continue;
       stats.push(f);
+      inFrame.push(f);
       x0 = Math.min(x0, xy[0]); x1 = Math.max(x1, xy[0]);
       y0 = Math.min(y0, xy[1]); y1 = Math.max(y1, xy[1]);
     }
   }
   if (!stats.length) return null;
   const px = (x1 - x0) * 0.04, py = (y1 - y0) * 0.04;
-  return { x0: x0 - px, x1: x1 + px, y0: y0 - py, y1: y1 + py, cls: T.classify(stats) };
+  return { x0: x0 - px, x1: x1 + px, y0: y0 - py, y1: y1 + py, cls: T.classify(stats), samples, inFrame, summary: D.summarise(samples) };
 }
 
-// ---------------------------------------------------------------- colour
-
-const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
-const NEUTRAL = [27, 38, 56];
-function colorOf(f) {
-  if (!f) return null;
-  if (state.color === "area") {
-    // log2 areal scale, -2 (a quarter) to +2 (four times)
-    const t = Math.max(-1, Math.min(1, Math.log2(f.s) / 2));
-    return t < 0 ? mix(NEUTRAL, [70, 120, 230], -t) : mix(NEUTRAL, [235, 120, 40], t);
+// The colour scale of a field, fitted to the samples in the map's frame
+// (not the view) so the map, the globe and the ellipses all agree whatever
+// part is in view, and a singularity off the map does not wash it out.
+const scales = new Map();
+function scaleOf(p, key) {
+  const k = `${Pdef}|${key}`;
+  if (!scales.has(k)) {
+    const get = D.FIELD.get(key).get;
+    scales.set(k, D.colourScale(key, p.frame.inFrame.map(get)));
   }
-  // angular distortion, 0 to 90 degrees
-  const t = Math.min(1, f.omega / 90);
-  return t < 0.5 ? mix(NEUTRAL, [150, 60, 170], t * 2) : mix([150, 60, 170], [255, 210, 90], (t - 0.5) * 2);
+  return scales.get(k);
 }
-const LEGEND = {
-  none: "",
-  area: "Blue: shrunk (to a quarter); orange: swollen (to four times); dark: true area.",
-  angle: "Dark: angles kept; purple to yellow: up to 90" + DEG + " of angular distortion."
-};
+
+// ---------------------------------------------------------------- lattice
+
+// The indicatrices: centres (on the globe, or on the part of the map in
+// view, so zooming in on a region regrids it), their factors and map
+// positions, and the ground radius r (radians) they are drawn at, fixed or
+// fitted to the spacing.
+let lat0 = { key: "" };
+function lattice(p, ext) {
+  const onMap = state.grid[0] === "m" && ext;
+  const where = onMap ? [ext.x0, ext.x1, ext.y0, ext.y1].map((v) => v.toFixed(5)).join() : "";
+  const key = `${Pdef}|${state.grid}|${state.auto}|${state.size}|${state.fit}|${state.norm}|${where}`;
+  if (lat0.key === key) return lat0;
+  const n = +state.grid.slice(1);
+  const ll = !p || !p.frame ? [] : onMap ? D.mapLattice(p.inv, ext, n) : state.grid[0] === "g" ? D.graticuleLattice(n, centreLon()) : [];
+  const pts = [];
+  for (const [lon, lat] of ll) {
+    const xy = p.fwd(lon, lat);
+    const f = xy && T.factors(p.raw, lon, lat, { es: p.es });
+    if (!f) continue;
+    f.x = xy[0]; f.y = xy[1];
+    pts.push(f);
+  }
+  const mode = state.norm ? "shape" : "true";
+  let r = state.size * D2R;
+  // a centre on the map stands for 1 / s of the globe, one on the
+  // graticule for cos(lat), the default
+  const weight = state.grid[0] === "m" ? (f) => 1 / f.s : undefined;
+  if (state.auto) r = D.autoRadius(pts, { fill: state.fit, mode, weight }) || r;
+  // a globe circle past 20 degrees says little about the point
+  r = Math.min(r, 20 * D2R);
+  lat0 = { key, pts, r, mode };
+  return lat0;
+}
+
+// The lattice for the current view, and the globe's circles and the size
+// readout brought up to date when it (or how the circles look) changed.
+let globeKey = "";
+function refreshLattice(p, ext) {
+  const L = lattice(p, ext);
+  const efill = state.efill && p && p.frame;
+  const gk = `${L.key}|${efill ? state.field : ""}|${state.ell}|${state.circ}|${state.pt}`;
+  if (gk !== globeKey) {
+    globeKey = gk;
+    updateSize(L);
+    buildGlobeCircles(L.pts, L.r / D2R, efill ? colourOf(p) : null);
+  }
+  return L;
+}
 
 // ---------------------------------------------------------------- globe
 
@@ -285,7 +345,7 @@ const gratLines = lineObject(COLORS.grat, 0.9);
 const ringLines = lineObject(COLORS.edge);
 const pickLines = lineObject(COLORS.pick);
 const discs = new THREE.Mesh(new THREE.BufferGeometry(),
-  new THREE.MeshBasicMaterial({ color: 0xff9900, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+  new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
 scene.add(discs);
 
 // flat lon/lat polylines to line segments just above the surface
@@ -305,14 +365,17 @@ function setSegments(obj, lines, r) {
 }
 
 // Each circle is a filled cap: concentric rings, so it follows the curve of
-// the globe instead of cutting under it as a flat fan would.
-function buildGlobeCircles(list) {
-  const rings = [], tri = [], K = 5, N = 48, rr = 1.003;
+// the globe instead of cutting under it as a flat fan would. With a colour
+// function each cap takes its point's colour.
+function buildGlobeCircles(list, rDeg, colour = null) {
+  const rings = [], tri = [], col = [], K = 5, N = 48, rr = 1.003;
   const v = new THREE.Vector3();
-  const push = (lon, lat) => { toScene(lon, lat, rr, v); tri.push(v.x, v.y, v.z); };
-  for (const [lon, lat] of list) {
-    const layer = [];
-    for (let k = 1; k <= K; k++) layer.push(T.smallCircle(lon, lat, (state.size * k) / K, N));
+  let rgb = [1, 0.6, 0];
+  const push = (lon, lat) => { toScene(lon, lat, rr, v); tri.push(v.x, v.y, v.z); col.push(rgb[0], rgb[1], rgb[2]); };
+  for (const f of list) {
+    const { lon, lat } = f, layer = [];
+    if (colour) rgb = colour(f).map((c) => (c / 255) ** 2.2);
+    for (let k = 1; k <= K; k++) layer.push(T.smallCircle(lon, lat, (rDeg * k) / K, N));
     rings.push(layer[K - 1]);
     for (let i = 0; i < N; i++) {
       const a = 2 * i, b = 2 * i + 2;
@@ -326,38 +389,53 @@ function buildGlobeCircles(list) {
   }
   setSegments(ringLines, rings, 1.004);
   discs.geometry.setAttribute("position", new THREE.Float32BufferAttribute(tri, 3));
+  discs.geometry.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
   discs.geometry.computeBoundingSphere();
+  discs.material.opacity = colour ? 0.8 : 0.45;
   discs.visible = !!state.ell || !!state.circ;
   ringLines.visible = discs.visible;
   const pt = pickedLonLat();
-  setSegments(pickLines, pt ? [T.smallCircle(pt[0], pt[1], state.size, 64)] : [], 1.006);
+  setSegments(pickLines, pt ? [T.smallCircle(pt[0], pt[1], rDeg, 64)] : [], 1.006);
 }
 
-let texKey = "";
+const GET = D.FIELDS.map((d) => [d.key, d.get]);
+const OFF = [10, 12, 18];
+
+// Paint values into a canvas through a colour scale, `none` where NaN.
+function paintCanvas(cv, values, w, h, scale, none = null) {
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext("2d"), img = ctx.createImageData(w, h);
+  D.paint(values, scale, img.data);
+  if (none) {
+    for (let i = 0; i < values.length; i++) {
+      if (Number.isFinite(values[i])) continue;
+      img.data.set([none[0], none[1], none[2], 255], 4 * i);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// The globe texture: every field sampled on a lon/lat grid (coarse while
+// things move), coloured by the chosen one.
+let texGrid = { key: "" }, texKey = "";
+const texSmall = document.createElement("canvas");
 function paintGlobeTexture(p) {
-  const B = rasterStep > 3 ? 3 : 1;  // coarse blocks while things move
-  const key = `${Pdef}|${state.color}|${B}`;
+  const B = rasterStep > 3 ? 3 : 1;
+  const show = p && p.frame && state.img;
+  const key = show ? `${Pdef}|${state.field}|${B}` : "plain";
   if (key === texKey) return;
   texKey = key;
   const ctx = texCanvas.getContext("2d"), w = texCanvas.width, h = texCanvas.height;
-  if (state.color === "none" || !p) {
+  if (!show) {
     ctx.fillStyle = "#1b2638"; ctx.fillRect(0, 0, w, h);
   } else {
-    const img = ctx.createImageData(w, h);
-    for (let j = 0; j < h; j += B) {
-      const lat = -90 + (180 * (j + B / 2)) / h;
-      for (let i = 0; i < w; i += B) {
-        const lon = -180 + (360 * (i + B / 2)) / w;
-        const c = colorOf(p.fwd(lon, lat) && T.factors(p.raw, lon, lat, { es: p.es })) || [10, 12, 18];
-        for (let jj = j; jj < Math.min(h, j + B); jj++) {
-          for (let ii = i; ii < Math.min(w, i + B); ii++) {
-            const o = 4 * (jj * w + ii);
-            img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = 255;
-          }
-        }
-      }
+    const nx = w / B, ny = h / B, gk = `${Pdef}|${B}`;
+    if (texGrid.key !== gk) {
+      texGrid = { key: gk, f: D.sample(p.raw, D.lonLatCells(nx, ny, (lon, lat) => !!p.fwd(lon, lat)), nx, ny, GET, { es: p.es }) };
     }
-    ctx.putImageData(img, 0, 0);
+    paintCanvas(texSmall, texGrid.f[state.field], nx, ny, scaleOf(p, state.field), OFF);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(texSmall, 0, 0, w, h);
   }
   texture.needsUpdate = true;
 }
@@ -366,7 +444,6 @@ function paintGlobeTexture(p) {
 
 const mapCanvas = document.getElementById("map");
 const raster = document.createElement("canvas");
-let rasterKey = "";
 let view = null; // pixel transform of the last drawn map
 
 // zoom and pan of the map, in plane units; reset when the projection changes
@@ -394,25 +471,25 @@ function settle() {
   sharpen = setTimeout(() => { rasterStep = 3; paintGlobeTexture(projection()); drawMap(); }, 250);
 }
 
-function paintRaster(p, v, cw, ch) {
+// Every field on a grid of screen cells (STEP pixels each), kept until the
+// view or projection changes; the image and the contours both come from it.
+let mapGrid = { key: "" }, rasterKey = "";
+function fieldGrid(p, v, cw, ch) {
   const STEP = rasterStep, w = Math.ceil(cw / STEP), h = Math.ceil(ch / STEP);
-  const key = `${Pdef}|${state.color}|${w}x${h}|${zoom.k},${zoom.cx},${zoom.cy}`;
+  const key = `${Pdef}|${w}x${h}|${zoom.k},${zoom.cx},${zoom.cy}`;
+  if (mapGrid.key !== key) {
+    const [x0, y1] = v.inv(0, 0), [x1, y0] = v.inv(w * STEP, h * STEP);
+    const e = { x0, x1, y0, y1 };
+    mapGrid = { key, w, h, step: STEP, e, f: D.sample(p.raw, D.mapCells(p.inv, e, w, h), w, h, GET, { es: p.es }) };
+  }
+  return mapGrid;
+}
+
+function paintRaster(p, g) {
+  const key = `${g.key}|${state.field}`;
   if (key === rasterKey) return;
   rasterKey = key;
-  raster.width = w; raster.height = h;
-  const ctx = raster.getContext("2d"), img = ctx.createImageData(w, h);
-  for (let j = 0; j < h; j++) {
-    for (let i = 0; i < w; i++) {
-      const [x, y] = v.inv((i + 0.5) * STEP, (j + 0.5) * STEP);
-      const ll = p.inv(x, y);
-      const c = ll && colorOf(T.factors(p.raw, ll[0], ll[1], { es: p.es }));
-      if (!c) continue;
-      const o = 4 * (j * w + i);
-      img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  raster.step = STEP;
+  paintCanvas(raster, g.f[state.field], g.w, g.h, scaleOf(p, state.field));
 }
 
 let coast = [];
@@ -431,17 +508,21 @@ function drawMap() {
   ctx.fillRect(0, 0, cw, ch);
 
   const p = projection();
-  if (!p || !p.frame) { view = null; return; }
+  if (!p || !p.frame) { view = null; refreshLattice(p, null); return; }
   const v = view = mapTransform(p.frame, cw, ch);
   const jump = 0.3 * (p.frame.x1 - p.frame.x0);
   const lon0 = +(/\+lon_0=(-?[\d.]+)/.exec(Pdef) || [0, 0])[1] || 0;
   const rel = (lon) => ((lon - lon0 + 540) % 360) - 180;
   const toPx = (x, y) => [v.X(x), v.Y(y)];
 
-  if (state.color !== "none") {
-    paintRaster(p, v, cw, ch);
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(raster, 0, 0, raster.width * raster.step, raster.height * raster.step);
+  if (state.img || state.iso) {
+    const g = fieldGrid(p, v, cw, ch);
+    if (state.img) {
+      paintRaster(p, g);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(raster, 0, 0, g.w * g.step, g.h * g.step);
+    }
+    if (state.iso) drawIsolines(ctx, p, g);
   }
 
   const stroke = (lines, color, width) => {
@@ -465,46 +546,93 @@ function drawMap() {
   if (state.grat) stroke(grat, COLORS.grat, 0.8);
   stroke(coast, COLORS.mapCoast, 1);
 
-  const r = state.size * D2R;
+  const [ex0, ey1] = v.inv(0, 0), [ex1, ey0] = v.inv(cw, ch);
+  const L = refreshLattice(p, { x0: ex0, x1: ex1, y0: ey0, y1: ey1 }), sc = state.efill ? scaleOf(p, state.field) : null, get = D.FIELD.get(state.field).get;
   const drawOne = (f, pick) => {
+    const r = L.r * D.sizeFactor(f, L.mode);
     if (state.unit) {
       ctx.setLineDash([3, 3]); ctx.strokeStyle = COLORS.unit; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(v.X(f.x), v.Y(f.y), r * v.s, 0, 2 * Math.PI); ctx.stroke();
       ctx.setLineDash([]);
     }
     if (state.ell) {
+      const c = sc && !pick && sc.rgb(get(f));
       drawIndicatrix(ctx, f, toPx, r, {
-        fill: pick ? "rgba(255,211,77,0.35)" : COLORS.fill,
-        stroke: pick ? COLORS.pick : COLORS.edge, width: pick ? 2 : 1,
+        fill: pick ? "rgba(255,211,77,0.35)" : c ? `rgba(${c[0]},${c[1]},${c[2]},0.85)` : COLORS.fill,
+        stroke: pick ? COLORS.pick : c ? "rgba(235,240,250,0.55)" : COLORS.edge, width: pick ? 2 : 1,
         axes: state.axes ? [COLORS.par, COLORS.mer] : null
       });
     } else if (state.axes) {
       drawIndicatrix(ctx, f, toPx, r, { axes: [COLORS.par, COLORS.mer] });
     }
-    if (state.circ) stroke([T.smallCircle(f.lon, f.lat, state.size, 64)], pick ? COLORS.pick : COLORS.circ, pick ? 2 : 1.3);
+    if (state.circ) {
+      // the circle itself, projected point by point (shrunk about its
+      // centre along with the ellipse when every one is drawn the same area)
+      const ring = T.smallCircle(f.lon, f.lat, L.r / D2R, 64), g = D.sizeFactor(f, L.mode);
+      ctx.strokeStyle = pick ? COLORS.pick : COLORS.circ; ctx.lineWidth = pick ? 2 : 1.3;
+      ctx.beginPath();
+      let on = false;
+      for (let i = 0; i < ring.length; i += 2) {
+        const xy = p.fwd(ring[i], ring[i + 1]);
+        if (!xy || Math.hypot(xy[0] - f.x, xy[1] - f.y) > jump) { on = false; continue; }
+        const X = v.X(f.x + (xy[0] - f.x) * g), Y = v.Y(f.y + (xy[1] - f.y) * g);
+        if (on) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+        on = true;
+      }
+      ctx.stroke();
+    }
   };
 
-  const list = centres(state.step, centreLon());
-  for (const [lon, lat] of list) {
-    const xy = p.fwd(lon, lat);
-    const f = xy && T.factors(p.raw, lon, lat, { es: p.es });
-    if (!f || f.a * r > 0.5 * (p.frame.x1 - p.frame.x0)) continue;
-    f.x = xy[0]; f.y = xy[1];
+  for (const f of L.pts) {
+    if (f.a * L.r * D.sizeFactor(f, L.mode) > 0.5 * (p.frame.x1 - p.frame.x0)) continue;
     drawOne(f, false);
   }
   const pt = pickedLonLat(), pxy = pt && p.fwd(pt[0], pt[1]);
   const pf = pxy && T.factors(p.raw, pt[0], pt[1], { es: p.es });
-  if (pf) { pf.x = pxy[0]; pf.y = pxy[1]; drawOne(pf, true); }
+  if (pf) {
+    pf.x = pxy[0]; pf.y = pxy[1];
+    drawOne(pf, true);
+    if (state.inset) {
+      const size = Math.max(96, Math.min(150, Math.min(cw, ch) * 0.28));
+      drawInset(ctx, pf, cw - size - 8, ch - size - 8, size, { par: COLORS.par, mer: COLORS.mer });
+    }
+  }
 }
+
+// Contours of the chosen field, at round values, with the true value (1,
+// or 0 for convergence) drawn heavier.
+function drawIsolines(ctx, p, g) {
+  const key = state.field, sc = scaleOf(p, key), tf = D.contourTransform(key);
+  const vals = g.f[key], unit = D.FIELD.get(key).kind === "angle" || key === "conv" ? DEG : "";
+  const toPx = (x, y) => [x * g.step, y * g.step], taken = [];
+  for (const lv of D.levels(sc)) {
+    const segs = D.isolines(vals, g.w, g.h, lv, tf);
+    const main = lv === 1 || (key === "conv" && lv === 0);
+    drawContours(ctx, segs, toPx, {
+      color: main ? "rgba(255,255,255,0.9)" : "rgba(225,232,245,0.6)", width: main ? 1.6 : 0.9,
+      label: levelText(lv) + unit, taken
+    });
+  }
+}
+const levelText = (v) => (Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : Math.abs(v) < 1 ? String(+v.toFixed(2)) : String(+v.toFixed(2)));
 
 // ---------------------------------------------------------------- panel
 
 const $ = (id) => document.getElementById(id);
 const ui = {
   proj: $("proj"), def: $("def"), badge: $("badge"), lon: $("lon"), lat: $("lat"), lonOut: $("lon-out"), latOut: $("lat-out"),
-  size: $("size"), sizeOut: $("size-out"), step: $("step"), color: $("color"), legend: $("legend"),
-  ell: $("ell"), circ: $("circ"), unit: $("unit"), axes: $("axes"), grat: $("grat"), readout: $("readout"), ptOut: $("pt-out")
+  size: $("size"), sizeOut: $("size-out"), sizeLabel: $("size-label"), sizing: $("sizing"), grid: $("grid"),
+  field: $("field"), legend: $("legend"), cbar: $("cbar"), summary: $("summary"),
+  readout: $("readout"), ptOut: $("pt-out")
 };
+const TOGGLES = ["ell", "circ", "unit", "axes", "norm", "efill", "inset", "grat", "img", "iso"];
+for (const k of TOGGLES) ui[k] = $(k);
+
+for (const d of D.FIELDS) {
+  const o = document.createElement("option");
+  o.value = d.key; o.textContent = `${d.sym}, ${d.label}`;
+  ui.field.appendChild(o);
+}
 
 for (const [group, list] of PRESETS) {
   const g = document.createElement("optgroup");
@@ -541,17 +669,96 @@ function updateReadout(p) {
   ui.readout.innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
 }
 
+// Range and area-weighted mean of the main factors over the globe, the
+// summary() of the R tissot package.
+function updateSummary(p) {
+  if (!p || !p.frame) { ui.summary.innerHTML = ""; return; }
+  const sm = p.frame.summary;
+  const row = (key, d = 3, u = "") => {
+    const q = sm[key], df = D.FIELD.get(key);
+    return q ? `<tr><td>${df.sym}, ${df.label}</td><td>${fmt(q.min, d)}${u}</td><td>${fmt(q.mean, d)}${u}</td><td>${fmt(q.max, d)}${u}</td></tr>` : "";
+  };
+  ui.summary.innerHTML = "<tr><th></th><th>min</th><th>mean</th><th>max</th></tr>" +
+    row("s") + row("omega", 2, DEG) + row("h") + row("k");
+}
+
+// The colour bar for the chosen field, with its contour levels as ticks.
+function drawColourBar(p) {
+  const cv = ui.cbar, dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const show = p && p.frame && (state.img || state.iso || state.efill);
+  cv.hidden = !show;
+  const w = cv.clientWidth;
+  const d = D.FIELD.get(state.field);
+  if (!show) {
+    ui.legend.textContent = "Show the field as an image, as contours, or as the colour of the indicatrices.";
+    return;
+  }
+  if (!w) return;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(34 * dpr);
+  const ctx = cv.getContext("2d"), sc = scaleOf(p, state.field), H = 12, pad = 8, bw = w - 2 * pad;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, 34);
+  for (let i = 0; i < bw; i++) {
+    const c = sc.rgb(sc.at((i + 0.5) / bw));
+    ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+    ctx.fillRect(pad + i, 2, 1, H);
+  }
+  ctx.strokeStyle = "#2c4a73"; ctx.strokeRect(pad + 0.5, 2.5, bw - 1, H - 1);
+  const unit = d.kind === "angle" || d.kind === "signed" ? DEG : "";
+  ctx.font = "10px system-ui, sans-serif"; ctx.textBaseline = "top"; ctx.fillStyle = "#9fb3c8"; ctx.strokeStyle = "#9fb3c8";
+  const ticks = [[sc.lo, "left"], ...D.levels(sc).map((v) => [v, "center"]), [sc.hi, "right"]];
+  let last = -Infinity;
+  for (const [v, align] of ticks) {
+    const x = pad + sc.pos(v) * bw;
+    if (align === "center" && (x - last < 26 || x > pad + bw - 22 || x < pad + 22)) continue;
+    ctx.beginPath(); ctx.moveTo(x, 2 + H); ctx.lineTo(x, 5 + H); ctx.stroke();
+    ctx.textAlign = align;
+    ctx.fillText(levelText(+v.toPrecision(3)) + unit, align === "left" ? pad : align === "right" ? pad + bw : x, 7 + H);
+    last = x;
+  }
+  const how = {
+    scale: "log scale: blue below 1 (shrunk), orange above (swollen), dark at true scale",
+    ratio: "log scale from 1 (a circle), dark, to the most flattened",
+    angle: "dark where angles are kept, purple to yellow as the error grows",
+    signed: "blue west of north, orange east, dark along map north"
+  }[d.kind];
+  ui.legend.textContent = `${d.sym}, ${d.label}${d.proj ? ` (PROJ ${d.proj})` : ""}: ${how}. The ends are the 2nd and 98th percentiles over the map, where the scale is under ${AMAX}.`;
+}
+
 function updateBadge(p) {
   if (typeof proj4 === "undefined") { ui.badge.className = "badge"; ui.badge.textContent = "proj4js did not load."; return; }
   if (!p || !p.frame) { ui.badge.className = "badge"; ui.badge.textContent = "proj4js cannot use this string."; return; }
   const c = p.frame.cls;
   ui.badge.className = "badge ok";
-  const range = `areal scale ${fmt(c.smin, 3)} to ${fmt(c.smax, 3)}`;
-  ui.badge.textContent = c.kind === "conformal"
-    ? `Conformal: every ellipse is a circle (\u03c9 < 0.0001${DEG}); ${range}.`
+  ui.badge.textContent = (c.kind === "conformal"
+    ? `Conformal: every ellipse is a circle (\u03c9 < 0.0001${DEG}).`
     : c.kind === "equal-area"
-      ? `Equal-area: every ellipse has the same area; \u03c9 up to ${c.wmax.toFixed(1)}${DEG}.`
-      : `Neither conformal nor equal-area: \u03c9 up to ${c.wmax.toFixed(1)}${DEG}, ${range}.`;
+      ? "Equal-area: every ellipse has the same area."
+      : "Neither conformal nor equal-area.") + ` Over the globe, every 3${DEG}:`;
+}
+
+const colourOf = (p) => {
+  const sc = scaleOf(p, state.field), get = D.FIELD.get(state.field).get;
+  return (f) => sc.rgb(get(f));
+};
+
+// The one slider sets the share of the spacing an auto-sized indicatrix
+// fills, or the fixed radius in degrees; either way the output shows the
+// ground radius it comes to.
+function updateSize(L) {
+  const km = (L.r * R) / 1000, deg = L.r / D2R;
+  const ground = `${deg < 10 ? deg.toFixed(1) : deg.toFixed(0)}${DEG}, ${km < 100 ? km.toFixed(1) : km.toFixed(0)} km`;
+  if (state.auto) {
+    ui.sizeLabel.textContent = "Fill of the spacing";
+    Object.assign(ui.size, { min: 0.2, max: 1.5, step: 0.05 });
+    ui.size.value = state.fit;
+    ui.sizeOut.textContent = `${Math.round(state.fit * 100)}% (${ground})`;
+  } else {
+    ui.sizeLabel.textContent = "Circle radius";
+    Object.assign(ui.size, { min: 0.5, max: 20, step: 0.5 });
+    ui.size.value = state.size;
+    ui.sizeOut.textContent = ground;
+  }
 }
 
 function sync() {
@@ -561,21 +768,21 @@ function sync() {
   const tmpl = custom ? "" : PRESET.get(state.proj).t;
   ui.lon.value = state.lon; ui.lonOut.textContent = `${state.lon}${DEG}`;
   ui.lat.value = state.lat; ui.latOut.textContent = `${state.lat}${DEG}`;
-  ui.lon.disabled = custom;
+  ui.lon.disabled = custom || !tmpl.includes("{lon}");
   ui.lat.disabled = custom || !tmpl.includes("{lat}");
-  ui.size.value = state.size; ui.sizeOut.textContent = `${state.size}${DEG}`;
-  ui.step.value = String(state.step);
-  ui.color.value = state.color;
-  ui.legend.textContent = LEGEND[state.color];
-  for (const k of ["ell", "circ", "unit", "axes", "grat"]) ui[k].checked = !!state[k];
+  ui.grid.value = state.grid;
+  ui.sizing.value = String(state.auto);
+  ui.field.value = state.field;
+  for (const k of TOGGLES) ui[k].checked = !!state[k];
 
   const p = projection();
   ui.def.classList.toggle("bad", !p || !p.frame);
   updateBadge(p);
+  updateSummary(p);
   updateReadout(p);
-  buildGlobeCircles(centres(state.step, centreLon()));
   gratLines.visible = !!state.grat;
   paintGlobeTexture(p);
+  drawColourBar(p);
   drawMap();
   writeHash();
 }
@@ -594,10 +801,38 @@ ui.def.addEventListener("change", () => {
 ui.def.addEventListener("keydown", (e) => { if (e.key === "Enter") ui.def.blur(); });
 ui.lon.addEventListener("input", () => { state.lon = +ui.lon.value; settle(); sync(); });
 ui.lat.addEventListener("input", () => { state.lat = +ui.lat.value; settle(); sync(); });
-ui.size.addEventListener("input", () => { state.size = +ui.size.value; sync(); });
-ui.step.addEventListener("change", () => { state.step = +ui.step.value; sync(); });
-ui.color.addEventListener("change", () => { state.color = ui.color.value; sync(); });
-for (const k of ["ell", "circ", "unit", "axes", "grat"]) ui[k].addEventListener("change", () => { state[k] = ui[k].checked ? 1 : 0; sync(); });
+ui.size.addEventListener("input", () => { state[state.auto ? "fit" : "size"] = +ui.size.value; sync(); });
+ui.sizing.addEventListener("change", () => {
+  // keep the circles the size they are when switching to a fixed radius
+  if (!+ui.sizing.value) state.size = Math.max(0.5, Math.min(20, Math.round(lat0.r / D2R * 2) / 2));
+  state.auto = +ui.sizing.value;
+  sync();
+});
+ui.grid.addEventListener("change", () => { state.grid = ui.grid.value; sync(); });
+ui.field.addEventListener("change", () => { state.field = ui.field.value; sync(); });
+for (const k of TOGGLES) ui[k].addEventListener("change", () => { state[k] = ui[k].checked ? 1 : 0; sync(); });
+// Every factor PROJ reports, over what the map shows, as float32 bands in
+// the map's own CRS (metres), named as proj_factors() names them.
+$("save-tif").addEventListener("click", async (e) => {
+  const p = projection(), btn = e.target;
+  if (!p || !view) return;
+  const cw = mapCanvas.clientWidth, ch = mapCanvas.clientHeight;
+  // about 1.5 cells a pixel, at most 600 000 cells (a few seconds' work)
+  const k = Math.min(1.5, Math.sqrt(6e5 / (cw * ch))), nx = Math.round(cw * k), ny = Math.round(ch * k);
+  const [x0, y1] = view.inv(0, 0), [x1, y0] = view.inv(cw, ch), e0 = { x0, x1, y0, y1 };
+  btn.disabled = true; btn.textContent = "Sampling...";
+  await new Promise((r) => setTimeout(r, 30));
+  const g = D.sample(p.raw, D.mapCells(p.inv, e0, nx, ny), nx, ny, D.BANDS, { es: p.es });
+  const A = p.a, invf = p.es ? 1 / (1 - Math.sqrt(1 - p.es)) : 0, b = A * Math.sqrt(1 - p.es);
+  const def = Pdef.replace(/\s+/g, " ").trim(), name = (/\+proj=(\w+)/.exec(def) || [0, "proj"])[1];
+  const blob = await writeFloatGeoTIFF({
+    width: nx, height: ny, bands: D.BANDS.map(([n]) => g[n]), names: D.BANDS.map(([n]) => n),
+    origin: [x0 * A, y1 * A], pixelSize: [((x1 - x0) * A) / nx, ((y1 - y0) * A) / ny],
+    geoKeys: esriGeoKeys(proj4Wkt(name, def, A, invf), A, `playproj factors ${def}`, b)
+  });
+  saveBlob(blob, `factors-${name}.tif`);
+  btn.disabled = false; btn.textContent = "Factors GeoTIFF";
+});
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(defaultCam()); writeHash(); });
 
 function pick(lon, lat) {
