@@ -8,12 +8,12 @@
 // Colours are computed per index and so ride along.
 
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as R from "../src/core/roms.js";
 import { loadCoastline } from "./data.js";
 import { sceneFrame } from "../src/core/geo.js";
 import { sampleElev } from "../src/core/basemap.js";
 import { loadWorld } from "./basemap-load.js";
+import { makeStage, readParams, hashWriter, oneOf, shareLinks, copyText, placeHomes } from "../src/scene/index.js";
 
 const DEG = "\u00b0";
 const BOX = 3.2;            // index space: the long side of the box, scene units
@@ -32,24 +32,15 @@ const defaults = {
   cell: "", zu: "", cam: null
 };
 const state = { ...defaults };
-const embed = new URLSearchParams(location.search).has("embed");
 
 function readHash() {
-  const h = new URLSearchParams(location.hash.slice(1));
-  Object.assign(state, defaults);
-  for (const k of Object.keys(defaults)) {
-    if (!h.has(k)) continue;
-    const raw = h.get(k);
-    if (k === "g") state.g = ["so", "fan", "file"].includes(raw) ? raw : defaults.g;
-    else if (k === "bathy") state.bathy = raw === "ideal" ? "ideal" : "gebco";
-    else if (k === "f") state.f = ["temp", "z", "hz"].includes(raw) ? raw : "temp";
-    else if (k === "zu") state.zu = /^https?:\/\//.test(raw) ? raw : "";
-    else if (k === "cell") state.cell = /^\d+,\d+,\d+$/.test(raw) ? raw : "";
-    else if (k === "cam") {
-      const c = raw.split(",").map(Number);
-      if (c.length === 6 && c.every(isFinite)) state.cam = c;
-    } else if (isFinite(+raw)) state[k] = +raw;
-  }
+  readParams(state, defaults, {
+    g: oneOf(["so", "fan", "file"], defaults.g),
+    bathy: (raw) => (raw === "ideal" ? "ideal" : "gebco"),
+    f: oneOf(["temp", "z", "hz"], "temp"),
+    zu: (raw) => (/^https?:\/\//.test(raw) ? raw : ""),
+    cell: (raw) => (/^\d+,\d+,\d+$/.test(raw) ? raw : "")
+  });
   const cl = (k, a, b) => { state[k] = Math.max(a, Math.min(b, state[k])); };
   cl("N", 3, 60); cl("ts", 0, 10); cl("tb", 0, 4); cl("hc", 1, 1000); cl("dz", 0.25, 2.5);
   cl("wh", 0, 1); cl("wv", 0, 1); cl("day", 0, 365); cl("si", 0, 1); cl("sj", 0, 1);
@@ -61,20 +52,7 @@ function readHash() {
   if (state.g === "file" && !state.zu) state.g = defaults.g;
 }
 
-let hashTimer = 0;
-function writeHash() {
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => {
-    const h = new URLSearchParams();
-    for (const k of Object.keys(defaults)) {
-      if (k === "cam") { if (state.cam) h.set("cam", state.cam.map((x) => +x.toFixed(2)).join(",")); continue; }
-      const val = typeof state[k] === "number" ? +state[k].toFixed(3) : state[k];
-      if (val !== defaults[k]) h.set(k, String(val));
-    }
-    const s = h.toString();
-    history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
-  }, 200);
-}
+const writeHash = hashWriter(state, defaults);
 
 const vert = () => ({ vt: state.vt, vs: state.vs, ts: state.ts, tb: state.tb, hc: state.hc });
 const cellsAlongI = () => state.n || (KINDS.find((k) => k.key === state.g) || { n: 60 }).n;
@@ -204,16 +182,7 @@ function makeSheet(M, name, na, nb, ijk) {
 const ease = (x) => x * x * (3 - 2 * x);
 
 function placeSheet(s, eh, ev, D) {
-  const pos = s.mesh.geometry.attributes.position.array;
-  for (let m = 0; m < s.n; m++) {
-    const o = 3 * m;
-    const y = D * (s.idx[o + 1] + (s.wd[m] - s.idx[o + 1]) * ev);
-    for (let c = 0; c < 3; c++) {
-      const hb = (c === 1 ? 0 : s.idx[o + c]) + (s.base[o + c] - (c === 1 ? 0 : s.idx[o + c])) * eh;
-      const up = (c === 1 ? 1 : 0) + (s.nrm[o + c] - (c === 1 ? 1 : 0)) * eh;
-      pos[o + c] = hb + up * y;
-    }
-  }
+  placeHomes(s.mesh.geometry.attributes.position.array, s, eh, ev, D);
   s.mesh.geometry.attributes.position.needsUpdate = true;
   s.mesh.geometry.computeVertexNormals();
   s.mesh.geometry.computeBoundingSphere();
@@ -271,31 +240,19 @@ function colourSheet(M, s) {
 // ---------------------------------------------------------------- scene
 
 const stage = document.getElementById("three");
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(0x05070d);
-stage.appendChild(renderer.domElement);
+const { renderer, scene, camera, controls, setCamera, resize } = makeStage(stage, {
+  bg: 0x05070d,
+  near: 0.02,
+  far: 400,
+  onCamera: (c) => { state.cam = c; writeHash(); }
+});
 
-const scene = new THREE.Scene();
 scene.add(new THREE.AmbientLight(0xffffff, 1.1));
 const sun = new THREE.DirectionalLight(0xffffff, 2.2);
 sun.position.set(-2, 5, -3);
 scene.add(sun);
-const camera = new THREE.PerspectiveCamera(38, 1, 0.02, 400);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
 // from the open ocean (high j) side, looking back along j
 const DEFAULT_CAM = [-1.2, 3.2, -4.6, 0, -0.2, 0];
-function setCamera(c) {
-  camera.position.set(c[0], c[1], c[2]);
-  controls.target.set(c[3], c[4], c[5]);
-  controls.update();
-}
-controls.addEventListener("end", () => {
-  const p = camera.position, t = controls.target;
-  state.cam = [p.x, p.y, p.z, t.x, t.y, t.z];
-  writeHash();
-});
 
 const group = new THREE.Group();
 scene.add(group);
@@ -667,7 +624,7 @@ for (const k of ["top", "bot", "walls", "sec", "coast", "sm"])
   ui[k].addEventListener("change", () => { state[k] = ui[k].checked ? 1 : 0; sync({ colour: k === "sec" || k === "sm" }); });
 ui.bathy.addEventListener("change", () => { state.bathy = ui.bathy.value; startGebco(); sync(); });
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(DEFAULT_CAM); writeHash(); });
-$("copy-proj").addEventListener("click", (e) => copy(ui.projstring.textContent, e.target));
+$("copy-proj").addEventListener("click", (e) => copyText(ui.projstring.textContent, e.target));
 
 // click (not drag) on a surface picks the cell
 const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
@@ -701,16 +658,7 @@ playBtn.addEventListener("click", () => {
 });
 timeBtn.addEventListener("click", () => { timeAnim = !timeAnim; timeBtn.textContent = timeAnim ? "Stop time" : "Run time"; });
 
-function copy(text, btn) {
-  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1200); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => {});
-}
-const pageUrl = () => location.origin + location.pathname;
-$("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
-$("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="Index space"></iframe>`,
-  e.target));
-$("open-full").href = pageUrl() + location.hash;
+shareLinks("Index space");
 
 // ---------------------------------------------------------------- data in
 
@@ -746,14 +694,6 @@ ui["zarr-load"].addEventListener("click", () => { if (ui["zarr-url"].value.trim(
 
 // ---------------------------------------------------------------- loop
 
-function resize() {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-}
-new ResizeObserver(resize).observe(stage);
-
 function tick(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
@@ -772,11 +712,6 @@ function tick(now) {
 }
 
 window.addEventListener("hashchange", () => { readHash(); setCamera(state.cam || DEFAULT_CAM); sync(); });
-
-if (embed) {
-  document.body.classList.add("embed");
-  $("open-full").hidden = false;
-}
 
 readHash();
 setCamera(state.cam || DEFAULT_CAM);

@@ -12,11 +12,11 @@
 // from a light at the other pole onto the polar stereographic plane.
 
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as g from "../src/core/mgrs.js";
 import { loadCoastline } from "./data.js";
 import { warpCanvas } from "./basemap-load.js";
 import { basemapControl, exportControl } from "./basemap-ui.js";
+import { makeStage, readParams, hashWriter, oneOf, shareLinks, copyText } from "../src/scene/index.js";
 
 const DEG = "\u00b0";
 const D2R = Math.PI / 180;
@@ -35,7 +35,6 @@ const COLORS = {
 
 const defaults = { mode: "utm", zone: 32, t: 0, pt: "5.3221,60.3913", tile: "", s2: 1, nb: 1, sq: 1, coast: 1, cyl: 1, bm: "none", cam: null };
 const state = { ...defaults };
-const embed = new URLSearchParams(location.search).has("embed");
 
 const parsePt = (s) => {
   const p = String(s).split(",").map(Number);
@@ -43,38 +42,17 @@ const parsePt = (s) => {
 };
 
 function readHash() {
-  const h = new URLSearchParams(location.hash.slice(1));
-  Object.assign(state, defaults);
-  for (const k of Object.keys(defaults)) {
-    if (!h.has(k)) continue;
-    const raw = h.get(k);
-    if (k === "mode") state.mode = ["utm", "upsn", "upss"].includes(raw) ? raw : "utm";
-    else if (k === "bm") state.bm = raw;
-    else if (k === "pt") state.pt = raw === "" || parsePt(raw) ? raw : defaults.pt;
-    else if (k === "tile") state.tile = g.tileByName(raw) ? raw.toUpperCase().replace(/^T/, "") : "";
-    else if (k === "cam") {
-      const c = raw.split(",").map(Number);
-      if (c.length === 6 && c.every(isFinite)) state.cam = c;
-    } else if (isFinite(+raw)) state[k] = +raw;
-  }
+  readParams(state, defaults, {
+    mode: oneOf(["utm", "upsn", "upss"], "utm"),
+    bm: String,
+    pt: (raw) => (raw === "" || parsePt(raw) ? raw : defaults.pt),
+    tile: (raw) => (g.tileByName(raw) ? raw.toUpperCase().replace(/^T/, "") : "")
+  });
   state.zone = Math.max(1, Math.min(60, Math.round(state.zone)));
   state.t = Math.max(0, Math.min(1, state.t));
 }
 
-let hashTimer = 0;
-function writeHash() {
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => {
-    const h = new URLSearchParams();
-    for (const k of Object.keys(defaults)) {
-      if (k === "cam") { if (state.cam) h.set("cam", state.cam.map((x) => +x.toFixed(2)).join(",")); continue; }
-      const val = typeof state[k] === "number" ? +state[k].toFixed(3) : state[k];
-      if (val !== defaults[k]) h.set(k, String(val));
-    }
-    const s = h.toString();
-    history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
-  }, 200);
-}
+const writeHash = hashWriter(state, defaults);
 
 // ---------------------------------------------------------------- geometry helpers
 
@@ -133,22 +111,13 @@ const tmXY = (lon, lat, zone) => {
 // ---------------------------------------------------------------- scene
 
 const stage = document.getElementById("three");
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(COLORS.bg);
-stage.appendChild(renderer.domElement);
+const { renderer, scene, camera, controls, setCamera, resize } = makeStage(stage, {
+  bg: COLORS.bg,
+  near: 0.01,
+  onCamera: (c) => { state.cam = c; writeHash(); }
+});
 const maxTex = Math.min(8192, renderer.capabilities.maxTextureSize);
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 200);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-
-function setCamera(c) {
-  camera.position.set(c[0], c[1], c[2]);
-  controls.target.set(c[3], c[4], c[5]);
-  controls.update();
-}
 // The view for the current stage, followed until the camera is moved: the
 // zone on the globe, turning to look along the cylinder and then at the
 // flat strip from in front as it unrolls.
@@ -176,12 +145,6 @@ function defaultCam() {
   const dist = 3.6 + 1.5 * u - 3.4 * w;
   return [...d.map((v, k) => T[k] + (v / m) * dist), ...T];
 }
-
-controls.addEventListener("end", () => {
-  const p = camera.position, t = controls.target;
-  state.cam = [p.x, p.y, p.z, t.x, t.y, t.z];
-  writeHash();
-});
 
 // ------------------------------------------------ the globe: grid zones
 
@@ -1031,7 +994,7 @@ ui.geojson.addEventListener("click", (e) => {
   }));
   const mg = g.toMGRS(pt[0], pt[1]);
   features.unshift({ type: "Feature", properties: { mgrs: mg ? mg.ref : null }, geometry: { type: "Point", coordinates: [+pt[0].toFixed(7), +pt[1].toFixed(7)] } });
-  copy(JSON.stringify({ type: "FeatureCollection", features }), e.target);
+  copyText(JSON.stringify({ type: "FeatureCollection", features }), e.target);
 });
 
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(defaultCam()); writeHash(); });
@@ -1080,26 +1043,9 @@ turnBtn.addEventListener("click", () => {
   if (!state.cam) { const p = camera.position, q = controls.target; state.cam = [p.x, p.y, p.z, q.x, q.y, q.z]; }
 });
 
-function copy(text, btn) {
-  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1200); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => {});
-}
-const pageUrl = () => location.origin + location.pathname;
-$("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
-$("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="MGRS and Sentinel-2"></iframe>`,
-  e.target));
-$("open-full").href = pageUrl() + location.hash;
+shareLinks("MGRS and Sentinel-2");
 
 // ---------------------------------------------------------------- loop
-
-function resize() {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-}
-new ResizeObserver(resize).observe(stage);
 
 function tick(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000);
@@ -1126,11 +1072,6 @@ function tick(now) {
 ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; writeHash(); basemap.set(state.bm); });
 
 window.addEventListener("hashchange", () => { readHash(); if (state.cam) setCamera(state.cam); basemap.set(state.bm); sync(); });
-
-if (embed) {
-  document.body.classList.add("embed");
-  $("open-full").hidden = false;
-}
 
 let coastLines = null;
 readHash();

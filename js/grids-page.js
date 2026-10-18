@@ -7,13 +7,13 @@
 // (t = 1).
 
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as G from "../src/core/grids.js";
 import { loadCoastline } from "./data.js";
 import { graticule } from "../src/core/geo.js";
 import { warpCanvas } from "./basemap-load.js";
 import { basemapControl, exportControl } from "./basemap-ui.js";
 import { gnomonic, polarStere, ringOf } from "../src/core/cellexport.js";
+import { makeStage, readParams, hashWriter, shareLinks, copyText } from "../src/scene/index.js";
 
 const DEG = "\u00b0";
 const TEX = 2048;
@@ -44,42 +44,20 @@ const KINDS = [
 
 const defaults = { g: "rot", t: 0, step: 10, plat: 39.25, plon: -162, join: 65, tlon: 80, eq: 1, coast: 1, grat: 1, cell: "", bm: "none", cam: null };
 const state = { ...defaults };
-const embed = new URLSearchParams(location.search).has("embed");
 
 function readHash() {
-  const h = new URLSearchParams(location.hash.slice(1));
-  Object.assign(state, defaults);
-  for (const k of Object.keys(defaults)) {
-    if (!h.has(k)) continue;
-    const raw = h.get(k);
-    if (k === "g") state.g = KINDS.some((x) => x.key === raw) ? raw : defaults.g;
-    else if (k === "cell") state.cell = /^\d+,\d+,\d+$/.test(raw) ? raw : "";
-    else if (k === "bm") state.bm = raw;
-    else if (k === "cam") {
-      const c = raw.split(",").map(Number);
-      if (c.length === 6 && c.every(isFinite)) state.cam = c;
-    } else if (isFinite(+raw)) state[k] = +raw;
-  }
+  readParams(state, defaults, {
+    g: (raw) => (KINDS.some((x) => x.key === raw) ? raw : defaults.g),
+    cell: (raw) => (/^\d+,\d+,\d+$/.test(raw) ? raw : ""),
+    bm: String
+  });
   const cl = (k, a, b) => { state[k] = Math.max(a, Math.min(b, state[k])); };
   cl("t", 0, 1); cl("step", 2, 30); cl("plat", 0, 90); cl("plon", -180, 180);
   cl("join", 40, 80); cl("tlon", -180, 180);
   state.step = Math.round(state.step);
 }
 
-let hashTimer = 0;
-function writeHash() {
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => {
-    const h = new URLSearchParams();
-    for (const k of Object.keys(defaults)) {
-      if (k === "cam") { if (state.cam) h.set("cam", state.cam.map((x) => +x.toFixed(2)).join(",")); continue; }
-      const val = typeof state[k] === "number" ? +state[k].toFixed(3) : state[k];
-      if (val !== defaults[k]) h.set(k, String(val));
-    }
-    const s = h.toString();
-    history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
-  }, 200);
-}
+const writeHash = hashWriter(state, defaults);
 
 // ---------------------------------------------------------------- the grid
 
@@ -211,30 +189,15 @@ function drawPatch(grid, k, rec, picked) {
 // ---------------------------------------------------------------- scene
 
 const stage = document.getElementById("three");
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(COLORS.bg);
-stage.appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 200);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
+const { renderer, scene, camera, controls, setCamera, resize } = makeStage(stage, {
+  bg: COLORS.bg,
+  onCamera: (c) => { state.cam = c; writeHash(); }
+});
 
 // a view for each grid: tripolar from above the Arctic
 const DEFAULT_CAMS = { rot: [0.3, 1.5, 6.3, 0, 0, 0], tri: [0.2, 4.7, 3.7, 0, 0, 0], cube: [1.4, 1.6, 6, 0, 0, 0], yy: [1.4, 1.8, 6, 0, 0, 0] };
 const defaultCam = () => DEFAULT_CAMS[state.g];
-function setCamera(c) {
-  camera.position.set(c[0], c[1], c[2]);
-  controls.target.set(c[3], c[4], c[5]);
-  controls.update();
-}
 setCamera(DEFAULT_CAMS.rot);
-controls.addEventListener("end", () => {
-  const p = camera.position, t = controls.target;
-  state.cam = [p.x, p.y, p.z, t.x, t.y, t.z];
-  writeHash();
-});
 
 const group = new THREE.Group();
 scene.add(group);
@@ -500,7 +463,7 @@ for (const k of ["eq", "coast", "grat"])
 $("cordex").addEventListener("click", () => { state.plat = G.EURO_CORDEX.plat; state.plon = G.EURO_CORDEX.plon; state.cell = ""; sync(); });
 $("unrotated").addEventListener("click", () => { state.plat = 90; state.plon = -180; state.cell = ""; sync(); });
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(defaultCam()); writeHash(); });
-$("copy-proj").addEventListener("click", (e) => copy(ui.proj.textContent, e.target));
+$("copy-proj").addEventListener("click", (e) => copyText(ui.proj.textContent, e.target));
 
 // click (not drag) on the grid picks the cell under the pointer
 const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
@@ -528,26 +491,9 @@ playBtn.addEventListener("click", () => {
   anim = true; dir = state.t >= 1 ? -1 : 1; playBtn.textContent = "Stop"; lastT = performance.now();
 });
 
-function copy(text, btn) {
-  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1200); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => {});
-}
-const pageUrl = () => location.origin + location.pathname;
-$("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
-$("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="Model grids"></iframe>`,
-  e.target));
-$("open-full").href = pageUrl() + location.hash;
+shareLinks("Model grids");
 
 // ---------------------------------------------------------------- loop
-
-function resize() {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-}
-new ResizeObserver(resize).observe(stage);
 
 function tick(now) {
   if (anim) {
@@ -565,11 +511,6 @@ function tick(now) {
 ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; writeHash(); basemap.set(state.bm); });
 
 window.addEventListener("hashchange", () => { readHash(); setCamera(state.cam || defaultCam()); basemap.set(state.bm); sync(); });
-
-if (embed) {
-  document.body.classList.add("embed");
-  $("open-full").hidden = false;
-}
 
 readHash();
 setCamera(state.cam || defaultCam());
