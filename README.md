@@ -101,9 +101,20 @@ shared ones below.
 makes of them. Each becomes (in the limit) an ellipse whose semi-axes a and b
 are the largest and smallest scale at that point: circles everywhere means
 conformal, equal areas everywhere means equal-area. Pick a projection or type
-any PROJ string proj4js can read, click a point for its scale factors, and
-colour the globe and map by areal scale or angular distortion. "Projected
-circles" draws the true image of each circle next to the linearised ellipse.
+any PROJ string proj4js can read, and click a point for its scale factors
+(the picked indicatrix is also drawn enlarged, with its unit circle and
+axes). "Projected circles" draws the true image of each circle next to the
+linearised ellipse.
+
+The indicatrices sit on the graticule (every 10 to 30 degrees) or on a square
+grid over the part of the map in view, and their size is either a fixed
+ground radius or fitted so they fill a share of the gap to their neighbours.
+"Shape only" draws every one with the same area. The same factors are also
+worked out at every pixel (`js/distortion.js`): any one of them (s, omega, h,
+k, a, b, a/b, the departure of theta' from 90 degrees, convergence) can be
+shown as an image, as contours at round values, or as the colour of each
+ellipse, and "Factors GeoTIFF" saves all eight `proj_factors()` fields over
+the view as float32 bands in the map's CRS.
 
 The numbers are those of [PROJ](https://proj.org/)'s `proj_factors()`: h, k,
 s, a, b, omega, theta' and convergence. `js/tissot.js` computes them from
@@ -113,9 +124,13 @@ round the target that PROJ does and applies the same formulas (Snyder 1987),
 as in Bill Huber's [GIS Stack Exchange answer](https://gis.stackexchange.com/a/5075). The perspective and
 cones pages have a "Tissot indicatrix" toggle that draws them on their maps
 from the constructions. Hash keys: `proj` (preset, or `custom` with `def`),
-`lon`, `lat`, `size` (circle radius, degrees), `step` (15 or 30), `color`
-(`none`, `area`, `angle`), `pt` (picked lon,lat), `ell`, `circ`, `unit`,
-`axes`, `grat`; `tissot=1` on the perspective and cones pages.
+`lon`, `lat`, `grid` (`g10`, `g15`, `g20`, `g30` on the graticule, `m8` to
+`m24` across the map), `auto` (1 fits the spacing, 0 fixed), `fit` (share of
+the spacing), `size` (fixed radius, degrees), `norm` (shape only), `field`
+(`s`, `omega`, `h`, `k`, `a`, `b`, `ab`, `orth`, `conv`), `img`, `iso`,
+`efill`, `inset`, `pt` (picked lon,lat), `ell`, `circ`, `unit`, `axes`,
+`grat`; older links with `step` and `color` still work; `tissot=1` on the
+perspective and cones pages.
 
 ## Globals and interrupteds
 
@@ -610,7 +625,8 @@ data/s2-tiles.json          which MGRS squares are Sentinel-2 tiles (ESA tiling 
 bins.html, js/bins.js       L3 bins page
 tissot.html, js/tissot-page.js  Tissot's indicatrix page
 js/tissot.js                distortion factors (h, k, s, omega, ...) from any forward function
-js/tissot-draw.js           indicatrices drawn on a 2D canvas
+js/tissot-draw.js           indicatrices, the enlarged one and contours drawn on a 2D canvas
+js/distortion.js            factor grids, colour scales, contours and auto-sized lattices
 js/l3bin.js                 SeaWiFS / MODIS level-3 bin grid
 test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
@@ -648,7 +664,9 @@ GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid.
 `proj_factors()` for 27 projections, spheres and ellipsoids
 (`test/fixtures/tissot-proj.json`, from `test/make-tissot-fixture.py`): the
 formulas from PROJ's derivatives to rounding, and the whole path through
-proj4js to about 1e-8 per unit scale. `test/check-inverse.mjs` round-trips project and inverse for every light
+proj4js to about 1e-8 per unit scale. `test/check-distortion.mjs` checks
+the sampled grids, contours, auto sizing and the float GeoTIFF writer.
+`test/check-inverse.mjs` round-trips project and inverse for every light
 position. `test/check-pure.mjs` keeps the core modules (the families, the
 grids and cells, Tissot, the readers and writers) free of the DOM, canvases
 and three.js, so they run in Node or any page. To check that GDAL reads the

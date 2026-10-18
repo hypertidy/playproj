@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>playproj: Tissot's indicatrix</title>
-<meta name="description" content="Tissot's indicatrix: equal circles on the globe, and the ellipses they become on the map.">
+<meta name="description" content="Tissot's indicatrix and the distortion field: equal circles on the globe, the ellipses they become on the map, and PROJ's factors at every pixel.">
 <link rel="stylesheet" href="css/app.css">
 <script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
 <script type="importmap">
@@ -41,8 +41,8 @@
     <section class="embed-keep">
       <label class="row" for="proj"><span>Projection</span></label>
       <select id="proj" class="wide"></select>
-      <label class="row" for="size"><span>Circle radius</span><output id="size-out"></output></label>
-      <input id="size" type="range" min="1" max="20" step="0.5" aria-label="Radius of the circles on the globe, in degrees">
+      <label class="row" for="size"><span id="size-label">Circle radius</span><output id="size-out"></output></label>
+      <input id="size" type="range" min="1" max="20" step="0.5" aria-label="Size of the circles">
     </section>
 
     <section>
@@ -51,6 +51,7 @@
         <button id="copy-def" type="button" class="small">Copy</button>
       </div>
       <p id="badge" class="badge"></p>
+      <table id="summary" class="readout summary"></table>
       <label class="row" for="lon"><span>Central longitude</span><output id="lon-out"></output></label>
       <input id="lon" type="range" min="-180" max="180" step="1">
       <label class="row" for="lat"><span>Central latitude</span><output id="lat-out"></output></label>
@@ -65,28 +66,52 @@
     </section>
 
     <section>
+      <label class="row"><span>Indicatrices</span></label>
       <div class="toggles">
+        <label>Centres
+          <select id="grid">
+            <optgroup label="On the globe, every">
+              <option value="g10">10&deg;</option>
+              <option value="g15">15&deg;</option>
+              <option value="g20">20&deg;</option>
+              <option value="g30">30&deg;</option>
+            </optgroup>
+            <optgroup label="On the map, across">
+              <option value="m8">8</option>
+              <option value="m12">12</option>
+              <option value="m16">16</option>
+              <option value="m24">24</option>
+            </optgroup>
+          </select>
+        </label>
+        <label>Size
+          <select id="sizing">
+            <option value="1">fit the spacing</option>
+            <option value="0">fixed radius</option>
+          </select>
+        </label>
         <label><input id="ell" type="checkbox"> Indicatrix</label>
         <label><input id="circ" type="checkbox"> Projected circles</label>
         <label><input id="unit" type="checkbox"> True-scale circles</label>
         <label><input id="axes" type="checkbox"> Meridian and parallel</label>
+        <label><input id="norm" type="checkbox"> Shape only</label>
+        <label><input id="efill" type="checkbox"> Colour by field</label>
+        <label><input id="inset" type="checkbox"> Picked, enlarged</label>
         <label><input id="grat" type="checkbox"> Graticule</label>
-        <label>Spacing
-          <select id="step">
-            <option value="15">15&deg;</option>
-            <option value="30">30&deg;</option>
-          </select>
-        </label>
-        <label>Colour by
-          <select id="color">
-            <option value="none">nothing</option>
-            <option value="area">areal scale</option>
-            <option value="angle">angular distortion</option>
-          </select>
-        </label>
       </div>
+    </section>
+
+    <section>
+      <label class="row" for="field"><span>Distortion field</span></label>
+      <select id="field" class="wide"></select>
+      <div class="toggles">
+        <label><input id="img" type="checkbox"> Image</label>
+        <label><input id="iso" type="checkbox"> Contours</label>
+      </div>
+      <canvas id="cbar" class="cbar" height="34" aria-label="Colour scale of the field"></canvas>
       <p id="legend" class="hint"></p>
       <div class="buttons">
+        <button id="save-tif" type="button">Factors GeoTIFF</button>
         <button id="reset-view" type="button">Reset view</button>
       </div>
     </section>
@@ -104,6 +129,19 @@
           projects the actual circle point by point, and the two part company as the circles grow. The red
           and blue lines are where the parallel and the meridian through the point go, with scales
           <i>k</i> and <i>h</i>; they cross at right angles only where &theta;&prime; is 90&deg;.</p>
+        <p>Every ellipse is drawn at the same ground radius, so its size on the map is the scale there. "Fit
+          the spacing" picks that radius so the ellipses fill a share of the gap to their neighbours, as
+          you might otherwise choose a scale by eye; "fixed radius" sets it
+          yourself, in degrees of arc. Centres can sit on the graticule or on a square grid laid over the
+          map, which suits a regional projection. "Shape only" redraws every ellipse with the same area, so
+          what is left is how much it is stretched and which way.</p>
+        <p>The indicatrix samples the distortion at a few points; the same factors can be worked out at
+          every pixel. "Distortion field" picks one (areal scale, angular distortion, either axis, the
+          scales along the meridian and parallel, the flattening <i>a</i>/<i>b</i>, how far the meridian
+          and parallel are from crossing square, or the convergence) and shows it as an image, as contours
+          at round values (the isolines of Snyder's <i>Album of Map Projections</i>), or as the colour of
+          each ellipse. "Factors GeoTIFF" saves every factor PROJ reports over the map in view as float
+          bands in the map's own CRS, named as <code>proj_factors()</code> names them.</p>
         <p>The numbers are the ones <a href="https://proj.org/">PROJ</a> reports from
           <a href="https://proj.org/en/stable/development/reference/functions.html#c.proj_factors"><code>proj_factors()</code></a>,
           worked out here from any forward projection by differencing it at the same four points around the
@@ -116,6 +154,7 @@
           <tr><td><i>a</i>, <i>b</i></td><td>largest and smallest scale (the ellipse's semi-axes)</td></tr>
           <tr><td><i>s</i></td><td>areal scale, <i>ab</i></td></tr>
           <tr><td>&omega;</td><td>largest error in an angle at the point</td></tr>
+          <tr><td><i>a</i>/<i>b</i></td><td>flattening of the ellipse (1 is a circle)</td></tr>
           <tr><td>&theta;&prime;</td><td>angle the meridian and parallel cross at on the map</td></tr>
           <tr><td>convergence</td><td>angle from map north to the meridian</td></tr>
         </table>
