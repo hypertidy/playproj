@@ -114,8 +114,7 @@ worked out at every pixel (`js/distortion.js`): any one of them (s, omega, h,
 k, a, b, a/b, the departure of theta' from 90 degrees, convergence) can be
 shown as an image, as contours at round values, or as the colour of each
 ellipse, and "Factors GeoTIFF" saves all eight `proj_factors()` fields over
-the view as float32 bands in the map's CRS. The interface follows the
-[tissot](https://github.com/hypertidy/tissot) R package.
+the view as float32 bands in the map's CRS.
 
 The numbers are those of [PROJ](https://proj.org/)'s `proj_factors()`: h, k,
 s, a, b, omega, theta' and convergence. `js/tissot.js` computes them from
