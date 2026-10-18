@@ -48,8 +48,7 @@ export function drawLattice(ctx, fwd, toPx, { lon0 = 0, step = 30, size = 6, es 
 
 // One indicatrix, large, in a box of `size` pixels at x, y (top left): the
 // unit circle dashed, the ellipse, its axes a and b, and the images of the
-// parallel (k) and meridian (h). The way the R tissot package draws a
-// single indicatrix with show.axes and show.circle.
+// parallel (k) and meridian (h).
 export function drawInset(ctx, f, x, y, size, c = {}) {
   const pad = 16, R = (size / 2 - pad) / Math.max(1, f.a), cx = x + size / 2, cy = y + size / 2;
   const toPx = (u, v) => [cx + u * R, cy - v * R];
