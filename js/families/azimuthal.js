@@ -12,6 +12,8 @@
 import { esriGeoKeys } from "../geotiff-write.js";
 
 export const R = 6370997;
+
+export const defaults = { mode: "laea", lat0: -90, lon0: 0 };
 const D2R = Math.PI / 180;
 
 export const modes = {

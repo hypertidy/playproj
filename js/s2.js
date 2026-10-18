@@ -167,3 +167,27 @@ export function hilbertCells(face, level) {
   walk(0, 0, 0, face & SWAP);
   return out;
 }
+
+// ---------------------------------------------------------------- grid
+
+// The cells at a level as a grid in the sense of grids.js: six patches,
+// one per face, each 2^level cells square in (s, t). u and v in a patch
+// are s and t, so a cell (i, j) is the one cellFromFaceST finds at its
+// centre.
+export function grid(level) {
+  const n = 2 ** level;
+  const patches = [0, 1, 2, 3, 4, 5].map((face) => {
+    const axis = faceAxis(face);
+    return {
+      name: "face " + face, face, ni: n, nj: n,
+      fromIndex: (s, t) => toLonLat(faceUVtoXYZ(face, stToUV(s), stToUV(t))),
+      toIndex(lon, lat) {
+        const p = toXYZ(lon, lat);
+        if (p[0] * axis[0] + p[1] * axis[1] + p[2] * axis[2] <= 1e-12) return null;
+        const [u, v] = faceUV(face, p);
+        return [uvToST(u), uvToST(v)];
+      }
+    };
+  });
+  return { kind: "s2", level, patches };
+}

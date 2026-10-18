@@ -578,6 +578,7 @@ js/download.js              hands a file to the browser as a download
 js/geotiff-write.js         GeoTIFF writer with user-defined CRS keys
 js/cellexport.js            GeoTIFF of one cell, tile or lobe in its own CRS
 js/basemap-ui.js            basemap picker and cell GeoTIFF button for the cells pages
+js/families/index.js        the families, and the interface each one has
 js/families/perspective.js  azimuthal perspective family: rays, PROJ string, GeoTIFF keys
 js/families/conic.js        cone family with cylinder and plane limits
 cones.html, js/cones.js     cones and cylinders page
@@ -615,6 +616,7 @@ js/l3bin.js                 SeaWiFS / MODIS level-3 bin grid
 test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-pure.mjs         the core modules load in Node with no DOM, canvas or three.js
+test/check-interfaces.mjs   every family and grid has the shared Family and Grid shape
 test/check-proj.mjs         ray construction vs proj4js
 test/check-secant.mjs       secant planes vs PROJ (fixture made with PROJ 9.8)
 test/check-oblique.mjs      tilted cones and cylinders (omerc, ob_tran) vs PROJ 9.8
@@ -651,7 +653,10 @@ formulas from PROJ's derivatives to rounding, and the whole path through
 proj4js to about 1e-8 per unit scale. `test/check-inverse.mjs` round-trips project and inverse for every light
 position. `test/check-pure.mjs` keeps the core modules (the families, the
 grids and cells, Tissot, the readers and writers) free of the DOM, canvases
-and three.js, so they run in Node or any page. To check that GDAL reads the
+and three.js, so they run in Node or any page. `test/check-interfaces.mjs`
+checks that every projection family has the shape `js/families/index.js`
+describes, and every grid (model grids, ROMS grids, s2 cells) the patch
+shape `js/grids.js` describes. To check that GDAL reads the
 exported CRS (needs rasterio):
 
 ```sh
