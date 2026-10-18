@@ -238,3 +238,9 @@ body.embed #shapes, body.embed #detail, body.embed label[for="detail"] { display
 }
 #answer { word-break: break-word; }
 .presets[hidden] { display: none; }
+/* Tissot: colour bar and the distortion summary */
+.cbar { display: block; width: 100%; height: 34px; margin-top: 10px; }
+.readout.summary { font-size: 12px; margin-top: 8px; }
+.readout.summary td { padding: 2px 4px; text-align: right; }
+.readout.summary td:first-child { text-align: left; }
+.readout.summary th { font-weight: normal; color: var(--muted); text-align: right; padding: 2px 4px; }

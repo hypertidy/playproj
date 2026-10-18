@@ -60,10 +60,59 @@ export async function writeGeoTIFF({ width, height, rgba, origin, pixelSize, geo
     [284, SHORT, [1]],             // interleaved
     [338, SHORT, [2]],             // unassociated alpha
     [339, SHORT, [1, 1, 1, 1]],    // unsigned
-    [33550, DOUBLE, [pixelSize[0], pixelSize[1], 0]],
-    [33922, DOUBLE, [0, 0, 0, origin[0], origin[1], 0]],
-    ...geoKeyTags(geoKeys)
-  ].sort((a, b) => a[0] - b[0]);
+    ...georef(origin, pixelSize, geoKeys)
+  ];
+  return assemble(tags, strips);
+}
+
+// Float32 bands on a projected grid, one plane per band (planar
+// configuration 2), NaN as nodata, and each band's name as its GDAL
+// description. bands: list of Float32Array of width * height, rows from
+// the top; names: one per band.
+export async function writeFloatGeoTIFF({ width, height, bands, names = [], origin, pixelSize, geoKeys }) {
+  const n = bands.length, rowsPerStrip = Math.max(1, Math.floor(65536 / (width * 4)));
+  const jobs = [];
+  for (const band of bands) {
+    // TIFF is little-endian here, and so is every platform this runs on;
+    // copy anyway so a view into a bigger buffer writes only its own rows
+    const bytes = new Uint8Array(Float32Array.from(band).buffer);
+    for (let r = 0; r < height; r += rowsPerStrip) {
+      const end = Math.min(height, r + rowsPerStrip);
+      jobs.push(deflate(bytes.subarray(r * width * 4, end * width * 4)));
+    }
+  }
+  const strips = await Promise.all(jobs);
+  const meta = names.map((s, i) => `<Item name="DESCRIPTION" sample="${i}" role="description">${s.replace(/[^\w .-]/g, "_")}</Item>`).join("");
+  const tags = [
+    [256, LONG, [width]],
+    [257, LONG, [height]],
+    [258, SHORT, new Array(n).fill(32)],
+    [259, SHORT, [8]],             // deflate
+    [262, SHORT, [1]],             // black is zero
+    [273, LONG, strips.map(() => 0)],
+    [277, SHORT, [n]],
+    [278, LONG, [rowsPerStrip]],
+    [279, LONG, strips.map((s) => s.length)],
+    [284, SHORT, [2]],             // one plane per band
+    [339, SHORT, new Array(n).fill(3)], // IEEE float
+    [42113, ASCII, "nan\0"],       // GDAL_NODATA
+    ...georef(origin, pixelSize, geoKeys)
+  ];
+  if (n > 1) tags.push([338, SHORT, new Array(n - 1).fill(0)]);
+  if (meta) tags.push([42112, ASCII, `<GDALMetadata>${meta}</GDALMetadata>\0`]);
+  return assemble(tags, strips);
+}
+
+const georef = (origin, pixelSize, geoKeys) => [
+  [33550, DOUBLE, [pixelSize[0], pixelSize[1], 0]],
+  [33922, DOUBLE, [0, 0, 0, origin[0], origin[1], 0]],
+  ...geoKeyTags(geoKeys)
+];
+
+// Lay out a little-endian TIFF: header, one IFD, out-of-line tag values,
+// then the compressed strips. Tag 273 (StripOffsets) is filled in here.
+function assemble(tags, strips) {
+  tags = tags.sort((a, b) => a[0] - b[0]);
 
   // layout: header, IFD, out-of-line tag values, strip data
   const ifdSize = 2 + tags.length * 12 + 4;
@@ -112,20 +161,25 @@ export async function writeGeoTIFF({ width, height, rgba, origin, pixelSize, geo
 // GeoKeys carrying a CRS as an ESRI PE string, laid out the way GDAL writes
 // them (GEOTIFF_KEYS_FLAVOR=ESRI_PE), for projections GeoTIFF has no
 // coordinate transformation code for. sphereRadius sets the user-defined
-// sphere that GDAL also reads.
-export function esriGeoKeys(wkt, sphereRadius, citation) {
+// sphere that GDAL also reads (or the semi-major axis, with semiMinor for
+// an ellipsoid).
+export function esriGeoKeys(wkt, sphereRadius, citation, semiMinor = sphereRadius) {
+  const geog = semiMinor === sphereRadius ? `Sphere R=${sphereRadius}` : `Ellipsoid a=${sphereRadius} b=${semiMinor}`;
   return [
     [1024, 32767], [1025, 1], [1026, { ascii: citation }],
-    [2048, 32767], [2049, { ascii: `Sphere R=${sphereRadius}` }], [2050, 32767], [2051, 8901],
-    [2054, 9102], [2056, 32767], [2057, { double: sphereRadius }], [2058, { double: sphereRadius }],
+    [2048, 32767], [2049, { ascii: geog }], [2050, 32767], [2051, 8901],
+    [2054, 9102], [2056, 32767], [2057, { double: sphereRadius }], [2058, { double: semiMinor }],
     [3073, { ascii: `ESRI PE String = ${wkt}` }], [3076, 9001]
   ];
 }
 
-// An ESRI PE string for any PROJ string on a sphere of radius R: a custom
+// An ESRI PE string for any PROJ string on a sphere of radius R (or an
+// ellipsoid of semi-major axis R and inverse flattening invf): a custom
 // projection with the PROJ string in its PROJ4 extension, which GDAL reads.
-export function proj4Wkt(name, proj, R) {
-  return `PROJCS["playproj_${name}",GEOGCS["GCS_Sphere",DATUM["D_Sphere",SPHEROID["Sphere",${R},0.0]],` +
+export function proj4Wkt(name, proj, R, invf = 0) {
+  const sph = invf ? `GEOGCS["GCS_Ellipsoid",DATUM["D_Ellipsoid",SPHEROID["Ellipsoid",${R},${invf}]],`
+    : `GEOGCS["GCS_Sphere",DATUM["D_Sphere",SPHEROID["Sphere",${R},0.0]],`;
+  return `PROJCS["playproj_${name}",${sph}` +
     `PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["custom_proj4"],UNIT["Meter",1.0],` +
     `EXTENSION["PROJ4","${proj} +wktext +no_defs"]]`;
 }
