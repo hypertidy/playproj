@@ -10,7 +10,7 @@
 // triangles are bisected on their longest edge until no edge is longer than
 // `maxEdge` degrees of arc, so there are points in the interiors too.
 
-import { ShapeUtils, Vector2 } from "three";
+import earcut from "earcut";
 import { mulberry32 } from "./geo.js";
 
 const D2R = Math.PI / 180;
@@ -144,12 +144,6 @@ export function landPolygons(rings) {
   return [...polys.values()];
 }
 
-const toVec = (r) => {
-  const v = [];
-  for (let i = 0; i < r.length; i += 2) v.push(new Vector2(r[i], r[i + 1]));
-  return v;
-};
-
 // Length of the edge a-b in degrees of arc (equirectangular, scaled by the
 // cosine of the mid latitude: good enough to decide what to split).
 const edgeLen = (a, b) => Math.hypot((b[0] - a[0]) * Math.cos(((a[1] + b[1]) / 2) * D2R), b[1] - a[1]);
@@ -166,11 +160,13 @@ export function landTriangles(coast, maxEdge = 3) {
     else { const p = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; split(c, a, p, d + 1); split(c, p, b, d + 1); }
   };
   for (const { outer, holes } of landPolygons(coastRings(coast))) {
-    const contour = toVec(outer), hv = holes.map(toVec);
-    const pts = contour.concat(...hv);
-    for (const [i, j, k] of ShapeUtils.triangulateShape(contour, hv)) {
-      split([pts[i].x, pts[i].y], [pts[j].x, pts[j].y], [pts[k].x, pts[k].y], 0);
-    }
+    // earcut takes the rings flat, outer first, with the start of each hole
+    const pts = outer.concat(...holes), starts = [];
+    let n = outer.length / 2;
+    for (const h of holes) { starts.push(n); n += h.length / 2; }
+    const ids = earcut(pts, starts);
+    const at = (i) => [pts[2 * i], pts[2 * i + 1]];
+    for (let t = 0; t < ids.length; t += 3) split(at(ids[t]), at(ids[t + 1]), at(ids[t + 2]), 0);
   }
   return tris;
 }

@@ -9,7 +9,7 @@
 import * as R from "./rasterize.js";
 import * as S from "./structure.js";
 import { coastRings, landPolygons } from "./landmesh.js";
-import { loadCoastline } from "./geo.js";
+import { loadCoastline } from "./data.js";
 
 const proj4 = window.proj4, d3 = window.d3;
 const $ = (id) => document.getElementById(id);

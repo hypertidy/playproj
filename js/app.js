@@ -10,10 +10,12 @@ import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer
 import * as persp from "./families/perspective.js";
 import * as azi from "./families/azimuthal.js";
 import { samplePoints, evenSpacing, SAMPLE_MODES } from "./landmesh.js";
-import { loadCoastline, graticule, sceneFrame } from "./geo.js";
-import { sources, loadWorld, reproject, sampleElev } from "./basemap.js";
+import { loadCoastline } from "./data.js";
+import { graticule, sceneFrame } from "./geo.js";
+import { sources, reproject, sampleElev } from "./basemap.js";
+import { loadWorld } from "./basemap-load.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
-import { drawLattice } from "./tissot.js";
+import { drawLattice } from "./tissot-draw.js";
 
 const RAY_REACH = 6;      // rays from lights further than this start at the edge of the scene
 const MAX_RAYS = 5000; // the slider's top end

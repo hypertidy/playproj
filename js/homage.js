@@ -5,7 +5,7 @@
 // Greenland and Africa, Gall-Peters on The West Wing, Equal Earth, Fuller's
 // Dymaxion, and xkcd 977. Same step framework as the For example page.
 
-import { loadCoastline } from "./geo.js";
+import { loadCoastline } from "./data.js";
 import { coastRings, landPolygons } from "./landmesh.js";
 import { worldProjection, polar, slide, PROJ, icosahedron, unfold, trueSize } from "./homage-geo.js";
 

@@ -41,7 +41,7 @@ they agree.
 
 ## Run it
 
-It is a static site with no build step. Libraries (three.js, proj4js,
+It is a static site with no build step. Libraries (three.js, earcut, proj4js,
 d3-geo) load from jsDelivr.
 
 ```sh
@@ -520,7 +520,7 @@ adds "Download lobe" (or face) for a lobe clicked on its flat map:
 | MGRS and Sentinel-2     | a Sentinel-2 tile | its UTM zone's EPSG code, on the tile's own 109.8 km box (1098 px is 100 m) |
 
 The basemap for these is read for the cell's own lon/lat window at about
-the detail its pixels need (`readWindow` in `js/basemap.js`): the GEBCO
+the detail its pixels need (`readWindow` in `js/basemap-load.js`): the GEBCO
 overview just finer than a pixel (down to the full 15 arc second grid), or
 Esri tiles at a deeper zoom (up to 17, at most 64 tiles), so a small cell is
 not a blur of the global image. Pixels outside the cell stay transparent.
@@ -569,9 +569,12 @@ button writes the snippet for the current view.
 index.html                  page
 css/app.css                 styles
 js/app.js                   scene, map and controls
-js/geo.js                   coastline loading, graticule, scene frame
-js/landmesh.js              land triangulated from the coastlines, and ray sampling
-js/basemap.js               basemap sources and per-pixel reprojection
+js/geo.js                   graticule, seeded randomness, scene frame
+js/data.js                  loads the coastlines in data/
+js/landmesh.js              land triangulated from the coastlines (earcut), and ray sampling
+js/basemap.js               basemap sources, GEBCO and Esri reading, per-pixel reprojection
+js/basemap-load.js          fetches the basemaps in the browser and makes their canvases
+js/download.js              hands a file to the browser as a download
 js/geotiff-write.js         GeoTIFF writer with user-defined CRS keys
 js/cellexport.js            GeoTIFF of one cell, tile or lobe in its own CRS
 js/basemap-ui.js            basemap picker and cell GeoTIFF button for the cells pages
@@ -607,9 +610,11 @@ data/s2-tiles.json          which MGRS squares are Sentinel-2 tiles (ESA tiling 
 bins.html, js/bins.js       L3 bins page
 tissot.html, js/tissot-page.js  Tissot's indicatrix page
 js/tissot.js                distortion factors (h, k, s, omega, ...) from any forward function
+js/tissot-draw.js           indicatrices drawn on a 2D canvas
 js/l3bin.js                 SeaWiFS / MODIS level-3 bin grid
 test/fixtures/              reference points projected by PROJ
 data/                       Natural Earth coastlines as [lon, lat, ...] polylines
+test/check-pure.mjs         the core modules load in Node with no DOM, canvas or three.js
 test/check-proj.mjs         ray construction vs proj4js
 test/check-secant.mjs       secant planes vs PROJ (fixture made with PROJ 9.8)
 test/check-oblique.mjs      tilted cones and cylinders (omerc, ob_tran) vs PROJ 9.8
@@ -644,7 +649,10 @@ GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid.
 (`test/fixtures/tissot-proj.json`, from `test/make-tissot-fixture.py`): the
 formulas from PROJ's derivatives to rounding, and the whole path through
 proj4js to about 1e-8 per unit scale. `test/check-inverse.mjs` round-trips project and inverse for every light
-position. To check that GDAL reads the exported CRS (needs rasterio):
+position. `test/check-pure.mjs` keeps the core modules (the families, the
+grids and cells, Tissot, the readers and writers) free of the DOM, canvases
+and three.js, so they run in Node or any page. To check that GDAL reads the
+exported CRS (needs rasterio):
 
 ```sh
 node test/write-tifs.mjs /tmp/tifs && python3 test/check-geotiff.py /tmp/tifs

@@ -10,8 +10,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as R from "./roms.js";
-import { loadCoastline, sceneFrame } from "./geo.js";
-import { loadWorld, sampleElev } from "./basemap.js";
+import { loadCoastline } from "./data.js";
+import { sceneFrame } from "./geo.js";
+import { sampleElev } from "./basemap.js";
+import { loadWorld } from "./basemap-load.js";
 
 const DEG = "\u00b0";
 const BOX = 3.2;            // index space: the long side of the box, scene units

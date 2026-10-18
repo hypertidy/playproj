@@ -3,10 +3,10 @@
 // The pixel grid is laid out in the CRS (a box in its units), each pixel
 // centre is taken back to lon/lat with the CRS's inverse, and the basemap
 // is read for the lon/lat window those pixels cover, at about the detail
-// they need (basemap.js readWindow). Pixels outside the cell stay
+// they need (a reader such as basemap-load.js readWindow). Pixels outside the cell stay
 // transparent, so a cell that is not a rectangle in its CRS keeps its shape.
 
-import { readWindow, sampleWindow } from "./basemap.js";
+import { sampleWindow } from "./basemap.js";
 import { writeGeoTIFF, esriGeoKeys, proj4Wkt } from "./geotiff-write.js";
 
 const D2R = Math.PI / 180, R2D = 180 / Math.PI;
@@ -71,18 +71,10 @@ export function ringOf(at, per = 16) {
   return out;
 }
 
-export function saveBlob(blob, name) {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-}
-
 // Render and write the GeoTIFF.
-//   bm: basemap id; size: pixels along the longer side
+//   read(box, res, status): the basemap window over a lon/lat box at about
+//     res degrees per pixel, as basemap-load.js readWindow; size: pixels
+//     along the longer side
 //   crs: as crsGeoKeys; scale: CRS units per forward/inverse unit (R for
 //     a projection on a unit sphere, 1 for metres or degrees)
 //   forward(lon, lat) -> [x, y] and inverse(x, y) -> [lon, lat] or null,
@@ -92,7 +84,7 @@ export function saveBlob(blob, name) {
 //     stays whole
 //   inside(lon, lat): whether a point belongs to the cell (optional)
 // Returns { blob, width, height, note }.
-export async function renderCell({ bm, size, crs, scale = 1, forward, inverse, box, ring, periodX = 0, inside = null, status = () => {} }) {
+export async function renderCell({ read, size, crs, scale = 1, forward, inverse, box, ring, periodX = 0, inside = null, status = () => {} }) {
   if (!box) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, ref = null;
     for (const [lon, lat] of ring) {
@@ -152,7 +144,7 @@ export async function renderCell({ bm, size, crs, scale = 1, forward, inverse, b
     west: round ? -180 : w - pad, east: round ? 180 : e + pad,
     south: Math.max(-90, s - pad), north: Math.min(90, n + pad)
   };
-  const source = await readWindow(bm, win, res, status);
+  const source = await read(win, res, status);
 
   status("Rendering...");
   const rgba = new Uint8ClampedArray(nx * ny * 4);

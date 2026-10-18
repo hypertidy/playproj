@@ -9,8 +9,9 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as G from "./grids.js";
-import { loadCoastline, graticule } from "./geo.js";
-import { warpCanvas } from "./basemap.js";
+import { loadCoastline } from "./data.js";
+import { graticule } from "./geo.js";
+import { warpCanvas } from "./basemap-load.js";
 import { basemapControl, exportControl } from "./basemap-ui.js";
 import { gnomonic, polarStere, ringOf } from "./cellexport.js";
 

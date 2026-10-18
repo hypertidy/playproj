@@ -9,7 +9,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as m from "./mishaps.js";
-import { loadCoastline } from "./geo.js";
+import { loadCoastline } from "./data.js";
 
 const d3 = window.d3;
 const D2R = Math.PI / 180;
