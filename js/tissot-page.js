@@ -897,7 +897,7 @@ function copy(text, btn) {
 const pageUrl = () => location.origin + location.pathname;
 $("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
 $("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="Tissot's indicatrix"></iframe>`,
+  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="Distortion"></iframe>`,
   e.target));
 $("copy-def").addEventListener("click", (e) => copy(ui.def.value, e.target));
 $("open-full").href = pageUrl() + location.hash;
