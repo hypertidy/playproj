@@ -1,7 +1,7 @@
 // Compass (laea) and string (aeqd) constructions: compare with proj4js at
 // several tangent points, and round-trip the inverse.
 import proj4 from "proj4";
-import { R, project, inverse, proj4String } from "../js/families/azimuthal.js";
+import { R, project, inverse, proj4String } from "../src/core/families/azimuthal.js";
 
 let fails = 0, worst = 0, worstInv = 0, n = 0;
 for (const mode of ["laea", "aeqd"])

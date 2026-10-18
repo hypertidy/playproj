@@ -8,9 +8,9 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import * as S from "./structure.js";
+import * as S from "../src/core/structure.js";
 import { loadCoastline } from "./data.js";
-import { graticule } from "./geo.js";
+import { graticule } from "../src/core/geo.js";
 
 const DEG = "\u00b0";
 const D2R = Math.PI / 180;

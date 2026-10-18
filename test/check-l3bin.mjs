@@ -1,6 +1,6 @@
 // SeaWiFS / MODIS level-3 bins: grid sizes from the published products, and
 // bin numbers round-trip through their bounds.
-import { grid, binOf, binBounds, binArea, EARTH_AREA } from "../js/l3bin.js";
+import { grid, binOf, binBounds, binArea, EARTH_AREA } from "../src/core/l3bin.js";
 
 let fails = 0;
 const check = (ok, msg) => { if (!ok) { fails++; console.log("FAIL " + msg); } };

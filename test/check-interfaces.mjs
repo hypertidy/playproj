@@ -1,9 +1,9 @@
 // Every family and every grid has the shape families/index.js and grids.js
 // describe, so code written against the interface works on any of them.
-import { families, REQUIRED } from "../js/families/index.js";
-import { rotatedPole, tripolar, cubedSphere, yinYang } from "../js/grids.js";
-import { southernOcean, fan, fromArrays } from "../js/roms.js";
-import { grid as s2grid, cellFromLonLat, cellFromFaceST } from "../js/s2.js";
+import { families, REQUIRED } from "../src/core/families/index.js";
+import { rotatedPole, tripolar, cubedSphere, yinYang } from "../src/core/grids.js";
+import { southernOcean, fan, fromArrays } from "../src/core/roms.js";
+import { grid as s2grid, cellFromLonLat, cellFromFaceST } from "../src/core/s2.js";
 
 let fails = 0;
 const bad = (msg) => { fails++; console.log("FAIL " + msg); };

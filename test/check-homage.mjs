@@ -2,7 +2,7 @@
 // and the Greenland slide keeping area.
 import fs from "fs";
 import * as d3 from "d3-geo";
-import { worldProjection, polar, slide, icosahedron, unfold, FULLER_VERTICES, trueSize, mercator } from "../js/homage-geo.js";
+import { worldProjection, polar, slide, icosahedron, unfold, FULLER_VERTICES, trueSize, mercator } from "../src/core/homage-geo.js";
 
 const fx = JSON.parse(fs.readFileSync(new URL("./fixtures/homage-proj.json", import.meta.url)));
 let fails = 0;

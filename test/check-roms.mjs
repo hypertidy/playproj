@@ -2,7 +2,7 @@
 // Zarr grid reader against stores written by zarr-python
 // (test/make-roms-fixture.py), and the grids' own inverses and smoothing.
 import fs from "fs";
-import * as R from "../js/roms.js";
+import * as R from "../src/core/roms.js";
 
 const dir = new URL("./fixtures/roms/", import.meta.url);
 const fx = JSON.parse(fs.readFileSync(new URL("manifest.json", dir)));

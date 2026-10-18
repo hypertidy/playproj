@@ -2,7 +2,7 @@
 // (test/fixtures/spilhaus-proj.json, from PROJ 9 via GDAL), and round-trip
 // the inverse, exact and interpolated.
 import fs from "fs";
-import { R, project, inverse, inverseGrid } from "../js/families/spilhaus.js";
+import { R, project, inverse, inverseGrid } from "../src/core/families/spilhaus.js";
 
 const cases = JSON.parse(fs.readFileSync(new URL("./fixtures/spilhaus-proj.json", import.meta.url)));
 let fails = 0;

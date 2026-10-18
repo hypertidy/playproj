@@ -86,7 +86,7 @@ moves every point in a straight line from the globe to the square, and the
 square's own grid shows how a conformal net wraps the sphere, pinched at the
 corners. The centre and azimuth can be changed for any oblique Adams square.
 
-`js/families/spilhaus.js` is a port of PROJ's `spilhaus` and `adams_ws2`
+`src/core/families/spilhaus.js` is a port of PROJ's `spilhaus` and `adams_ws2`
 (Evenden, Evers, Wilkinson, Jimenez Shaw), checked against PROJ itself. The
 inverse is a Newton iteration, so the page solves it exactly on a grid and
 interpolates between nodes (within 0.003 degrees) for the basemap. GeoTIFF
@@ -110,14 +110,14 @@ The indicatrices sit on the graticule (every 10 to 30 degrees) or on a square
 grid over the part of the map in view, and their size is either a fixed
 ground radius or fitted so they fill a share of the gap to their neighbours.
 "Shape only" draws every one with the same area. The same factors are also
-worked out at every pixel (`js/distortion.js`): any one of them (s, omega, h,
+worked out at every pixel (`src/core/distortion.js`): any one of them (s, omega, h,
 k, a, b, a/b, the departure of theta' from 90 degrees, convergence) can be
 shown as an image, as contours at round values, or as the colour of each
 ellipse, and "Factors GeoTIFF" saves all eight `proj_factors()` fields over
 the view as float32 bands in the map's CRS.
 
 The numbers are those of [PROJ](https://proj.org/)'s `proj_factors()`: h, k,
-s, a, b, omega, theta' and convergence. `js/tissot.js` computes them from
+s, a, b, omega, theta' and convergence. `src/core/tissot.js` computes them from
 nothing but a forward function, so it works on PROJ strings and on the ray
 constructions alike: it differences the projection at the same four points
 round the target that PROJ does and applies the same formulas (Snyder 1987),
@@ -159,7 +159,7 @@ octahedron along rays from the centre, then the octahedron opens like a paper
 model, northern faces turning about the pole and southern faces on their
 equator hinges. The edge meridian defaults to 20 W, as in Cahill-Keyes.
 
-`js/families/globals.js` follows PROJ's code for every formula (including
+`src/core/families/globals.js` follows PROJ's code for every formula (including
 Robinson's single-precision table) and `test/check-globals.mjs` compares it
 with PROJ 9.8 itself (`test/fixtures/globals-proj.json`, made by
 `test/make-globals-fixture.py`). The basemap image and GeoTIFF export are the
@@ -207,7 +207,7 @@ follows; "Without the stretch" overlays the plain gnomonic grid.
 
 Click a cell for its token, level, centre and area, or paste a token. Parent
 and Child step through levels (0 to 30), and GeoJSON copies the cell as a
-polygon. `js/s2.js` is a port of the parts of s2geometry needed for this,
+polygon. `src/core/s2.js` is a port of the parts of s2geometry needed for this,
 checked against s2sphere in `test/fixtures/s2-cells.json`. Hash keys: `lvl`
 (0 to 12), `t` (unfold, 0 globe, 0.5 cube, 1 net), `cell` (a token),
 `curve`, `grid`, `coast`, `uvgrid`, `cam`.
@@ -243,7 +243,7 @@ Click the globe or the zone, or paste a lon, lat, an MGRS reference or a
 tile name, for the point's UTM coordinates and EPSG code, its MGRS reference,
 and every tile containing it; GeoJSON copies the point and those tiles.
 
-`js/mgrs.js` has UTM (Krueger's series to sixth order, as in PROJ), UPS,
+`src/core/mgrs.js` has UTM (Krueger's series to sixth order, as in PROJ), UPS,
 MGRS references both ways (polar ones too), and the tiling rules, which reproduce all 56,686 tiles
 of ESA's tiling grid: the tile's top left corner is its square's, moved onto a
 60 m grid from easting 0 and the equator, and its band letter is the band of
@@ -280,7 +280,7 @@ coordinates. The tripolar cap is a lon/lat grid on a second sphere whose poles
 sit on its equator, carried onto the cap by stereographic projection, so the
 grid stays orthogonal; its top row is the fold, where the array meets itself
 reversed. Click a cell for its index, centre, area and the angle its grid
-lines meet at. `js/grids.js` holds the grids; `test/check-grids.mjs` checks
+lines meet at. `src/core/grids.js` holds the grids; `test/check-grids.mjs` checks
 `ob_tran` and the tripolar cap against PROJ (`test/fixtures/grids-proj.json`,
 made by `test/make-grids-fixture.py`), the cube faces against proj4js `gnom`,
 and that each grid round-trips and the tripolar grid is orthogonal and folds.
@@ -310,7 +310,7 @@ Vtransform 1 or 2 with Vstretching 1, 2 or 4, shown as ocean.in lines, with a
 plot of the layer interfaces against water depth. A ROMS grid in Zarr (v2 or
 v3, uncompressed, zlib or gzip; `lon_rho`, `lat_rho`, `h`, and optionally
 `mask_rho`, `s_rho` and the vertical settings) can be loaded instead.
-`js/roms.js` holds the s-coordinate, grids, smoothing, synthetic data and Zarr
+`src/core/roms.js` holds the s-coordinate, grids, smoothing, synthetic data and Zarr
 reader; `test/check-roms.mjs` checks the depths against a NumPy port of ROMS
 `set_scoord`/`set_depth` and the reader against stores written by zarr-python
 (`test/make-roms-fixture.py`). Hash keys: `g` (`so`, `fan`, `file`), `wh`,
@@ -346,7 +346,7 @@ Zarr and its URL in a tile service. GEBCO 2026 is the default example.
 The CRS comes from an EPSG code (a table of common ones, then
 spatialreference.org or epsg.io), from the PROJ parameters in the geokeys of a
 user-defined GeoTIFF CRS, from `proj:code`, `crs_wkt` or `spatial_ref` in Zarr
-attributes, or from what is typed. `js/structure.js` holds the readers;
+attributes, or from what is typed. `src/core/structure.js` holds the readers;
 `test/check-structure.mjs` checks them against GeoTIFFs written by GDAL's COG
 driver and described by rasterio and tifffile, and Zarr stores written by
 zarr-python (`test/fixtures/structure`, made by
@@ -380,7 +380,7 @@ The grid is built round the shape in a CRS picked here (longitude and
 latitude, a local Lambert azimuthal equal-area, Web Mercator, polar
 stereographic, the UTM zone, or a typed PROJ string), with a cell count and a
 tile size, or it is a window on a real raster: a GeoTIFF or COG read by
-`js/structure.js` (GEBCO 2026 is the example) or a typed spec
+`src/core/structure.js` (GEBCO 2026 is the example) or a typed spec
 (`CRS; xmin,xmax,ymin,ymax; cols,rows; tile`). For a raster the level is the
 finest at which the shape spans at most 300 cells, and the tiles are the
 file's own; for a GeoTIFF the panel sums the byte ranges of the tiles each
@@ -396,10 +396,10 @@ exactextract's float matrix over the polygon's bounding box, cell number and
 fraction pairs, and runs of whole cells plus a list of edge fractions.
 
 Shapes are Natural Earth 110m country parts or 50m land polygons (from the
-coastlines via `js/landmesh.js`); click the globe to pick another. A ring
+coastlines via `src/core/landmesh.js`); click the globe to pick another. A ring
 that runs all the way round in longitude (Antarctica) is closed through the
 pole, and the out-and-back run that makes along the seam is folded away once
-projected. `js/rasterize.js` holds both algorithms (coverage as a boundary
+projected. `src/core/rasterize.js` holds both algorithms (coverage as a boundary
 integral: each edge piece adds its part to the cell it crosses and takes its
 height from every cell to its right, a running sum along the row);
 `test/check-rasterize.mjs` checks them cell for cell against GDAL's
@@ -428,7 +428,7 @@ The last four are about the 2D longitude and latitude arrays many datasets
 ship for grids that are regular in some CRS: the two arrays as stored, the
 grid lines and coast moved from lon/lat back to the CRS they came from (where
 every cell is the same), and a test that finds that CRS from the arrays alone.
-`js/regular.js` projects the samples with each candidate (lon/lat, Mercator,
+`src/core/regular.js` projects the samples with each candidate (lon/lat, Mercator,
 cylindrical equal-area, sinusoidal, transverse Mercator, polar and oblique
 stereographic and Lambert azimuthal, Lambert conformal conic, geostationary in
 both sweeps, rotated pole; sphere and ellipsoid), fits an affine transform of
@@ -443,7 +443,7 @@ GOES-East's 56 microradians from 35786023 m, and HRRR's 3000 m on the 6371229 m
 sphere. Ten examples are built in (with their cell centres checked against PROJ
 in `test/check-regular.mjs`); the last step takes pasted `i j lon lat` rows,
 `lon lat` rows with a row length, or JSON `{"lon": [[...]], "lat": [[...]]}`.
-An example is a few lines in `EXAMPLES` in `js/regular.js`: a CRS, the centre
+An example is a few lines in `EXAMPLES` in `src/core/regular.js`: a CRS, the centre
 of the first cell, the steps and the size. Hash keys: `s` (step), `sat`, `h`,
 `h2`, `mag`, `t`, `m`, `ex`, `pick`.
 
@@ -460,7 +460,7 @@ numbered from 1 in the south-west, west to east, south to north. A coarse
 grid is drawn (6 to 180 rows); the lookup works on 2160 (SeaWiFS, 9.28 km),
 4320 (MODIS, 4.64 km), 8640 or 17280 rows: click the globe, or type a bin
 number or a lon, lat, for the bin's row, column, bounds and area, and copy it
-as GeoJSON. `js/l3bin.js` holds the grid; `test/check-l3bin.mjs` checks the
+as GeoJSON. `src/core/l3bin.js` holds the grid; `test/check-l3bin.mjs` checks the
 published bin totals (5,940,422 and 23,761,676) and round trips. Hash keys:
 `rows` (index of the drawn grid), `t` (unwrap), `grid` (rows for the
 lookup), `bin`, `lines`, `coast`, `cam`.
@@ -478,7 +478,7 @@ it matters: Antarctica turning inside out in Albers without resampling, and
 any land crossing the seam once the globe is rotated. Back and Next (or the
 arrow keys) step through it; each step has at most one slider, and some can
 be dragged. Hash keys: `s` (step, from 0), `p` (the step's slider), `rot`.
-The midpoint test is redrawn by `resampleArc` in `js/mishaps.js`, which
+The midpoint test is redrawn by `resampleArc` in `src/core/mishaps.js`, which
 `test/check-mishaps.mjs` checks keeps the same points as d3-geo.
 
 ## Homage
@@ -496,7 +496,7 @@ Equality in The West Wing (season 2, episode 16); Equal Earth (Savric,
 Jenny and Patterson 2018); Fuller's Dymaxion; and the projections named in
 [xkcd 977](https://xkcd.com/977/). The credits are in the page's About panel.
 Robinson, Winkel tripel, Van der Grinten and cylindrical equal-area (Gall-Peters,
-Hobo-Dyer) are written as d3 raw projections in `js/homage-geo.js`;
+Hobo-Dyer) are written as d3 raw projections in `src/core/homage-geo.js`;
 `test/check-homage.mjs` checks them and the rest against PROJ 9.8
 (`test/fixtures/homage-proj.json`, from `test/make-homage-fixture.py`).
 PROJ's `+proj=wintri` defaults to `lat_1=0`, so Winkel's own
@@ -585,62 +585,66 @@ button writes the snippet for the current view.
 ## Layout
 
 ```
-index.html                  page
-css/app.css                 styles
-js/app.js                   scene, map and controls
-js/geo.js                   graticule, seeded randomness, scene frame
-js/data.js                  loads the coastlines in data/
-js/landmesh.js              land triangulated from the coastlines (earcut), and ray sampling
-js/basemap.js               basemap sources, GEBCO and Esri reading, per-pixel reprojection
-js/basemap-load.js          fetches the basemaps in the browser and makes their canvases
-js/download.js              hands a file to the browser as a download
-js/geotiff-write.js         GeoTIFF writer with user-defined CRS keys
-js/cellexport.js            GeoTIFF of one cell, tile or lobe in its own CRS
-js/basemap-ui.js            basemap picker and cell GeoTIFF button for the cells pages
-js/families/index.js        the families, and the interface each one has
-js/families/perspective.js  azimuthal perspective family: rays, PROJ string, GeoTIFF keys
-js/families/conic.js        cone family with cylinder and plane limits
-cones.html, js/cones.js     cones and cylinders page
-js/families/azimuthal.js    compass (laea) and string (aeqd) constructions
-js/families/spilhaus.js     Spilhaus / Adams World in a Square II, from PROJ
-spilhaus.html, js/spilhaus.js  Spilhaus page
-js/families/globals.js      whole-world formulas, their lobes, and the octahedral butterfly, from PROJ
-globals.html, js/globals.js globals and interrupteds page
+index.html                             page
+css/app.css                            styles
+js/app.js                              scene, map and controls
+cones.html, js/cones.js                cones and cylinders page
+spilhaus.html, js/spilhaus.js          Spilhaus page
+globals.html, js/globals.js            globals and interrupteds page
 catastrophes.html, js/catastrophes.js  map catastrophes page
-js/mishaps.js               catastrophe steps, vertex-by-vertex and spherical drawing
-cells.html, js/cells.js     s2 cells page
-js/s2.js                    S2 faces, cell ids and tokens, from s2geometry
-grids.html, js/grids-page.js  model grids page
-indexspace.html, js/indexspace.js  index space page
-js/roms.js                  ROMS s-coordinate, synthetic grids and data, Zarr grid reader
-structure.html, js/structure-page.js  tiles and overviews page
-regular.html, js/regular-page.js  regular in what? storyline: geostationary, lon/lat arrays
-js/regular.js               which CRS makes a lon/lat array regular; example grids; geos scan angles
-js/structure.js             grid, tile and file structure of COG, Zarr, WMTS, ArcGIS, XYZ and specs
-rasterize.html, js/rasterize-page.js  rasterize page
-js/rasterize.js             centre-in scanline fill, exact coverage fractions, runs, tiles and bytes
-js/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
-example.html, js/example.js For example storyboard
-homage.html, js/homage.js   homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977
-js/homage-geo.js            Robinson, Winkel tripel, Van der Grinten, cea; Dymaxion icosahedron and net
-sentinel.html, js/sentinel.js  MGRS and Sentinel-2 page
-js/mgrs.js                  UTM, MGRS references and Sentinel-2 tiles
-data/countries-110m.json    Natural Earth 110m country parts as flat [lon, lat] rings
-data/s2-tiles.json          which MGRS squares are Sentinel-2 tiles (ESA tiling grid)
-bins.html, js/bins.js       L3 bins page
-tissot.html, js/tissot-page.js  Tissot's indicatrix page
-js/tissot.js                distortion factors (h, k, s, omega, ...) from any forward function
-js/tissot-draw.js           indicatrices, the enlarged one and contours drawn on a 2D canvas
-js/distortion.js            factor grids, colour scales, contours and auto-sized lattices
-js/l3bin.js                 SeaWiFS / MODIS level-3 bin grid
-test/fixtures/              reference points projected by PROJ
-data/                       Natural Earth coastlines as [lon, lat, ...] polylines
-test/check-pure.mjs         the core modules load in Node with no DOM, canvas or three.js
-test/check-interfaces.mjs   every family and grid has the shared Family and Grid shape
-test/check-proj.mjs         ray construction vs proj4js
-test/check-secant.mjs       secant planes vs PROJ (fixture made with PROJ 9.8)
-test/check-oblique.mjs      tilted cones and cylinders (omerc, ob_tran) vs PROJ 9.8
-legacy/pproj/               the original R package and experiments
+cells.html, js/cells.js                s2 cells page
+grids.html, js/grids-page.js           model grids page
+indexspace.html, js/indexspace.js      index space page
+structure.html, js/structure-page.js   tiles and overviews page
+regular.html, js/regular-page.js       regular in what? storyline: geostationary, lon/lat arrays
+rasterize.html, js/rasterize-page.js   rasterize page
+example.html, js/example.js            For example storyboard
+homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977
+sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
+bins.html, js/bins.js                  L3 bins page
+tissot.html, js/tissot-page.js         Tissot's indicatrix page
+
+js/data.js          loads the coastlines in data/
+js/basemap-load.js  fetches the basemaps in the browser and makes their canvases
+js/download.js      hands a file to the browser as a download
+js/basemap-ui.js    basemap picker and cell GeoTIFF button for the cells pages
+js/tissot-draw.js   indicatrices, the enlarged one and contours drawn on a 2D canvas
+
+src/core/index.js                 the whole core in one import; src/core/ needs no browser
+src/core/families/index.js        the families, and the interface each one has
+src/core/families/perspective.js  azimuthal perspective family: rays, PROJ string, GeoTIFF keys
+src/core/families/conic.js        cone family with cylinder and plane limits
+src/core/families/azimuthal.js    compass (laea) and string (aeqd) constructions
+src/core/families/spilhaus.js     Spilhaus / Adams World in a Square II, from PROJ
+src/core/families/globals.js      whole-world formulas, their lobes, and the octahedral butterfly, from PROJ
+src/core/geo.js                   graticule, seeded randomness, scene frame
+src/core/landmesh.js              land triangulated from the coastlines (earcut), and ray sampling
+src/core/basemap.js               basemap sources, GEBCO and Esri reading, per-pixel reprojection
+src/core/geotiff-write.js         GeoTIFF writer with user-defined CRS keys
+src/core/cellexport.js            GeoTIFF of one cell, tile or lobe in its own CRS
+src/core/mishaps.js               catastrophe steps, vertex-by-vertex and spherical drawing
+src/core/s2.js                    S2 faces, cell ids and tokens, from s2geometry
+src/core/roms.js                  ROMS s-coordinate, synthetic grids and data, Zarr grid reader
+src/core/regular.js               which CRS makes a lon/lat array regular; example grids; geos scan angles
+src/core/structure.js             grid, tile and file structure of COG, Zarr, WMTS, ArcGIS, XYZ and specs
+src/core/rasterize.js             centre-in scanline fill, exact coverage fractions, runs, tiles and bytes
+src/core/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
+src/core/homage-geo.js            Robinson, Winkel tripel, Van der Grinten, cea; Dymaxion icosahedron and net
+src/core/mgrs.js                  UTM, MGRS references and Sentinel-2 tiles
+src/core/tissot.js                distortion factors (h, k, s, omega, ...) from any forward function
+src/core/distortion.js            factor grids, colour scales, contours and auto-sized lattices
+src/core/l3bin.js                 SeaWiFS / MODIS level-3 bin grid
+
+data/countries-110m.json   Natural Earth 110m country parts as flat [lon, lat] rings
+data/s2-tiles.json         which MGRS squares are Sentinel-2 tiles (ESA tiling grid)
+test/fixtures/             reference points projected by PROJ
+data/                      Natural Earth coastlines as [lon, lat, ...] polylines
+test/check-pure.mjs        the core modules load in Node with no DOM, canvas or three.js
+test/check-interfaces.mjs  every family and grid has the shared Family and Grid shape
+test/check-proj.mjs        ray construction vs proj4js
+test/check-secant.mjs      secant planes vs PROJ (fixture made with PROJ 9.8)
+test/check-oblique.mjs     tilted cones and cylinders (omerc, ob_tran) vs PROJ 9.8
+legacy/pproj/              the original R package and experiments
 ```
 
 ## Test
@@ -673,12 +677,13 @@ formulas from PROJ's derivatives to rounding, and the whole path through
 proj4js to about 1e-8 per unit scale. `test/check-distortion.mjs` checks
 the sampled grids, contours, auto sizing and the float GeoTIFF writer.
 `test/check-inverse.mjs` round-trips project and inverse for every light
-position. `test/check-pure.mjs` keeps the core modules (the families, the
-grids and cells, Tissot, the readers and writers) free of the DOM, canvases
-and three.js, so they run in Node or any page. `test/check-interfaces.mjs`
-checks that every projection family has the shape `js/families/index.js`
+position. `test/check-pure.mjs` keeps everything in `src/core` (the
+families, the grids and cells, Tissot, the readers and writers) free of the
+DOM, canvases and three.js, and reachable from `src/core/index.js`, so the
+core runs in Node or any page as one import. `test/check-interfaces.mjs`
+checks that every projection family has the shape `src/core/families/index.js`
 describes, and every grid (model grids, ROMS grids, s2 cells) the patch
-shape `js/grids.js` describes. To check that GDAL reads the
+shape `src/core/grids.js` describes. To check that GDAL reads the
 exported CRS (needs rasterio):
 
 ```sh

@@ -1,7 +1,7 @@
 // Tissot indicatrices drawn on a 2D canvas, from the factors tissot.js
 // computes.
 
-import { factors, ellipse, majorAxis } from "./tissot.js";
+import { factors, ellipse, majorAxis } from "../src/core/tissot.js";
 
 const D2R = Math.PI / 180;
 

@@ -4,7 +4,7 @@
 
 import {
   sources, readGebcoOverview, readGebcoWindow, esriGlobal, esriPlan, esriWindow, worldWindow, warpPixels
-} from "./basemap.js";
+} from "../src/core/basemap.js";
 
 const GEOTIFF_JS = "https://cdn.jsdelivr.net/npm/geotiff@3.0.5/dist-browser/geotiff.js";
 

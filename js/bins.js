@@ -8,7 +8,7 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import * as l3 from "./l3bin.js";
+import * as l3 from "../src/core/l3bin.js";
 import { loadCoastline } from "./data.js";
 import { basemapControl, exportControl } from "./basemap-ui.js";
 

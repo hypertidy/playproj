@@ -8,11 +8,11 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import * as s2 from "./s2.js";
+import * as s2 from "../src/core/s2.js";
 import { loadCoastline } from "./data.js";
 import { warpCanvas } from "./basemap-load.js";
 import { basemapControl, exportControl } from "./basemap-ui.js";
-import { gnomonic, ringOf } from "./cellexport.js";
+import { gnomonic, ringOf } from "../src/core/cellexport.js";
 
 const DEG = "\u00b0";
 const TEX = 1024;

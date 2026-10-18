@@ -2,7 +2,7 @@
 // conformal cylinder as +proj=omerc, the rest as +proj=ob_tran (fixture
 // made with PROJ 9.8 from the strings below), plus the inverse round trip.
 import { readFileSync } from "fs";
-import { R, project, inverse, projString } from "../js/families/conic.js";
+import { R, project, inverse, projString } from "../src/core/families/conic.js";
 
 const cases = JSON.parse(readFileSync(new URL("./fixtures/oblique-proj.json", import.meta.url)));
 let fails = 0, worst = 0, worstInv = 0, n = 0;

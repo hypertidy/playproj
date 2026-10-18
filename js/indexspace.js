@@ -9,10 +9,10 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import * as R from "./roms.js";
+import * as R from "../src/core/roms.js";
 import { loadCoastline } from "./data.js";
-import { sceneFrame } from "./geo.js";
-import { sampleElev } from "./basemap.js";
+import { sceneFrame } from "../src/core/geo.js";
+import { sampleElev } from "../src/core/basemap.js";
 import { loadWorld } from "./basemap-load.js";
 
 const DEG = "\u00b0";

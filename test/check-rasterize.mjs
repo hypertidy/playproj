@@ -1,11 +1,11 @@
-// Checks js/rasterize.js against GDAL's rasterize (centre in, and
+// Checks src/core/rasterize.js against GDAL's rasterize (centre in, and
 // ALL_TOUCHED) and exactextract's coverage fractions, on the polygons and
 // grids in test/fixtures/rasterize.json (test/make-rasterize-fixture.py),
 // and checks the densify-and-project step against pyproj.
 
 import { readFileSync } from "node:fs";
 import proj4 from "proj4";
-import * as R from "../js/rasterize.js";
+import * as R from "../src/core/rasterize.js";
 
 const fx = JSON.parse(readFileSync(new URL("./fixtures/rasterize.json", import.meta.url)));
 let fail = 0;

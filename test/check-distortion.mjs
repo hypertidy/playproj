@@ -1,4 +1,4 @@
-// Distortion fields (js/distortion.js) and the float GeoTIFF they export:
+// Distortion fields (src/core/distortion.js) and the float GeoTIFF they export:
 //  1. a sampled grid holds exactly the pointwise factors (which
 //     check-tissot.mjs ties to PROJ);
 //  2. contour lines of a known surface fall where they should;
@@ -8,9 +8,9 @@
 //  5. the float GeoTIFF reads back: bands, values, NaN, names.
 import { inflateSync } from "zlib";
 import proj4 from "proj4";
-import { factors, proj4Forward } from "../js/tissot.js";
-import * as D from "../js/distortion.js";
-import { writeFloatGeoTIFF, esriGeoKeys, proj4Wkt } from "../js/geotiff-write.js";
+import { factors, proj4Forward } from "../src/core/tissot.js";
+import * as D from "../src/core/distortion.js";
+import { writeFloatGeoTIFF, esriGeoKeys, proj4Wkt } from "../src/core/geotiff-write.js";
 
 let fails = 0;
 const check = (ok, msg) => { if (!ok) { fails++; console.log("FAIL", msg); } };

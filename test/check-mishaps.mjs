@@ -1,7 +1,7 @@
 // Map catastrophes: the vertex-by-vertex map agrees with d3-geo away from
 // the seam, and the spherical areas show the inside-out rings.
 import * as d3 from "d3-geo";
-import { catastrophes, frame, sphereProjection, rotation, areas, reverseFeature, resampleArc } from "../js/mishaps.js";
+import { catastrophes, frame, sphereProjection, rotation, areas, reverseFeature, resampleArc } from "../src/core/mishaps.js";
 
 let fails = 0;
 const check = (ok, msg) => { if (!ok) { fails++; console.log("FAIL " + msg); } };

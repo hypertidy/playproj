@@ -3,7 +3,7 @@
 // example's CRS and grid from its lon/lat arrays alone.
 import fs from "fs";
 import proj4 from "proj4";
-import * as R from "../js/regular.js";
+import * as R from "../src/core/regular.js";
 
 R.init(proj4);
 const fx = JSON.parse(fs.readFileSync(new URL("./fixtures/regular-proj.json", import.meta.url)));

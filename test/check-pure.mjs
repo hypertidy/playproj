@@ -1,14 +1,11 @@
-// The core modules run without a browser: none reaches for the DOM, a
-// canvas or three.js, and each one, with everything it imports, loads in
-// Node. Page, scene and loading code (basemap-load.js, data.js,
-// download.js, tissot-draw.js and the page files) is outside the core.
-import { readFileSync } from "fs";
+// The core (everything under src/core) runs without a browser: no module
+// reaches for the DOM, a canvas or three.js, none imports from outside the
+// core, and each one, with everything it imports, loads in Node. Page,
+// scene and loading code (js/) is outside the core.
+import { readFileSync, readdirSync } from "fs";
 
-const CORE = [
-  "families/index.js", "families/perspective.js", "families/azimuthal.js", "families/conic.js", "families/globals.js", "families/spilhaus.js",
-  "tissot.js", "distortion.js", "grids.js", "roms.js", "regular.js", "s2.js", "l3bin.js", "mgrs.js", "rasterize.js", "structure.js",
-  "geotiff-write.js", "cellexport.js", "landmesh.js", "mishaps.js", "homage-geo.js", "geo.js", "basemap.js"
-];
+const root = new URL("../src/core/", import.meta.url);
+const CORE = readdirSync(root, { recursive: true }).filter((f) => f.endsWith(".js")).map((f) => f.split("\\").join("/")).sort();
 // packages a core module may import
 const PACKAGES = new Set(["earcut"]);
 const BROWSER = [
@@ -16,7 +13,6 @@ const BROWSER = [
   [/\.getContext\(/, "canvas context"], [/\blocalStorage\b/, "localStorage"], [/\blocation\./, "location"]
 ];
 
-const root = new URL("../js/", import.meta.url);
 let fails = 0;
 const seen = new Set();
 function scan(rel, from) {
@@ -26,15 +22,18 @@ function scan(rel, from) {
   // comments can mention anything
   const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
   const bad = BROWSER.filter(([re]) => re.test(code)).map(([, name]) => name);
-  for (const [, spec] of code.matchAll(/^\s*import\b[^"']*["']([^"']+)["']/gm)) {
+  for (const [, spec] of code.matchAll(/^\s*(?:import\s*|(?:import|export)\s[^"';=]*?from\s*)["']([^"']+)["']/gm)) {
     if (spec.startsWith(".")) {
-      const dep = new URL(spec, new URL(rel, root)).href.slice(root.href.length);
-      if (!CORE.includes(dep)) bad.push(`imports ${dep}, which is not core`);
+      const href = new URL(spec, new URL(rel, root)).href, dep = href.slice(root.href.length);
+      if (!href.startsWith(root.href) || !CORE.includes(dep)) bad.push(`imports ${spec}, which is not core`);
       else scan(dep, rel);
     } else if (!PACKAGES.has(spec)) bad.push(`imports ${spec}`);
   }
   if (bad.length) { fails++; console.log(`FAIL ${rel}${from ? ` (via ${from})` : ""}: ${bad.join(", ")}`); }
 }
+// index.js reaches every core module, so the whole core is one import
+scan("index.js");
+for (const rel of CORE) if (!seen.has(rel)) { fails++; console.log(`FAIL ${rel} is not reached from index.js`); }
 for (const rel of CORE) scan(rel);
 for (const rel of CORE) {
   try {

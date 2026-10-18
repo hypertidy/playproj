@@ -6,8 +6,8 @@
 // Dymaxion, and xkcd 977. Same step framework as the For example page.
 
 import { loadCoastline } from "./data.js";
-import { coastRings, landPolygons } from "./landmesh.js";
-import { worldProjection, polar, slide, PROJ, icosahedron, unfold, trueSize } from "./homage-geo.js";
+import { coastRings, landPolygons } from "../src/core/landmesh.js";
+import { worldProjection, polar, slide, PROJ, icosahedron, unfold, trueSize } from "../src/core/homage-geo.js";
 
 const d3 = window.d3;
 const D2R = Math.PI / 180;

@@ -1,11 +1,11 @@
 // Writes small GeoTIFFs for several constructions so test/check-geotiff.py can
 // confirm GDAL reads back the CRS. Usage: node test/write-tifs.mjs OUTDIR
 import fs from "fs";
-import * as persp from "../js/families/perspective.js";
-import * as conic from "../js/families/conic.js";
-import * as azi from "../js/families/azimuthal.js";
-import * as spil from "../js/families/spilhaus.js";
-import { writeGeoTIFF } from "../js/geotiff-write.js";
+import * as persp from "../src/core/families/perspective.js";
+import * as conic from "../src/core/families/conic.js";
+import * as azi from "../src/core/families/azimuthal.js";
+import * as spil from "../src/core/families/spilhaus.js";
+import { writeGeoTIFF } from "../src/core/geotiff-write.js";
 
 const out = process.argv[2];
 const P = (p) => ({ fam: persp, p }), C = (p) => ({ fam: conic, p }), A = (p) => ({ fam: azi, p });

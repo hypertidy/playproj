@@ -3,7 +3,7 @@
 // and its inverse round trip. Polar stere uses +lat_ts, oblique stere
 // +k_0, and gnom and nsper an affine step in a pipeline.
 import { readFileSync } from "fs";
-import { R, project, inverse, projString, lightFromSlider, planeScale } from "../js/families/perspective.js";
+import { R, project, inverse, projString, lightFromSlider, planeScale } from "../src/core/families/perspective.js";
 
 const cases = JSON.parse(readFileSync(new URL("./fixtures/secant-proj.json", import.meta.url)));
 let fails = 0, worst = 0, worstInv = 0, n = 0;

@@ -8,7 +8,7 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import * as m from "./mishaps.js";
+import * as m from "../src/core/mishaps.js";
 import { loadCoastline } from "./data.js";
 
 const d3 = window.d3;

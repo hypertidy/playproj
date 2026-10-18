@@ -4,7 +4,7 @@
 // WMTS, TileMatrixSet and ArcGIS documents.
 import fs from "fs";
 import proj4 from "proj4";
-import * as S from "../js/structure.js";
+import * as S from "../src/core/structure.js";
 
 const dir = new URL("./fixtures/structure/", import.meta.url);
 const fx = JSON.parse(fs.readFileSync(new URL("manifest.json", dir)));

@@ -13,7 +13,7 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import * as g from "./mgrs.js";
+import * as g from "../src/core/mgrs.js";
 import { loadCoastline } from "./data.js";
 import { warpCanvas } from "./basemap-load.js";
 import { basemapControl, exportControl } from "./basemap-ui.js";
