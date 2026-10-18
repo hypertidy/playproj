@@ -8,13 +8,13 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import * as fam from "./families/conic.js";
-import { samplePoints, evenSpacing, SAMPLE_MODES } from "./landmesh.js";
+import * as fam from "../src/core/families/conic.js";
+import { samplePoints, evenSpacing, SAMPLE_MODES } from "../src/core/landmesh.js";
 import { loadCoastline } from "./data.js";
-import { graticule } from "./geo.js";
-import { sources, reprojectBox } from "./basemap.js";
+import { graticule } from "../src/core/geo.js";
+import { sources, reprojectBox } from "../src/core/basemap.js";
 import { loadWorld } from "./basemap-load.js";
-import { writeGeoTIFF } from "./geotiff-write.js";
+import { writeGeoTIFF } from "../src/core/geotiff-write.js";
 import { displace, hasElevation } from "./relief.js";
 import { drawLattice } from "./tissot-draw.js";
 

@@ -1,8 +1,8 @@
-// The projections js/cellexport.js writes cells in, against proj4js:
+// The projections src/core/cellexport.js writes cells in, against proj4js:
 // gnomonic about any centre (s2 faces, cubed-sphere faces) and north and
 // south polar stereographic (tripolar cap cells).
 import proj4 from "proj4";
-import { gnomonic, polarStere } from "../js/cellexport.js";
+import { gnomonic, polarStere } from "../src/core/cellexport.js";
 
 let fails = 0;
 const check = (label, err, tol) => {

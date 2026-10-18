@@ -3,7 +3,7 @@
 // package), and the tiles whose footprints in ESA's tiling grid contain
 // each point. Made by test/make-mgrs-fixtures.py.
 import fs from "fs";
-import * as m from "../js/mgrs.js";
+import * as m from "../src/core/mgrs.js";
 
 const fx = JSON.parse(fs.readFileSync(new URL("./fixtures/mgrs-points.json", import.meta.url)));
 const grid = m.tileSet(JSON.parse(fs.readFileSync(new URL("../data/s2-tiles.json", import.meta.url))));

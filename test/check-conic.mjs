@@ -2,7 +2,7 @@
 // parallel (including the cylinder and plane limits), and round-trip the
 // inverse.
 import proj4 from "proj4";
-import { R, project, inverse, proj4String } from "../js/families/conic.js";
+import { R, project, inverse, proj4String } from "../src/core/families/conic.js";
 
 let fails = 0, worst = 0, worstInv = 0, n = 0;
 for (const prop of ["eqd", "conf", "area"])

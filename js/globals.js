@@ -11,14 +11,14 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import * as fam from "./families/globals.js";
-import { samplePoints, evenSpacing, SAMPLE_MODES } from "./landmesh.js";
+import * as fam from "../src/core/families/globals.js";
+import { samplePoints, evenSpacing, SAMPLE_MODES } from "../src/core/landmesh.js";
 import { loadCoastline } from "./data.js";
-import { graticule } from "./geo.js";
-import { sources } from "./basemap.js";
+import { graticule } from "../src/core/geo.js";
+import { sources } from "../src/core/basemap.js";
 import { loadWorld, readWindow } from "./basemap-load.js";
-import { writeGeoTIFF, esriGeoKeys } from "./geotiff-write.js";
-import { crsGeoKeys } from "./cellexport.js";
+import { writeGeoTIFF, esriGeoKeys } from "../src/core/geotiff-write.js";
+import { crsGeoKeys } from "../src/core/cellexport.js";
 import { saveBlob } from "./download.js";
 import { displace, hasElevation } from "./relief.js";
 

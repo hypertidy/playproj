@@ -3,7 +3,7 @@
 // exaggeration. Sea level stays on the surface, so coastlines stay on it.
 
 import * as THREE from "three";
-import { sampleElev } from "./basemap.js";
+import { sampleElev } from "../src/core/basemap.js";
 
 export const EARTH_R = 6371000;
 

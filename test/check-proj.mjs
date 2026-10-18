@@ -1,7 +1,7 @@
 // Compare the geometric construction with proj4js for every case that has a
 // PROJ equivalent. Run with: node test/check-proj.mjs (needs `npm i proj4`).
 import proj4 from "proj4";
-import { R, project, proj4String } from "../js/families/perspective.js";
+import { R, project, proj4String } from "../src/core/families/perspective.js";
 
 const cases = [];
 for (const a of [-1, 0, 1.5, 2, 5, 40, Infinity])

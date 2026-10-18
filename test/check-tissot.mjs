@@ -1,4 +1,4 @@
-// Tissot indicatrix factors (js/tissot.js) against PROJ's own proj_factors()
+// Tissot indicatrix factors (src/core/tissot.js) against PROJ's own proj_factors()
 // (fixture made with PROJ 9.8 by test/make-tissot-fixture.py), in two parts:
 //  1. the formulas: PROJ's four derivatives in, every other factor out, to
 //     rounding;
@@ -12,8 +12,8 @@
 // 0.99993 at 20 W, where h = 1), so the equator is left out there.
 import { readFileSync } from "fs";
 import proj4 from "proj4";
-import { factors, fromDerivatives, proj4Forward, ellipse, smallCircle, majorAxis } from "../js/tissot.js";
-import { project } from "../js/families/perspective.js";
+import { factors, fromDerivatives, proj4Forward, ellipse, smallCircle, majorAxis } from "../src/core/tissot.js";
+import { project } from "../src/core/families/perspective.js";
 
 const fx = JSON.parse(readFileSync(new URL("./fixtures/tissot-proj.json", import.meta.url)));
 const OURS = { meridional_scale: "h", parallel_scale: "k", areal_scale: "s", angular_distortion: "omega",

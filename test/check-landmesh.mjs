@@ -2,7 +2,7 @@
 // hold the land and not the water (the Caspian is a hole), and the samples
 // should come from where the land is.
 import { readFileSync } from "fs";
-import { landTriangles, landMesh, samplePoints, evenLand, evenSpacing, isLand } from "../js/landmesh.js";
+import { landTriangles, landMesh, samplePoints, evenLand, evenSpacing, isLand } from "../src/core/landmesh.js";
 
 const D2R = Math.PI / 180;
 const land = [[2.3, 48.8, "Paris"], [20, 20, "Sahara"], [-60, -10, "Amazon"], [134, -25, "Australia"],

@@ -6,8 +6,8 @@
 // slider.
 
 import { loadCoastline } from "./data.js";
-import { coastRings, landPolygons } from "./landmesh.js";
-import { naivePath, resampleArc } from "./mishaps.js";
+import { coastRings, landPolygons } from "../src/core/landmesh.js";
+import { naivePath, resampleArc } from "../src/core/mishaps.js";
 
 const d3 = window.d3;
 const D2R = Math.PI / 180;

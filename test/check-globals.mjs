@@ -3,7 +3,7 @@
 // test/make-globals-fixture.py), the butterfly's faces with PROJ's gnom,
 // and check that the butterfly's faces and the lobes meet where they should.
 import fs from "fs";
-import { R, makeMap, BASES, projString } from "../js/families/globals.js";
+import { R, makeMap, BASES, projString } from "../src/core/families/globals.js";
 
 const fx = JSON.parse(fs.readFileSync(new URL("./fixtures/globals-proj.json", import.meta.url)));
 const PARAMS = {

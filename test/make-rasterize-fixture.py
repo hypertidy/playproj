@@ -30,7 +30,7 @@ def flat(ps):
 def part_at(lon, lat):
     if lat < -80:
         # Antarctica runs -180 to 180 and is closed through the pole, as
-        # js/landmesh.js closes it (the stored ring cuts straight back along
+        # src/core/landmesh.js closes it (the stored ring cuts straight back along
         # 84.71 S instead)
         r = next(c[0] for c in countries if min(c[0][1::2]) < -85)
         r = r[:-2] if r[:2] == r[-2:] else r
@@ -42,7 +42,7 @@ def part_at(lon, lat):
             return rings
     raise SystemExit(f"no country part at {lon}, {lat}")
 
-# the same densify as js/rasterize.js
+# the same densify as src/core/rasterize.js
 def densify(r, step=0.25):
     n = len(r)
     closed = r[0] == r[n - 2] and r[1] == r[n - 1]
@@ -56,7 +56,7 @@ def densify(r, step=0.25):
             out += [xa + (xb - xa) * s / k, ya + (yb - ya) * s / k]
     return out
 
-# as js/rasterize.js unspike() does: repeated points go, and so does a point
+# as src/core/rasterize.js unspike() does: repeated points go, and so does a point
 # where the ring turns straight back on itself, until none is left, so an
 # out-and-back run (a ring closed through the pole, seen from above it)
 # folds away

@@ -1,6 +1,6 @@
 // Round trip: project then inverse should return the starting lon/lat, for
 // every light position including those with no PROJ equivalent.
-import { project, inverse } from "../js/families/perspective.js";
+import { project, inverse } from "../src/core/families/perspective.js";
 
 let worst = 0, n = 0, fails = 0;
 for (const a of [-40, -3, -1, -0.5, 0, 0.3, 0.7, 1.5, 3, 40, Infinity, -Infinity])

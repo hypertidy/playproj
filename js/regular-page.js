@@ -5,13 +5,13 @@
 // gimbal orders PROJ calls sweep x and sweep y, and the disc unfolded into
 // the regular scan-angle grid. Then, in 2D, the lon/lat arrays datasets ship
 // for grids like that one, the same grid put back in its own CRS, and a test
-// that finds the CRS from the arrays alone (js/regular.js).
+// that finds the CRS from the arrays alone (src/core/regular.js).
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import * as R from "./regular.js";
+import * as R from "../src/core/regular.js";
 import { loadCoastline } from "./data.js";
-import { graticule } from "./geo.js";
+import { graticule } from "../src/core/geo.js";
 
 R.init(window.proj4);
 

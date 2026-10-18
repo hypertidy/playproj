@@ -2,7 +2,7 @@
 // test/fixtures/grids-proj.json, and the properties each grid is built for.
 import fs from "fs";
 import proj4 from "proj4";
-import * as g from "../js/grids.js";
+import * as g from "../src/core/grids.js";
 
 const fx = JSON.parse(fs.readFileSync(new URL("./fixtures/grids-proj.json", import.meta.url)));
 let fails = 0;

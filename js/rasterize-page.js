@@ -6,9 +6,9 @@
 // in a CRS picked here, or is a window on a real raster's level read by
 // structure.js, and the panel counts the tiles and bytes each answer needs.
 
-import * as R from "./rasterize.js";
-import * as S from "./structure.js";
-import { coastRings, landPolygons } from "./landmesh.js";
+import * as R from "../src/core/rasterize.js";
+import * as S from "../src/core/structure.js";
+import { coastRings, landPolygons } from "../src/core/landmesh.js";
 import { loadCoastline } from "./data.js";
 
 const proj4 = window.proj4, d3 = window.d3;

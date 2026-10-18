@@ -1,7 +1,7 @@
 // S2 cells: tokens, faces and cell corners against s2sphere (a Python port
 // of s2geometry), in test/fixtures/s2-cells.json.
 import fs from "fs";
-import * as s2 from "../js/s2.js";
+import * as s2 from "../src/core/s2.js";
 
 const fx = JSON.parse(fs.readFileSync(new URL("./fixtures/s2-cells.json", import.meta.url)));
 let fails = 0, worst = 0;

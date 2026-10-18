@@ -2,9 +2,9 @@
 // them: a select of basemaps (loaded once, shared with every page through
 // basemap-load.js) and a button that writes the picked cell, tile or bin.
 
-import { sources } from "./basemap.js";
+import { sources } from "../src/core/basemap.js";
 import { loadWorld, readWindow } from "./basemap-load.js";
-import { renderCell } from "./cellexport.js";
+import { renderCell } from "../src/core/cellexport.js";
 import { saveBlob } from "./download.js";
 
 // select, status, credit: elements. onWorld(world or null) after each change.

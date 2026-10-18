@@ -8,12 +8,12 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import * as G from "./grids.js";
+import * as G from "../src/core/grids.js";
 import { loadCoastline } from "./data.js";
-import { graticule } from "./geo.js";
+import { graticule } from "../src/core/geo.js";
 import { warpCanvas } from "./basemap-load.js";
 import { basemapControl, exportControl } from "./basemap-ui.js";
-import { gnomonic, polarStere, ringOf } from "./cellexport.js";
+import { gnomonic, polarStere, ringOf } from "../src/core/cellexport.js";
 
 const DEG = "\u00b0";
 const TEX = 2048;

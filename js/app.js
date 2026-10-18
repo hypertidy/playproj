@@ -7,14 +7,14 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import * as persp from "./families/perspective.js";
-import * as azi from "./families/azimuthal.js";
-import { samplePoints, evenSpacing, SAMPLE_MODES } from "./landmesh.js";
+import * as persp from "../src/core/families/perspective.js";
+import * as azi from "../src/core/families/azimuthal.js";
+import { samplePoints, evenSpacing, SAMPLE_MODES } from "../src/core/landmesh.js";
 import { loadCoastline } from "./data.js";
-import { graticule, sceneFrame } from "./geo.js";
-import { sources, reproject, sampleElev } from "./basemap.js";
+import { graticule, sceneFrame } from "../src/core/geo.js";
+import { sources, reproject, sampleElev } from "../src/core/basemap.js";
 import { loadWorld } from "./basemap-load.js";
-import { writeGeoTIFF } from "./geotiff-write.js";
+import { writeGeoTIFF } from "../src/core/geotiff-write.js";
 import { drawLattice } from "./tissot-draw.js";
 
 const RAY_REACH = 6;      // rays from lights further than this start at the edge of the scene

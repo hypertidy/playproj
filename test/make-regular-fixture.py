@@ -1,6 +1,6 @@
 # Reference points for test/check-regular.mjs, made with PROJ (via pyproj):
 #   python3 test/make-regular-fixture.py > test/fixtures/regular-proj.json
-# The cell centres of each example grid in js/regular.js (what its 2D lon/lat
+# The cell centres of each example grid in src/core/regular.js (what its 2D lon/lat
 # arrays hold), and geostationary scan angles on the unit sphere.
 import json, math, pyproj
 

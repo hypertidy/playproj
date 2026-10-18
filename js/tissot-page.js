@@ -1,21 +1,21 @@
 // playproj: Tissot's indicatrix.
 //
 // Equal small circles on the globe (three.js, left) and what a projection
-// makes of them (2D canvas, right). The ellipses come from js/tissot.js,
+// makes of them (2D canvas, right). The ellipses come from src/core/tissot.js,
 // which differences the proj4js forward projection the way PROJ's
 // proj_factors() does; "Projected circles" instead projects each circle
 // point by point, so the two can be compared as the circles grow. The same
-// factors, sampled over the whole map by js/distortion.js, colour the
+// factors, sampled over the whole map by src/core/distortion.js, colour the
 // image and draw its contours, and download as a float GeoTIFF.
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { loadCoastline } from "./data.js";
-import { graticule } from "./geo.js";
-import * as T from "./tissot.js";
-import * as D from "./distortion.js";
+import { graticule } from "../src/core/geo.js";
+import * as T from "../src/core/tissot.js";
+import * as D from "../src/core/distortion.js";
 import { drawIndicatrix, drawInset, drawContours } from "./tissot-draw.js";
-import { writeFloatGeoTIFF, esriGeoKeys, proj4Wkt } from "./geotiff-write.js";
+import { writeFloatGeoTIFF, esriGeoKeys, proj4Wkt } from "../src/core/geotiff-write.js";
 import { saveBlob } from "./download.js";
 
 const D2R = Math.PI / 180;
