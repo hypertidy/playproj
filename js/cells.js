@@ -5,12 +5,17 @@
 // the globe out to the cube (radially, the gnomonic projection) and then
 // hinges the faces open into the staircase net 0-1-2-3-4-5, along which the
 // Hilbert curve runs unbroken.
+//
+// Close up restricts the view to the picked cell and its neighbours on the
+// same face, placed in doubles and then moved into a local frame scaled to
+// the window, so the deepest levels are drawn as well as the first.
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as s2 from "../src/core/s2.js";
 import { loadCoastline } from "./data.js";
-import { warpCanvas } from "./basemap-load.js";
+import { warpCanvas, readWindow } from "./basemap-load.js";
+import { sampleWindow } from "../src/core/basemap.js";
 import { basemapControl, exportControl } from "./basemap-ui.js";
 import { gnomonic, ringOf } from "../src/core/cellexport.js";
 
@@ -33,7 +38,7 @@ const toScene = (p) => new THREE.Vector3(p[1], p[2], p[0]);
 
 // ---------------------------------------------------------------- state
 
-const defaults = { lvl: 3, t: 0, curve: 1, grid: 1, coast: 1, uvgrid: 0, cell: "", bm: "none", cam: null };
+const defaults = { lvl: 3, t: 0, curve: 1, grid: 1, coast: 1, uvgrid: 0, cell: "", close: 0, bm: "none", cam: null };
 const state = { ...defaults };
 const embed = new URLSearchParams(location.search).has("embed");
 
@@ -52,6 +57,7 @@ function readHash() {
   }
   state.lvl = Math.max(0, Math.min(12, Math.round(state.lvl)));
   state.t = Math.max(0, Math.min(1, state.t));
+  state.close = state.close && state.cell ? 1 : 0;
 }
 
 let hashTimer = 0;
@@ -204,12 +210,21 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
 const DEFAULT_CAM = [2.4, 1.9, 5.4, 0, 0, 0];
+const CLOSE_CAM = [0.5, -1.1, 2.9, 0, 0, 0];
+const defaultCam = () => (state.close ? CLOSE_CAM : DEFAULT_CAM);
+
+// Close up holds the camera near the window: nothing outside it is drawn
+function viewLimits() {
+  controls.minDistance = state.close ? 0.4 : 0;
+  controls.maxDistance = state.close ? 8 : Infinity;
+}
+
 function setCamera(c) {
   camera.position.set(c[0], c[1], c[2]);
   controls.target.set(c[3], c[4], c[5]);
   controls.update();
 }
-setCamera(DEFAULT_CAM);
+setCamera(defaultCam());
 controls.addEventListener("end", () => {
   const p = camera.position, t = controls.target;
   state.cam = [p.x, p.y, p.z, t.x, t.y, t.z];
@@ -296,6 +311,183 @@ function rebuildScene() {
   group.scale.setScalar(1 - 0.45 * e);
 }
 
+// ---------------------------------------------------------------- close up
+
+const TEXC = 2048;
+const closeCanvas = document.createElement("canvas");
+closeCanvas.width = closeCanvas.height = TEXC;
+const closeTex = new THREE.CanvasTexture(closeCanvas);
+closeTex.colorSpace = THREE.SRGBColorSpace;
+closeTex.anisotropy = 4;
+const closeMesh = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array((N + 1) * (N + 1) * 3), 3));
+  g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  g.setIndex(index);
+  return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: closeTex, side: THREE.DoubleSide }));
+})();
+closeMesh.visible = false;
+scene.add(closeMesh);
+
+// the picked cell and up to one cell either side of it, in its face's (s, t)
+function closeWindow(c) {
+  const s0 = Math.max(0, c.s0 - c.d), s1 = Math.min(1, c.s0 + 2 * c.d);
+  const t0 = Math.max(0, c.t0 - c.d), t1 = Math.min(1, c.t0 + 2 * c.d);
+  return { face: c.face, level: c.level, d: c.d, s0, s1, t0, t1, key: `${c.face}/${c.level}/${s0}/${t0}` };
+}
+const winLonLat = (w, a, b) =>
+  s2.toLonLat(s2.faceUVtoXYZ(w.face, s2.stToUV(w.s0 + a * (w.s1 - w.s0)), s2.stToUV(w.t0 + b * (w.t1 - w.t0))));
+
+// the basemap under the window: the global image warped at once, then a
+// finer read where the source has one
+let closeBm = { key: "", canvas: null };
+function closeBasemap(w) {
+  const key = `${basemap.id}:${w.key}`;
+  if (!basemap.world) return null;
+  if (closeBm.key === key) return closeBm.canvas;
+  closeBm = { key, canvas: warpCanvas(basemap.world, 512, 512, (a, b) => winLonLat(w, a, b)) };
+  const ll = [];
+  for (let k = 0; k <= 8; k++) for (const [a, b] of [[k / 8, 0], [k / 8, 1], [0, k / 8], [1, k / 8]]) ll.push(winLonLat(w, a, b));
+  const lon = ll.map((p) => p[0]), lat = ll.map((p) => p[1]);
+  const box = { west: Math.min(...lon), east: Math.max(...lon), south: Math.min(...lat), north: Math.max(...lat) };
+  // across the antimeridian or a pole the global image has to do
+  if (box.east - box.west < 90 && Math.abs(box.north) < 89 && Math.abs(box.south) < 89) {
+    readWindow(basemap.id, box, Math.max(box.east - box.west, box.north - box.south) / 512).then((win) => {
+      if (closeBm.key !== key || win.global) return;
+      const c = document.createElement("canvas");
+      c.width = c.height = 512;
+      const ctx = c.getContext("2d"), img = ctx.createImageData(512, 512);
+      for (let j = 0; j < 512; j++)
+        for (let i = 0; i < 512; i++) {
+          const [lo, la] = winLonLat(w, (i + 0.5) / 512, 1 - (j + 0.5) / 512);
+          sampleWindow(win, lo, la, img.data, (j * 512 + i) * 4);
+        }
+      ctx.putImageData(img, 0, 0);
+      closeBm.canvas = c;
+      sync();
+    }, () => {});
+  }
+  return closeBm.canvas;
+}
+
+let coastFine = null;   // 50 m coastline, loaded the first time close up is on
+
+// a segment clipped to the box [lo, hi] in both x and y (Liang-Barsky), or null
+function clipSeg(x0, y0, x1, y1, lo, hi) {
+  let a = 0, b = 1;
+  const dx = x1 - x0, dy = y1 - y0;
+  for (const [p, q] of [[-dx, x0 - lo], [dx, hi - x0], [-dy, y0 - lo], [dy, hi - y0]]) {
+    if (p === 0) { if (q < 0) return null; continue; }
+    const r = q / p;
+    if (p < 0) { if (r > b) return null; if (r > a) a = r; } else { if (r < a) return null; if (r < b) b = r; }
+  }
+  return [x0 + a * dx, y0 + a * dy, x0 + b * dx, y0 + b * dy];
+}
+
+function drawClose(w, picked) {
+  const ctx = closeCanvas.getContext("2d"), W = w.s1 - w.s0, H = w.t1 - w.t0;
+  const X = (s) => ((s - w.s0) / W) * TEXC, Y = (t) => (1 - (t - w.t0) / H) * TEXC;
+  ctx.fillStyle = COLORS.face[w.face];
+  const bm = closeBasemap(w);
+  if (bm) { ctx.drawImage(bm, 0, 0, TEXC, TEXC); ctx.globalAlpha = 0.3; }
+  ctx.fillRect(0, 0, TEXC, TEXC);
+  ctx.globalAlpha = 1;
+
+  const lines = state.coast && (coastFine || null);
+  if (lines) {
+    const ax = s2.faceAxis(w.face);
+    ctx.strokeStyle = COLORS.coast; ctx.lineWidth = 3; ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    for (const l of lines) {
+      let prev = null;
+      for (let i = 0; i < l.length; i += 2) {
+        const p = s2.toXYZ(l[i], l[i + 1]);
+        if (p[0] * ax[0] + p[1] * ax[1] + p[2] * ax[2] < 0.3) { prev = null; continue; }
+        const [u, v] = s2.faceUV(w.face, p);
+        const cur = [(s2.uvToST(u) - w.s0) / W, (s2.uvToST(v) - w.t0) / H];
+        if (prev) {
+          const c = clipSeg(prev[0], prev[1], cur[0], cur[1], -0.01, 1.01);
+          if (c) { ctx.moveTo(c[0] * TEXC, (1 - c[1]) * TEXC); ctx.lineTo(c[2] * TEXC, (1 - c[3]) * TEXC); }
+        }
+        prev = cur;
+      }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // the grid at the picked level and the two below it, faint to strong
+  if (state.grid) {
+    for (let k = 2; k >= 0; k--) {
+      if (w.level + k > s2.MAX_LEVEL) continue;
+      const step = w.d / 2 ** k;
+      ctx.strokeStyle = COLORS.grid; ctx.lineWidth = [3, 1.6, 0.8][k]; ctx.globalAlpha = [1, 0.7, 0.45][k];
+      ctx.beginPath();
+      for (let s = w.s0; s <= w.s1 + step / 2; s += step) { ctx.moveTo(X(s), 0); ctx.lineTo(X(s), TEXC); }
+      for (let t = w.t0; t <= w.t1 + step / 2; t += step) { ctx.moveTo(0, Y(t)); ctx.lineTo(TEXC, Y(t)); }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // the curve three levels down: the window's cells in id order, broken
+  // where the curve leaves the window and comes back
+  if (state.curve) {
+    const L = Math.min(s2.MAX_LEVEL, w.level + 3), dc = w.d / 2 ** (L - w.level);
+    const ni = Math.round(W / dc), nj = Math.round(H / dc), cells = [];
+    for (let j = 0; j < nj; j++)
+      for (let i = 0; i < ni; i++) {
+        const s = w.s0 + (i + 0.5) * dc, t = w.t0 + (j + 0.5) * dc;
+        cells.push({ id: s2.cellFromFaceST(w.face, s, t, L), x: X(s), y: Y(t) });
+      }
+    cells.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    const stepId = 2n << BigInt(2 * (s2.MAX_LEVEL - L));
+    ctx.lineWidth = 4; ctx.lineJoin = "round"; ctx.lineCap = "round";
+    for (let k = 1; k < cells.length; k++) {
+      if (cells[k].id - cells[k - 1].id !== stepId) continue;
+      ctx.strokeStyle = hue(k / cells.length);
+      ctx.beginPath(); ctx.moveTo(cells[k - 1].x, cells[k - 1].y); ctx.lineTo(cells[k].x, cells[k].y); ctx.stroke();
+    }
+  }
+
+  // each cell of the picked level with its token
+  const px = (w.d / W) * TEXC;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (let t = w.t0 + w.d / 2; t < w.t1; t += w.d)
+    for (let s = w.s0 + w.d / 2; s < w.s1; s += w.d) {
+      const tok = s2.toToken(s2.cellFromFaceST(w.face, s, t, w.level));
+      ctx.font = `bold ${Math.min(px * 0.11, (px * 1.5) / tok.length)}px system-ui, sans-serif`;
+      ctx.fillStyle = "rgba(0,0,0,0.55)"; ctx.fillText(tok, X(s) + 2, Y(t) + 2);
+      ctx.fillStyle = tok === state.cell ? COLORS.pick : "rgba(255,255,255,0.85)"; ctx.fillText(tok, X(s), Y(t));
+    }
+  ctx.strokeStyle = COLORS.pick; ctx.lineWidth = 8;
+  ctx.strokeRect(X(picked.s0), Y(picked.t0 + picked.d), px, (picked.d / H) * TEXC);
+  closeTex.needsUpdate = true;
+}
+
+// The window placed as the whole scene would place it at unfold t, in
+// doubles, then shifted to its centre, turned so it faces +z with s to the
+// right, and scaled to about two units across.
+function rebuildClose(w) {
+  const place = placer(w.face, state.t), o = [0, 0, 0];
+  const at = (a, b) => { place(w.s0 + a * (w.s1 - w.s0), w.t0 + b * (w.t1 - w.t0), o, 0); return [o[0], o[1], o[2]]; };
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const unit = (a) => { const r = Math.hypot(...a); return [a[0] / r, a[1] / r, a[2] / r]; };
+  const c = at(0.5, 0.5), es = sub(at(1, 0.5), at(0, 0.5)), et = sub(at(0.5, 1), at(0.5, 0));
+  const e1 = unit(es), n = unit(cross(es, et)), e2 = cross(n, e1);
+  const k = 2 / Math.max(Math.hypot(...es), Math.hypot(...et));
+  const pos = closeMesh.geometry.attributes.position;
+  for (let j = 0, m = 0; j <= N; j++)
+    for (let i = 0; i <= N; i++, m++) {
+      const d = sub(at(i / N, j / N), c);
+      pos.array[3 * m] = k * dot(d, e1); pos.array[3 * m + 1] = k * dot(d, e2); pos.array[3 * m + 2] = k * dot(d, n);
+    }
+  pos.needsUpdate = true;
+  closeMesh.geometry.computeBoundingSphere();
+}
+
 // ---------------------------------------------------------------- panel
 
 const $ = (id) => document.getElementById(id);
@@ -304,6 +496,7 @@ const ui = {
   token: $("token"), cellLevel: $("cell-level"), info: $("cell-info"),
   curve: $("curve"), grid: $("grid"), coast: $("coast"), uvgrid: $("uvgrid"),
   geojson: $("copy-geojson"), up: $("cell-up"), down: $("cell-down"),
+  close: $("close-up"), closeHint: $("close-hint"),
   bm: $("basemap"), tif: $("download-tif")
 };
 
@@ -370,13 +563,20 @@ function updatePanel(picked) {
   ui.coast.checked = !!state.coast; ui.uvgrid.checked = !!state.uvgrid;
   if (document.activeElement !== ui.token) ui.token.value = state.cell;
   ui.token.classList.remove("bad");
-  ui.geojson.disabled = ui.up.disabled = ui.down.disabled = !picked;
+  ui.geojson.disabled = ui.up.disabled = ui.down.disabled = ui.close.disabled = !picked;
+  ui.close.textContent = state.close ? "Whole globe" : "Close up";
+  ui.lvl.disabled = ui.uvgrid.disabled = !!state.close;
+  ui.closeHint.hidden = !state.close;
   if (!tifOut.busy) ui.tif.disabled = !picked || !basemap.world;
   if (picked) {
     ui.up.disabled = picked.level === 0; ui.down.disabled = picked.level === s2.MAX_LEVEL;
     const [lon, lat] = s2.toLonLat(s2.faceUVtoXYZ(picked.face, s2.stToUV(picked.s0 + picked.d / 2), s2.stToUV(picked.t0 + picked.d / 2)));
     ui.cellLevel.textContent = `level ${picked.level}, face ${picked.face}`;
     ui.info.textContent = `Centre ${lon.toFixed(4)}${DEG}, ${lat.toFixed(4)}${DEG}; area ${fmtArea(cellArea(picked.corners))}; id ${picked.id}.`;
+    const lv = picked.level, deeper = [lv + 1, lv + 2].filter((x) => x <= s2.MAX_LEVEL);
+    ui.closeHint.textContent = `Level ${lv} cells round the picked one on face ${picked.face}` +
+      (deeper.length ? `, with the grid at level${deeper.length > 1 ? "s" : ""} ${deeper.join(" and ")} and` : ", with") +
+      ` the curve at level ${Math.min(s2.MAX_LEVEL, lv + 3)}. Click a cell to move; Parent and Child change the level.`;
   } else {
     ui.cellLevel.textContent = "";
     ui.info.textContent = "Click a cell for its token, or paste one.";
@@ -392,9 +592,16 @@ function sync(faces = true) {
   requestAnimationFrame(() => {
     rafPending = false;
     const picked = pickedCell();
-    if (drawFaces) for (let f = 0; f < 6; f++) drawFace(f, picked);
+    if (!picked) state.close = 0;
+    const win = state.close ? closeWindow(picked) : null;
+    if (drawFaces) {
+      if (win) drawClose(win, picked);
+      else for (let f = 0; f < 6; f++) drawFace(f, picked);
+    }
     drawFaces = false;
-    rebuildScene();
+    group.visible = !win; closeMesh.visible = !!win;
+    if (win) rebuildClose(win); else rebuildScene();
+    viewLimits();
     updatePanel(picked);
   });
 }
@@ -405,7 +612,7 @@ for (const k of ["curve", "grid", "coast", "uvgrid"])
   ui[k].addEventListener("change", () => { state[k] = ui[k].checked ? 1 : 0; sync(); });
 ui.token.addEventListener("change", () => {
   const raw = ui.token.value.trim().toLowerCase();
-  if (!raw) { state.cell = ""; return sync(); }
+  if (!raw) { state.cell = ""; if (state.close) return setClose(false); return sync(); }
   const id = s2.fromToken(raw);
   if (!id) { ui.token.classList.add("bad"); return; }
   state.cell = s2.toToken(id);
@@ -427,7 +634,16 @@ ui.geojson.addEventListener("click", (e) => {
   copy(JSON.stringify({ type: "Feature", properties: { token: s2.toToken(c.id), level: c.level, face: c.face },
     geometry: { type: "Polygon", coordinates: [ring] } }), e.target);
 });
-$("reset-view").addEventListener("click", () => { state.cam = null; setCamera(DEFAULT_CAM); writeHash(); });
+$("reset-view").addEventListener("click", () => { state.cam = null; setCamera(defaultCam()); writeHash(); });
+function setClose(on) {
+  state.close = on && pickedCell() ? 1 : 0;
+  state.cam = null;
+  viewLimits();
+  setCamera(defaultCam());
+  if (state.close && !coastFine) loadCoastline("50m").then((l) => { coastFine = l; sync(); }, () => {});
+  sync();
+}
+ui.close.addEventListener("click", () => setClose(!state.close));
 
 // click (not drag) on a face picks the cell under the pointer at the current level
 const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
@@ -438,9 +654,18 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   const r = renderer.domElement.getBoundingClientRect();
   ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ptr, camera);
-  const hit = ray.intersectObjects(meshes)[0];
-  if (!hit) return;
-  const id = s2.cellFromFaceST(hit.object.userData.face, hit.uv.x, hit.uv.y, state.lvl);
+  let id;
+  if (state.close) {
+    // a neighbour at the same level, which becomes the middle of the window
+    const hit = ray.intersectObject(closeMesh)[0], c = pickedCell();
+    if (!hit || !c) return;
+    const w = closeWindow(c);
+    id = s2.cellFromFaceST(w.face, w.s0 + hit.uv.x * (w.s1 - w.s0), w.t0 + hit.uv.y * (w.t1 - w.t0), w.level);
+  } else {
+    const hit = ray.intersectObjects(meshes)[0];
+    if (!hit) return;
+    id = s2.cellFromFaceST(hit.object.userData.face, hit.uv.x, hit.uv.y, state.lvl);
+  }
   state.cell = s2.toToken(id);
   sync();
 });
@@ -489,7 +714,12 @@ function tick(now) {
 
 ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; writeHash(); basemap.set(state.bm); });
 
-window.addEventListener("hashchange", () => { readHash(); if (state.cam) setCamera(state.cam); basemap.set(state.bm); sync(); });
+window.addEventListener("hashchange", () => {
+  readHash();
+  setCamera(state.cam || defaultCam());
+  if (state.close && !coastFine) loadCoastline("50m").then((l) => { coastFine = l; sync(); }, () => {});
+  basemap.set(state.bm); sync();
+});
 
 if (embed) {
   document.body.classList.add("embed");
@@ -497,7 +727,8 @@ if (embed) {
 }
 
 readHash();
-if (state.cam) setCamera(state.cam);
+setCamera(state.cam || defaultCam());
+if (state.close) loadCoastline("50m").then((l) => { coastFine = l; sync(); }, () => {});
 resize();
 sync();
 basemap.set(state.bm);
