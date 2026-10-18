@@ -1,9 +1,11 @@
 // The basemap picker and the cell GeoTIFF button, as the cells pages use
 // them: a select of basemaps (loaded once, shared with every page through
-// basemap.js) and a button that writes the picked cell, tile or bin.
+// basemap-load.js) and a button that writes the picked cell, tile or bin.
 
-import { sources, loadWorld } from "./basemap.js";
-import { renderCell, saveBlob } from "./cellexport.js";
+import { sources } from "./basemap.js";
+import { loadWorld, readWindow } from "./basemap-load.js";
+import { renderCell } from "./cellexport.js";
+import { saveBlob } from "./download.js";
 
 // select, status, credit: elements. onWorld(world or null) after each change.
 export function basemapControl({ select, status, credit, onWorld }) {
@@ -44,7 +46,7 @@ export function exportControl({ button, size, status, bm, job }) {
     button.textContent = "Rendering...";
     button.disabled = true;
     try {
-      const r = await renderCell({ ...j, bm: bm(), size: +size.value, status: (msg) => (status.textContent = msg) });
+      const r = await renderCell({ ...j, read: (box, res, st) => readWindow(bm(), box, res, st), size: +size.value, status: (msg) => (status.textContent = msg) });
       saveBlob(r.blob, `${j.name}-${bm()}-${r.width}x${r.height}.tif`);
       status.textContent = `Written, ${r.width} x ${r.height} pixels` + (r.note ? `; ${r.note}.` : ".");
     } catch (e) {

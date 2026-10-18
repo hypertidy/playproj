@@ -8,8 +8,10 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { loadCoastline, graticule } from "./geo.js";
+import { loadCoastline } from "./data.js";
+import { graticule } from "./geo.js";
 import * as T from "./tissot.js";
+import { drawIndicatrix } from "./tissot-draw.js";
 
 const D2R = Math.PI / 180;
 const DEG = "\u00b0";
@@ -471,13 +473,13 @@ function drawMap() {
       ctx.setLineDash([]);
     }
     if (state.ell) {
-      T.drawIndicatrix(ctx, f, toPx, r, {
+      drawIndicatrix(ctx, f, toPx, r, {
         fill: pick ? "rgba(255,211,77,0.35)" : COLORS.fill,
         stroke: pick ? COLORS.pick : COLORS.edge, width: pick ? 2 : 1,
         axes: state.axes ? [COLORS.par, COLORS.mer] : null
       });
     } else if (state.axes) {
-      T.drawIndicatrix(ctx, f, toPx, r, { axes: [COLORS.par, COLORS.mer] });
+      drawIndicatrix(ctx, f, toPx, r, { axes: [COLORS.par, COLORS.mer] });
     }
     if (state.circ) stroke([T.smallCircle(f.lon, f.lat, state.size, 64)], pick ? COLORS.pick : COLORS.circ, pick ? 2 : 1.3);
   };

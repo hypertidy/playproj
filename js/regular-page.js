@@ -10,7 +10,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as R from "./regular.js";
-import { loadCoastline, graticule } from "./geo.js";
+import { loadCoastline } from "./data.js";
+import { graticule } from "./geo.js";
 
 R.init(window.proj4);
 

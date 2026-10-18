@@ -1,9 +1,12 @@
-// Basemaps. Each source is loaded once as a global image in longitude and
+// Basemaps. Each source is read once as a global image in longitude and
 // latitude (an RGBA "world" grid from -180 to 180, 90 to -90), which can be
 // wrapped on the globe as a texture and reprojected onto the plane pixel by
 // pixel with a family's inverse.
-
-const GEOTIFF_JS = "https://cdn.jsdelivr.net/npm/geotiff@3.0.5/dist-browser/geotiff.js";
+//
+// This module holds the parts that need no browser: choosing and reading
+// GEBCO levels from opened geotiff.js images, colouring elevation, planning
+// and resampling Web Mercator tiles, and sampling and reprojecting the
+// result. basemap-load.js fetches the sources and makes the canvases.
 
 export const sources = {
   none: { label: "None" },
@@ -21,51 +24,11 @@ export const sources = {
   }
 };
 
-const cache = new Map();
-
-export function loadWorld(id, status = () => {}) {
-  if (!cache.has(id)) {
-    const p = (id === "gebco" ? loadGebco(sources.gebco, status) : loadEsri(sources.esri, status));
-    p.catch(() => cache.delete(id));
-    cache.set(id, p);
-  }
-  return cache.get(id);
-}
-
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) return resolve();
-    const s = document.createElement("script");
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error(`could not load ${src}`));
-    document.head.appendChild(s);
-  });
-}
-
 // ------------------------------------------------------------------ GEBCO
 
-// The file's full grid and overviews, opened once.
-let gebcoImages = null;
-function gebcoLevels(src, status) {
-  if (!gebcoImages) {
-    gebcoImages = (async () => {
-      status("Loading GeoTIFF reader...");
-      if (typeof GeoTIFF === "undefined") await loadScript(GEOTIFF_JS);
-      status("Reading GEBCO 2026 overviews...");
-      const tiff = await GeoTIFF.fromUrl(src.url);
-      const count = await tiff.getImageCount(), out = [];
-      for (let i = 0; i < count; i++) out.push(await tiff.getImage(i));
-      return out;
-    })();
-    gebcoImages.catch(() => { gebcoImages = null; });
-  }
-  return gebcoImages;
-}
-
 // Read the smallest overview at least minWidth wide; never the full grid.
-async function loadGebco(src, status) {
-  const levels = await gebcoLevels(src, status);
+// levels: the file's images, as geotiff.js opens them.
+export async function readGebcoOverview(levels, src = sources.gebco, status = () => {}) {
   let pick = null;
   for (const img of levels) {
     const w = img.getWidth();
@@ -119,33 +82,15 @@ export function colourElevation(elev, width, height, { dx = 360 / width, dy = dx
       data[k * 4] = c[1] * f; data[k * 4 + 1] = c[2] * f; data[k * 4 + 2] = c[3] * f; data[k * 4 + 3] = 255;
     }
   }
-  const world = toWorld(data, width, height);
-  world.elev = elev;
-  return world;
+  return { width, height, data, elev };
 }
 
 // ------------------------------------------------------------------ Esri
 
-// Mosaic one zoom level of Web Mercator tiles, then resample to lon/lat.
-// Web Mercator stops at 85.05 degrees, so the polar caps are left dark.
-async function loadEsri(src, status) {
-  const z = src.zoom, n = 2 ** z, size = 256 * n;
-  status(`Loading ${n * n} Esri imagery tiles...`);
-  const merc = document.createElement("canvas");
-  merc.width = merc.height = size;
-  const mctx = merc.getContext("2d");
-  const tile = (x, y) => new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => { mctx.drawImage(img, x * 256, y * 256); resolve(); };
-    img.onerror = () => reject(new Error("Esri imagery tiles did not load"));
-    img.src = src.url.replace("{z}", z).replace("{y}", y).replace("{x}", x);
-  });
-  const jobs = [];
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) jobs.push(tile(x, y));
-  await Promise.all(jobs);
-  const m = mctx.getImageData(0, 0, size, size).data;
-
+// One zoom level of Web Mercator tiles, mosaicked as RGBA rows (m, size
+// pixels on a side), resampled to lon/lat. Web Mercator stops at 85.05
+// degrees, so the polar caps are left dark.
+export function esriGlobal(m, size) {
   const width = size, height = size / 2;
   const data = new Uint8ClampedArray(width * height * 4);
   for (let j = 0; j < height; j++) {
@@ -160,14 +105,7 @@ async function loadEsri(src, status) {
       data[k] = m[s]; data[k + 1] = m[s + 1]; data[k + 2] = m[s + 2]; data[k + 3] = 255;
     }
   }
-  return toWorld(data, width, height);
-}
-
-function toWorld(data, width, height) {
-  const canvas = document.createElement("canvas");
-  canvas.width = width; canvas.height = height;
-  canvas.getContext("2d").putImageData(new ImageData(data, width, height), 0, 0);
-  return { width, height, data, canvas };
+  return { width, height, data };
 }
 
 // Elevation in metres at a lon/lat, bilinear, or 0 where the world has none
@@ -236,25 +174,11 @@ const MERC_LIM = 85.0511287798;
 const D2R = Math.PI / 180;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 
-// The basemap over a lon/lat box { west, east, south, north } at about
-// res degrees per pixel (or finer), read from the source at the level that
-// suits: GEBCO's own overviews, or Esri tiles at a deeper zoom. Where the
-// global image already has the detail, or the finer read fails, the global
-// image is used (and the window says why in `note`).
-export async function readWindow(id, box, res, status = () => {}) {
-  const world = await loadWorld(id, status);
-  const global = worldWindow(world);
-  if (res >= global.dx * 0.999) return global;
-  try {
-    const w = id === "gebco" ? await gebcoWindow(box, res, status) : await esriWindow(box, res, status);
-    return w || global;
-  } catch (e) {
-    return { ...global, note: `the finer read failed (${e.message}), so this uses the global image` };
-  }
-}
-
-async function gebcoWindow(box, res, status) {
-  const levels = (await gebcoLevels(sources.gebco, status))
+// GEBCO over a lon/lat box { west, east, south, north } at about res
+// degrees per pixel (or finer), from the overview level that suits.
+// levels: the file's images, as geotiff.js opens them.
+export async function readGebcoWindow(levels, box, res, status = () => {}) {
+  levels = levels
     .map((img) => ({ img, r: 360 / img.getWidth() }))
     .sort((a, b) => a.r - b.r);
   // the coarsest level not coarser than res, then coarser while too big
@@ -282,10 +206,13 @@ async function gebcoWindow(box, res, status) {
   return { ...out, west: -180 + x0 * r, north: 90 - y0 * r, dx: r, dy: r, global: full && y0 === 0 && y1 === H };
 }
 
-// Esri tiles at the zoom that suits, mosaicked and resampled to lon/lat.
-async function esriWindow(box, res, status) {
-  const src = sources.esri;
-  const tyOf = (lat) => (1 - Math.log(Math.tan(Math.PI / 4 + clamp(lat, -MERC_LIM, MERC_LIM) * D2R / 2)) / Math.PI) / 2;
+const tyOf = (lat) => (1 - Math.log(Math.tan(Math.PI / 4 + clamp(lat, -MERC_LIM, MERC_LIM) * D2R / 2)) / Math.PI) / 2;
+
+// The Esri tiles a lon/lat box needs at about res degrees per pixel: zoom
+// z (n tiles across) and the tile columns tx0..tx1 and rows ty0..ty1 (tx
+// can run past n across the antimeridian), or null where the global
+// image's zoom is as deep as the read can go.
+export function esriPlan(box, res, src = sources.esri) {
   let z = clamp(Math.ceil(Math.log2(360 / (256 * res))), src.zoom, ESRI_MAX_ZOOM), n, tx0, tx1, ty0, ty1;
   for (;; z--) {
     n = 2 ** z;
@@ -295,23 +222,14 @@ async function esriWindow(box, res, status) {
     if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) <= ESRI_MAX_TILES || z <= src.zoom) break;
   }
   if (z <= src.zoom) return null;
+  return { z, n, tx0, tx1, ty0, ty1 };
+}
+
+// The window over box from the plan's tiles, mosaicked as RGBA rows (m,
+// 256 pixels a tile), resampled to lon/lat.
+export function esriWindow(m, plan, box) {
+  const { n, tx0, tx1, ty0, ty1 } = plan;
   const cols = tx1 - tx0 + 1, rows = ty1 - ty0 + 1;
-  status(`Loading ${cols * rows} Esri imagery tiles at zoom ${z}...`);
-  const merc = document.createElement("canvas");
-  merc.width = cols * 256; merc.height = rows * 256;
-  const mctx = merc.getContext("2d");
-  const jobs = [];
-  for (let y = ty0; y <= ty1; y++)
-    for (let x = tx0; x <= tx1; x++)
-      jobs.push(new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => { mctx.drawImage(img, (x - tx0) * 256, (y - ty0) * 256); resolve(); };
-        img.onerror = () => reject(new Error("Esri imagery tiles did not load"));
-        img.src = src.url.replace("{z}", z).replace("{y}", y).replace("{x}", ((x % n) + n) % n);
-      }));
-  await Promise.all(jobs);
-  const m = mctx.getImageData(0, 0, merc.width, merc.height).data;
   // lon/lat cells as wide as a tile pixel, as tall as one at the middle latitude
   const dx = 360 / (256 * n), mid = (clamp(box.north, -MERC_LIM, MERC_LIM) + clamp(box.south, -MERC_LIM, MERC_LIM)) / 2;
   const dy = dx * Math.max(0.05, Math.cos(mid * D2R));
@@ -321,13 +239,13 @@ async function esriWindow(box, res, status) {
   for (let j = 0; j < height; j++) {
     const lat = top - (j + 0.5) * dy;
     const row = Math.floor(tyOf(lat) * n * 256) - ty0 * 256;
-    if (row < 0 || row >= merc.height) continue;
+    if (row < 0 || row >= rows * 256) continue;
     for (let i = 0; i < width; i++) {
       const s = (row * width + i) * 4, k = (j * width + i) * 4;
       data[k] = m[s]; data[k + 1] = m[s + 1]; data[k + 2] = m[s + 2]; data[k + 3] = 255;
     }
   }
-  return { ...toWorld(data, width, height), west: -180 + (tx0 / n) * 360, north: top, dx, dy, global: false };
+  return { width, height, data, west: -180 + (tx0 / n) * 360, north: top, dx, dy, global: false };
 }
 
 // The basemap colour at lon/lat, bilinear, into out[k..k+3]; false (and
@@ -361,10 +279,10 @@ export function sampleWindow(win, lon, lat, out, k) {
   return true;
 }
 
-// A canvas W x H of the global basemap warped into a page's own texture
+// RGBA rows W x H of the global basemap warped into a page's own texture
 // frame: inv(u, v) gives the lon/lat at texture position u (0 to 1, left to
 // right) and v (0 to 1, bottom to top), or null where there is nothing.
-export function warpCanvas(world, W, H, inv) {
+export function warpPixels(world, W, H, inv) {
   const win = worldWindow(world), out = new Uint8ClampedArray(W * H * 4);
   for (let j = 0; j < H; j++) {
     const v = 1 - (j + 0.5) / H;
@@ -373,8 +291,5 @@ export function warpCanvas(world, W, H, inv) {
       if (ll) sampleWindow(win, ll[0], ll[1], out, (j * W + i) * 4);
     }
   }
-  const c = document.createElement("canvas");
-  c.width = W; c.height = H;
-  c.getContext("2d").putImageData(new ImageData(out, W, H), 0, 0);
-  return c;
+  return out;
 }

@@ -13,10 +13,13 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as fam from "./families/globals.js";
 import { samplePoints, evenSpacing, SAMPLE_MODES } from "./landmesh.js";
-import { loadCoastline, graticule } from "./geo.js";
-import { sources, loadWorld, readWindow } from "./basemap.js";
+import { loadCoastline } from "./data.js";
+import { graticule } from "./geo.js";
+import { sources } from "./basemap.js";
+import { loadWorld, readWindow } from "./basemap-load.js";
 import { writeGeoTIFF, esriGeoKeys } from "./geotiff-write.js";
-import { crsGeoKeys, saveBlob } from "./cellexport.js";
+import { crsGeoKeys } from "./cellexport.js";
+import { saveBlob } from "./download.js";
 import { displace, hasElevation } from "./relief.js";
 
 const D2R = Math.PI / 180;

@@ -5,7 +5,7 @@
 // matters. Each step is a caption, a drawing on one canvas, and at most one
 // slider.
 
-import { loadCoastline } from "./geo.js";
+import { loadCoastline } from "./data.js";
 import { coastRings, landPolygons } from "./landmesh.js";
 import { naivePath, resampleArc } from "./mishaps.js";
 

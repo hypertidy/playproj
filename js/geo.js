@@ -1,23 +1,10 @@
-// Shared geographic helpers: coastline data, graticules, seeded randomness
-// and the rotation that puts the tangent point at the top of the scene.
+// Shared geographic helpers: graticules, seeded randomness and the
+// rotation that puts the tangent point at the top of the scene. Coastline
+// polylines are a flat [lon, lat, lon, lat, ...] array each; data.js loads
+// the ones playproj ships.
 
 const D2R = Math.PI / 180;
-const cache = new Map();
-
-// Coastlines are stored as an array of polylines, each a flat
-// [lon, lat, lon, lat, ...] array (Natural Earth, public domain).
-export function loadCoastline(detail = "110m") {
-  if (!cache.has(detail)) {
-    const url = new URL(`../data/coastline-${detail}.json`, import.meta.url);
-    cache.set(detail, fetch(url).then((r) => {
-      if (!r.ok) throw new Error(`could not load ${url}`);
-      return r.json();
-    }));
-  }
-  return cache.get(detail);
-}
-
-// Graticule lines in the same flat polyline format.
+// Graticule lines in the flat polyline format.
 export function graticule(step = 15, res = 2) {
   const lines = [];
   for (let lon = -180; lon < 180; lon += step) {

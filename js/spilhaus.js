@@ -11,8 +11,10 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as fam from "./families/spilhaus.js";
 import { samplePoints, evenSpacing, SAMPLE_MODES } from "./landmesh.js";
-import { loadCoastline, graticule } from "./geo.js";
-import { sources, loadWorld, reprojectBox } from "./basemap.js";
+import { loadCoastline } from "./data.js";
+import { graticule } from "./geo.js";
+import { sources, reprojectBox } from "./basemap.js";
+import { loadWorld } from "./basemap-load.js";
 import { writeGeoTIFF } from "./geotiff-write.js";
 import { displace, hasElevation } from "./relief.js";
 
