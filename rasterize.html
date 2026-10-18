@@ -142,8 +142,9 @@
           on every cell; runs along rows (row, first, last) or a list of cell numbers spend bytes only on
           the polygon; exactextract keeps a float for every cell of the polygon's bounding box. Exact
           coverage is mostly ones, so runs of whole cells plus a list of edge fractions holds it in about
-          what the centre-in runs take. With a raster file, the tiles are the file's own at the level the
-          polygon is read from, and their byte ranges come from the TIFF's tile offsets, as on
+          what the centre-in runs take; that is the form
+          <a href="https://github.com/hypertidy/controlledburn">controlledburn</a> returns. With a raster file, the
+          tiles are the file's own at the level the polygon is read from, and their byte ranges come from the TIFF's tile offsets, as on
           <a href="./structure.html">Tiles and overviews</a>.</p>
         <p>The page's results are checked against GDAL's rasterize (cell for cell, centre in and
           ALL_TOUCHED) and exactextract's coverage fractions (to 1e-7) on stars with holes, countries and
@@ -151,6 +152,9 @@
         <ul class="credits">
           <li><a href="https://isciences.github.io/exactextract/">exactextract</a> by Dan Baston (ISciences), exact coverage fractions and zonal statistics.</li>
           <li><a href="https://github.com/ecohealthalliance/fasterize">fasterize</a> by Noam Ross (EcoHealth Alliance), a scanline polygon fill for R.</li>
+          <li><a href="https://github.com/hypertidy/controlledburn">controlledburn</a> (hypertidy; R and Python, and
+            <a href="https://github.com/hypertidy/controlledburn-rs">in Rust</a>), sparse rasterization: runs of whole
+            cells plus a list of edge fractions, from fasterize's scanline and exactextract's coverage.</li>
           <li><a href="https://gdal.org/en/stable/programs/gdal_rasterize.html">GDAL</a>'s rasterize, by Frank Warmerdam, Even Rouault and the GDAL contributors.</li>
           <li>Shapes from <a href="https://www.naturalearthdata.com/">Natural Earth</a>; grids projected with <a href="https://github.com/proj4js/proj4js">proj4js</a>; the globe drawn with <a href="https://github.com/d3/d3-geo">d3-geo</a>.</li>
         </ul>
