@@ -370,7 +370,11 @@ its fraction. "Shift the grid" moves the grid by part of a cell, and "Drift"
 keeps it moving: the centre-in count jumps, the coverage sum does not. The
 left panel can also show GDAL's ALL_TOUCHED (every cell with any coverage) or
 a warp: the polygon rasterized on a global longitude-latitude grid and then
-resampled, nearest neighbour, onto this one.
+resampled, nearest neighbour, onto this one. The storage panel's "runs plus
+edge fractions" is the sparse form
+[controlledburn](https://github.com/hypertidy/controlledburn) returns (R and
+Python; [controlledburn-rs](https://github.com/hypertidy/controlledburn-rs) in
+Rust).
 
 The grid is built round the shape in a CRS picked here (longitude and
 latitude, a local Lambert azimuthal equal-area, Web Mercator, polar
