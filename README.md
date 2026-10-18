@@ -95,7 +95,7 @@ GDAL reads. Hash keys: `t` (unfold, 0 to 1), `lat`, `lon`, `azi` (the
 centre and azimuth), `net` (0 hides the square grid), `links`, plus the
 shared ones below.
 
-## Tissot's indicatrix
+## Distortion (Tissot's indicatrix)
 
 `tissot.html` puts equal small circles on a globe and shows what a projection
 makes of them. Each becomes (in the limit) an ellipse whose semi-axes a and b
@@ -602,7 +602,7 @@ example.html, js/example.js            For example storyboard
 homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977
 sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
 bins.html, js/bins.js                  L3 bins page
-tissot.html, js/tissot-page.js         Tissot's indicatrix page
+tissot.html, js/tissot-page.js         Distortion page (Tissot's indicatrix and factor fields)
 
 js/data.js          loads the coastlines in data/
 js/basemap-load.js  fetches the basemaps in the browser and makes their canvases
@@ -694,7 +694,7 @@ node test/write-tifs.mjs /tmp/tifs && python3 test/check-geotiff.py /tmp/tifs
 
 - A family module format so new projection families are one file each.
 - Projections with no physical construction (Mollweide, Robinson and so on),
-  shown through their distortion: started with the Tissot page (the
+  shown through their distortion: started with the Distortion page (the
   globals page shows them unrolled).
 
 Contributions are welcome. Please note that this project is released with a
