@@ -143,9 +143,9 @@
           the polygon; exactextract keeps a float for every cell of the polygon's bounding box. Exact
           coverage is mostly ones, so runs of whole cells plus a list of edge fractions holds it in about
           what the centre-in runs take; that is the form
-          <a href="https://github.com/hypertidy/controlledburn">controlledburn</a> returns. With a raster file, the
-          tiles are the file's own at the level the polygon is read from, and their byte ranges come from the TIFF's tile offsets, as on
-          <a href="./structure.html">Tiles and overviews</a>.</p>
+          <a href="https://github.com/hypertidy/controlledburn">controlledburn</a> returns. With a raster file,
+          the tiles are the file's own at the level the polygon is read from, and their byte ranges come
+          from the TIFF's tile offsets, as on <a href="./structure.html">Tiles and overviews</a>.</p>
         <p>The page's results are checked against GDAL's rasterize (cell for cell, centre in and
           ALL_TOUCHED) and exactextract's coverage fractions (to 1e-7) on stars with holes, countries and
           Antarctica in several CRSs, in <code>test/check-rasterize.mjs</code>.</p>
