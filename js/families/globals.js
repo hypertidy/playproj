@@ -12,7 +12,7 @@
 // from the map's own (s = 0, one unbroken map) to the lobe's (s = 1, the
 // interrupted map), so the cuts open while the lobes straighten.
 
-import { proj4Wkt } from "../geotiff-write.js";
+import { proj4Wkt, esriGeoKeys } from "../geotiff-write.js";
 
 export const R = 6370997;
 const D2R = Math.PI / 180;
@@ -235,6 +235,22 @@ function finish(p, pieces, locate, lobed, s) {
   return map;
 }
 
+// The family's forward function: plane x, y on a unit sphere for lon/lat
+// in degrees, plus the index of the piece the point fell in. The map for
+// the last few parameter sets is kept, so this can be called per point.
+// There is no inverse.
+const maps = new Map();
+export function project(lon, lat, p = {}) {
+  const key = JSON.stringify(p);
+  let map = maps.get(key);
+  if (!map) {
+    map = makeMap(p);
+    if (maps.size > 7) maps.delete(maps.keys().next().value);
+    maps.set(key, map);
+  }
+  return map.project(lon, lat);
+}
+
 // ---------------------------------------------------------------- butterfly
 
 // Cahill's butterfly: the globe on a circumscribed octahedron, each of the
@@ -351,7 +367,12 @@ export function describe(p = {}) {
 // ESRI PE string's PROJ4 extension (as for Spilhaus), which GDAL reads.
 export function geoWkt(p) {
   const s = projString(p);
-  return s ? proj4Wkt(BASES[p.base].proj, s, R) : null;
+  return s ? proj4Wkt(BASES[p.base || defaults.base].proj, s, R) : null;
+}
+
+export function geoKeys(p = {}) {
+  const s = projString(p);
+  return s ? esriGeoKeys(proj4Wkt(BASES[p.base || defaults.base].proj, s, R), R, `playproj ${s}`) : null;
 }
 
 export { wrapDeg, wrapRad };

@@ -28,6 +28,8 @@
 import { esriGeoKeys } from "../geotiff-write.js";
 
 export const R = 6370997;
+
+export const defaults = { prop: "conf", lat1: 40, lon0: 0, tilt: 0 };
 const D2R = Math.PI / 180;
 const EPS_N = 1e-9;
 

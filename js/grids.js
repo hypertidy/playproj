@@ -1,9 +1,21 @@
 // Model grids: the curvilinear grids climate and ocean models compute on.
 //
-// Each grid is one or more patches. A patch is a regular array of cells in
-// index space (u, v in 0..1 across its width and height), with the lon/lat of
-// any index position (fromIndex) and the index position of any lon/lat
-// (toIndex, or null when the point is not on this patch). The page draws in
+// A grid is a map from index space to the sphere. It is one or more
+// patches, { kind, patches: [patch, ...] }, and a patch is a regular array
+// of cells:
+//
+//   ni, nj              cells across and up (integers)
+//   fromIndex(u, v)     [lon, lat] in degrees at index position u, v, each
+//                       0 to 1 across the patch (cell i spans i/ni to
+//                       (i+1)/ni)
+//   toIndex(lon, lat)   [u, v], outside 0..1 where the point is off the
+//                       patch, or null where there is no answer; toIndex
+//                       itself may be null (a grid read from arrays)
+//   name                optional label
+//
+// A grid or patch can carry more (poles, a seam, the cube layout, ROMS
+// vertex arrays). The model grids here, the ROMS grids (roms.js, one patch
+// each) and the s2 cells (s2.js grid) all follow this. The page draws in
 // index space, where the model's grid is straight, and moves each patch
 // between the globe and a flat array.
 //

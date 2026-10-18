@@ -5,7 +5,7 @@
 import { readFileSync } from "fs";
 
 const CORE = [
-  "families/perspective.js", "families/azimuthal.js", "families/conic.js", "families/globals.js", "families/spilhaus.js",
+  "families/index.js", "families/perspective.js", "families/azimuthal.js", "families/conic.js", "families/globals.js", "families/spilhaus.js",
   "tissot.js", "distortion.js", "grids.js", "roms.js", "regular.js", "s2.js", "l3bin.js", "mgrs.js", "rasterize.js", "structure.js",
   "geotiff-write.js", "cellexport.js", "landmesh.js", "mishaps.js", "homage-geo.js", "geo.js", "basemap.js"
 ];

@@ -90,7 +90,14 @@ const mercLat = (y) => (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * R2D;
 // A grid has ni x nj cells and (ni + 1) x (nj + 1) vertices, stored j-major.
 // fromIndex(u, v) and toIndex(lon, lat) map between fractions of the array
 // (0 to 1) and the sphere; toIndex is null when the grid has no inverse.
+// Each grid is a one-patch grid in the sense of grids.js: g.patches is [g].
+function asGrid(g) {
+  Object.defineProperty(g, "patches", { get() { return [this]; } });
+  return g;
+}
+
 function materialize(g) {
+  asGrid(g);
   const W = g.ni + 1, n = W * (g.nj + 1);
   g.lon = new Float64Array(n); g.lat = new Float64Array(n);
   for (let j = 0; j <= g.nj; j++)
@@ -143,7 +150,9 @@ export function fan({ ni = 60, lon0 = 150.4, lat0 = -33.2, bearing = 105, spread
 // A grid from arrays of vertex longitude and latitude (ni + 1 by nj + 1).
 export function fromArrays({ ni, nj, lon, lat, label = "" }) {
   const W = ni + 1, m = (nj >> 1) * W + (ni >> 1);
-  return { kind: "file", ni, nj, periodic: false, lon, lat, center: [lon[m], lat[m]], toIndex: null, describe: label };
+  const g = { kind: "file", ni, nj, periodic: false, lon, lat, center: [lon[m], lat[m]], toIndex: null, describe: label };
+  g.fromIndex = (u, v) => lonlatAt(g, u * ni, v * nj);
+  return asGrid(g);
 }
 
 // lon/lat at fractional vertex (i, j), bilinear on the unit sphere

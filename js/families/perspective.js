@@ -27,6 +27,9 @@ import { esriGeoKeys } from "../geotiff-write.js";
 
 export const R = 6370997; // the PROJ "sphere" radius used in the 2016 examples
 
+// Stereographic from the South Pole, on the tangent plane.
+export const defaults = { a: -1, lat0: -90, lon0: 0, ts: 90 };
+
 const D2R = Math.PI / 180;
 
 export const presets = [
