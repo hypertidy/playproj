@@ -25,6 +25,7 @@ export * as regular from "./regular.js";
 export * as s2 from "./s2.js";
 export * as l3bin from "./l3bin.js";
 export * as mgrs from "./mgrs.js";
+export * as aatgrid from "./aatgrid.js";
 export * as polarstere from "./polarstere.js";
 export * as seaice from "./seaice.js";
 export * as track from "./track.js";
