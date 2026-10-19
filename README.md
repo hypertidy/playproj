@@ -231,6 +231,27 @@ seam and the poles while the data stays put. Hash keys: `c` (step), `m`
 the other way), `lon`, `lat` (map centre), `flat` (`eqc` or `merc`), `t`
 (unwrap), `coast`, `grat`, `cam`.
 
+## Texture mapping
+
+`texture.html` shows how a renderer drapes an image on a mesh. A small mesh of
+numbered vertices sits beside its UV layout: the texture image with the same
+triangles drawn at their texture coordinates (u, v), which can be dragged.
+Hovering either view finds the triangle and the point's barycentric weights,
+and shows the blended u, v the GPU reads there. The same equirectangular image
+(a lettered test card, or GEBCO) then goes on a lon/lat globe, an icosphere
+and a lon/lat mesh laid out in a projection (plate carree, Mercator, south
+polar stereographic, Mollweide), to show where per-vertex lookup goes wrong:
+shared vertices at the antimeridian smear the whole image across one strip,
+one vertex at a pole shears the polar triangles, and coarse triangles bend
+the image at their edges wherever lon/lat is not linear across them (the
+readout gives the miss in km). "Per pixel" interpolates the position instead
+and inverts it in the shader, which is exact at any mesh size. "Affine" turns
+off perspective-correct interpolation. The projections are in
+`src/core/texmap.js` and checked against proj4js in `test/check-texmap.mjs`.
+Hash keys: `mesh` (`small`, `globe`, `ico`, `plane`), `n`, `bend`, `proj`,
+`seam`, `pole`, `look` (`vertex` or `pixel`), `edges`, `aff`, `bm`, `uv`,
+`cam`.
+
 ## s2 cells
 
 `cells.html` builds [S2](https://s2geometry.io/) cells the way the library
