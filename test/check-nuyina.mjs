@@ -157,5 +157,19 @@ check(M.pick("gebco", -65, true, false) === 0, "fallback alone");
   }
 }
 
+// the parquet copy: which row groups a voyage's dates fall in (adjacent
+// ones merged), and the track from its rows, by voyage code where it has one
+{
+  const day = 864e5, g = [0, 1, 2, 3].map((i) => ({ rows: 10, min: i * 10 * day, max: (i * 10 + 9) * day }));
+  check(JSON.stringify(T.rowRanges(g, 12 * day, 25 * day)) === JSON.stringify([{ rowStart: 10, rowEnd: 30 }]), `row ranges ${JSON.stringify(T.rowRanges(g, 12 * day, 25 * day))}`);
+  check(T.rowRanges(g, 50 * day, 60 * day).length === 0, "no row groups outside the dates");
+  const v = { code: "X1", from: "2025-01-02", to: "2025-01-03" }, t0 = Date.parse("2025-01-01T00:00:00Z");
+  const rows = [0, 1, 2, 3, 4].map((i) => [new Date(t0 + i * day), 147 + i, -43 - i, i === 0 || i === 4 ? "P1" : "X1", BigInt(i)]);
+  const tr = T.trackFromRows(rows, v);
+  check(tr.n === 3 && tr.lon[0] === 148 && tr.value[2] === 3, `track from rows by code: ${tr.n} points`);
+  const tr2 = T.trackFromRows(rows.map((r) => [...r.slice(0, 3), "", r[4]]), v);
+  check(tr2.n === 2 && tr2.lon[0] === 148, `track from rows by dates: ${tr2.n} points`);
+}
+
 console.log(fails ? `nuyina: ${fails} failing` : "nuyina ok");
 if (fails) process.exit(1);

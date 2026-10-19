@@ -544,7 +544,41 @@ ports of call joined by great circles (labelled as not the track), and a
 downloaded track CSV can be loaded. Hash keys: `v` (voyage code), `t`, `view`
 (`ship`, `polar`), `proj`, `up`, `span` (log10 km across), `cx`, `cy`
 (polar pan, km), `plan`, `cut`, `src`, `ice`, `cells`, `coast`, `rings`,
-`by` (an underway column to colour the track).
+`by` (an underway column to colour the track), `to` (where the crow lines go),
+`from` (`wfs`, `pq`) and `pq` (the parquet copy's address).
+
+Crow lines run from the ship to a place as both the great circle and the
+rhumb line, with their lengths and courses, and the readout compares the
+distance run with the great circle from the voyage's start (after the
+[nuyina-proximal](https://github.com/mdsumner/nuyina-proximal) tracker).
+
+The track can also come from a parquet copy of the whole underway record
+([nuyina-underway](https://github.com/mdsumner/nuyina-underway), GeoParquet
+sorted by time in row groups of 65536 minutes). The page reads its footer,
+then only the row groups a voyage's dates fall in and only the columns it
+draws, with [hyparquet](https://github.com/hyparam/hyparquet) and
+[fzstd](https://github.com/101arrowz/fzstd): about 3 MB in five range requests
+for a seven week voyage. GitHub's release downloads send no CORS header, so a
+page on another site cannot read the release copy; a downloaded copy can be
+loaded from disk, and a copy on a host that allows it can be given as `pq=`.
+
+## Rhumb lines
+
+`rhumb.html` draws the rhumb line (one compass course, a loxodrome) and the
+great circle (the shortest way, an orthodrome) between two places on four maps
+at once: a globe, Mercator (where the rhumb line is straight), gnomonic (where
+the great circle is) and either an azimuthal equidistant map on the start or a
+south polar stereographic, where the rhumb line spirals round the pole. The
+whole loxodrome can be carried on pole to pole, and "keep north of a latitude"
+is composite great circle sailing, the navigator's way round ice: from Hobart
+to Cape Town the rhumb line is 12 percent longer than the great circle, and
+keeping north of 55 degrees S costs under 1 percent. Lengths and courses are on
+WGS84 (`src/core/rhumb.js`: Vincenty for the geodesic, the meridian distance and
+isometric latitude for the rhumb line), checked against PROJ
+(`test/fixtures/rhumb-proj.json`, from `test/make-rhumb-fixture.py`, where the
+rhumb line is PROJ's Mercator inverse of a straight line measured with PROJ's
+geodesics); lines are drawn with d3-geo on the sphere. Hash keys: `alon`,
+`alat`, `blon`, `blat`, `four` (`aeqd`, `polar`), `lox`, `comp`, `lim`.
 
 ## Basemaps and GeoTIFF export
 
@@ -644,6 +678,7 @@ sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
 bins.html, js/bins.js                  L3 bins page
 tissot.html, js/tissot-page.js         Distortion page (Tissot's indicatrix and factor fields)
 nuyina.html, js/nuyina.js              Nuyina: voyage track, sea ice, two bathymetry mosaics, near-ship maps
+rhumb.html, js/rhumb.js                Rhumb lines: rhumb line and great circle on four maps, composite sailing
 
 js/data.js          loads the coastlines in data/
 js/basemap-load.js  fetches the basemaps in the browser and makes their canvases
@@ -684,7 +719,8 @@ src/core/distortion.js            factor grids, colour scales, contours and auto
 src/core/l3bin.js                 SeaWiFS / MODIS level-3 bin grid
 src/core/polarstere.js            ellipsoidal polar stereographic (EPSG:3031, 9354, 3412, 3976, 3413, 3411)
 src/core/seaice.js                NSIDC Sea Ice Index grid, values and daily file addresses
-src/core/track.js                 ship tracks from underway CSV; Nuyina voyages; place, heading, distance run
+src/core/track.js                 ship tracks from underway CSV or parquet rows; Nuyina voyages; place, heading, distance run
+src/core/rhumb.js                 rhumb lines, geodesics and great circles, the whole loxodrome, composite sailing
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
 
 data/countries-110m.json   Natural Earth 110m country parts as flat [lon, lat] rings
@@ -721,7 +757,8 @@ cell tokens and corners against `test/fixtures/s2-cells.json`, made with
 s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js.
 `test/check-roms.mjs` checks the s-coordinate against ROMS and the Zarr grid reader against zarr-python.
 `test/check-nuyina.mjs` checks polar stereographic and the ship-centred maps against PROJ, the sea ice
-grid, the overlap plan and level choice, and reading tracks from GeoServer CSV.
+grid, the overlap plan and level choice, and reading tracks from GeoServer CSV and parquet rows.
+`test/check-rhumb.mjs` checks rhumb line and geodesic lengths and courses against PROJ, and composite sailing.
 `test/check-structure.mjs` checks the tile and overview readers against
 GDAL, tifffile and zarr-python. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
 GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid.

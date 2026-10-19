@@ -45,6 +45,47 @@ export function wfsUrl(code, { props = null, max = 0 } = {}) {
   return `${WFS}?${q}`;
 }
 
+// A copy of the whole underway record as one GeoParquet file, sorted by
+// time in row groups of 65536 minutes (about 45 days), so a voyage is two
+// or three row groups of a few columns. GitHub's release downloads send no
+// CORS header, so a page elsewhere cannot read it from there; a local copy
+// or a copy on a host that allows it can be.
+export const PARQUET = "https://github.com/mdsumner/nuyina-underway/releases/latest/download/nuyina_underway.parquet";
+
+// The row ranges of a time-sorted parquet file to read for times t0 to t1
+// (ms): groups is [{ rows, min, max }] from each row group's statistics on
+// its time column, in file order. Adjacent ranges are merged.
+export function rowRanges(groups, t0, t1) {
+  const out = [];
+  let start = 0;
+  for (const g of groups) {
+    const end = start + g.rows;
+    if (g.max >= t0 && g.min <= t1) {
+      const last = out[out.length - 1];
+      if (last && last.rowEnd === start) last.rowEnd = end; else out.push({ rowStart: start, rowEnd: end });
+    }
+    start = end;
+  }
+  return out;
+}
+
+// A voyage's track from parquet rows [time, lon, lat, set_code, value]:
+// the rows with the voyage's code, or when none has it, every row between
+// its dates.
+export function trackFromRows(rows, voyage, meta = {}) {
+  const t0 = Date.parse(voyage.from + "T00:00:00Z"), t1 = Date.parse(voyage.to + "T23:59:59Z");
+  const ms = (t) => (t instanceof Date ? t.getTime() : typeof t === "bigint" ? Number(t) : +t);
+  const coded = rows.some((r) => r[3] === voyage.code);
+  const recs = [];
+  for (const [t, lon, lat, code, value] of rows) {
+    const tm = ms(t);
+    if (coded ? code !== voyage.code : tm < t0 || tm > t1) continue;
+    if (!Number.isFinite(tm) || !Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lat) > 90 || (lon === 0 && lat === 0)) continue;
+    recs.push([tm, lon, lat, value === null || value === undefined ? NaN : Number(value)]);
+  }
+  return makeTrack(recs, meta);
+}
+
 // ------------------------------------------------------------------ CSV
 
 // Rows of a CSV as arrays of strings, with quoted fields ("a, b" and "")

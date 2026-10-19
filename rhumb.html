@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Rhumb lines</title>
+<meta name="description" content="Rhumb lines and great circles between two places, on four maps at once: Mercator, where the rhumb line is straight, gnomonic, where the great circle is, a globe, and an azimuthal or polar map. With the composite sailing round a limiting latitude, the navigator's answer to ice.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/dist/d3-geo.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "earcut": "https://cdn.jsdelivr.net/npm/earcut@3.0.2/src/earcut.js",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/rhumb.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="quad">
+    <div class="half"><canvas id="m-globe" class="cells" aria-label="The two lines on a globe"></canvas><span class="half-label" id="l-globe"></span></div>
+    <div class="half"><canvas id="m-merc" class="cells" aria-label="The two lines on Mercator"></canvas><span class="half-label" id="l-merc"></span></div>
+    <div class="half"><canvas id="m-gnom" class="cells" aria-label="The two lines on a gnomonic map"></canvas><span class="half-label" id="l-gnom"></span></div>
+    <div class="half"><canvas id="m-four" class="cells" aria-label="The two lines on an azimuthal or polar map"></canvas><span class="half-label" id="l-four"></span></div>
+    <a id="open-full" class="open-full" href="./rhumb.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./regular.html">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html" aria-current="page">Rhumb lines</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <div id="presets" class="presets" role="group" aria-label="Routes"></div>
+      <label class="row" for="from"><span>From</span></label>
+      <select id="from" class="wide" aria-label="Start"></select>
+      <label class="row" for="to"><span>To</span></label>
+      <select id="to" class="wide" aria-label="End"></select>
+      <p class="hint">Drag either end on any of the maps; drag the globe to turn it.</p>
+    </section>
+
+    <section>
+      <label class="row" for="four"><span>Fourth map</span></label>
+      <select id="four" class="wide" aria-label="The fourth map">
+        <option value="aeqd">Azimuthal equidistant on the start</option>
+        <option value="polar">South polar stereographic</option>
+      </select>
+      <div class="toggles">
+        <label><input id="lox" type="checkbox"> The whole loxodrome</label>
+        <label><input id="comp" type="checkbox"> Keep north of a latitude</label>
+      </div>
+      <label class="row" for="lim"><span>Limit</span><output id="lim-out"></output></label>
+      <input id="lim" type="range" min="-75" max="-40" step="0.5" aria-label="Limiting latitude for composite sailing">
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A ship that holds one compass course sails a <b>rhumb line</b> (a loxodrome): it crosses every
+          meridian at the same angle. The shortest way between two places is a <b>great circle</b> (an
+          orthodrome; on the ellipsoid, a geodesic), and on it the course changes all the way. Each is
+          straight on some map and curved on the others, so the four maps here show the same two lines:</p>
+        <ul>
+          <li><b>Mercator</b> is the map made so that rhumb lines are straight. That is why charts use it:
+            a ruler between two places gives the course to steer.</li>
+          <li><b>Gnomonic</b> projects from the centre of the earth, so every great circle (a plane through
+            the centre) is straight. Navigators drew the great circle on a gnomonic chart and moved its
+            points over to Mercator.</li>
+          <li><b>Azimuthal equidistant</b> on the start keeps distance and direction from the start true,
+            so the great circle is the straight line from the centre; this is the map a ship-centred view
+            of what is near uses. <b>South polar stereographic</b> (as EPSG:3031 is) is conformal, like
+            Mercator, so the rhumb line still crosses each meridian at its one angle; meridians there all
+            run into the pole, so the rhumb line becomes a spiral round it (on the sphere, a logarithmic
+            spiral). <b>The whole loxodrome</b> carries the course on, pole to pole: it winds round each
+            pole without end and is still finite in length.</li>
+        </ul>
+        <p>The difference grows with distance and with latitude, which is why it is a daily matter in the
+          Southern Ocean. East or west at high latitude, the great circle bends towards the pole, and from
+          Hobart that means towards the ice. <b>Keep north of a latitude</b> is composite great circle
+          sailing, the navigator's answer: a great circle that just touches the limiting parallel, along it,
+          and a great circle on to the end. It is the shortest way that keeps north of the limit, and it is
+          usually much closer to the great circle than the rhumb line is.</p>
+        <p>Lengths and courses are on the WGS84 ellipsoid: the geodesic by Vincenty's method, the rhumb
+          line from the meridian distance and the isometric latitude (Snyder 1987), both checked against
+          PROJ in <code>test/check-rhumb.mjs</code> (the rhumb line there is PROJ's Mercator inverse of a
+          straight line, measured with PROJ's geodesics). The lines are drawn, and the composite sailing
+          worked, on the sphere of mean radius, which no map at these scales can tell apart.</p>
+        <p>Hash keys: <code>alon</code>, <code>alat</code>, <code>blon</code>, <code>blat</code> (the ends),
+          <code>four</code> (<code>aeqd</code>, <code>polar</code>), <code>lox</code>, <code>comp</code>,
+          <code>lim</code>.</p>
+        <ul class="credits">
+          <li>Snyder, J. P. (1987) <i>Map Projections: A Working Manual</i>, USGS Professional Paper 1395
+            (isometric latitude, meridian distance). Vincenty, T. (1975) Direct and inverse solutions of
+            geodesics on the ellipsoid, Survey Review 23, 88. Karney, C. F. F. (2013) Algorithms for geodesics,
+            J. Geodesy 87, 43, as <a href="https://proj.org/">PROJ</a> and
+            <a href="https://geographiclib.sourceforge.io/">GeographicLib</a> have them.</li>
+          <li>The ship-to-target crow lines of the <a href="https://github.com/mdsumner/nuyina-proximal">nuyina-proximal</a>
+            tracker, and the <a href="./nuyina.html">Nuyina</a> page, which draws both lines from the ship.</li>
+          <li>Maps drawn with <a href="https://github.com/d3/d3-geo">d3-geo</a>; coastlines from
+            <a href="https://www.naturalearthdata.com/">Natural Earth</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
