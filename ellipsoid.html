@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: The ellipsoid</title>
+<meta name="description" content="The earth's ellipsoid with its flattening exaggerated: the true WGS84 shape at 1x, then squashed until the geodetic, geocentric and parametric latitudes of a point come apart, with the radii of curvature M and N and the numbers for the true shape alongside.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/ellipsoid-page.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split">
+    <div class="half">
+      <div id="three"></div>
+      <span class="half-label">The ellipsoid; the grey wire is the sphere of radius a</span>
+    </div>
+    <div class="half">
+      <canvas id="section" class="cells" aria-label="The ellipse in the plane of the picked meridian, with the three latitudes of the point"></canvas>
+      <span class="half-label" id="l-sec"></span>
+    </div>
+    <a id="open-full" class="open-full" href="./ellipsoid.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html" aria-current="page">Ellipsoid</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./regular.html">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="ell"><span>Ellipsoid</span></label>
+      <select id="ell" class="wide" aria-label="Ellipsoid"></select>
+      <label class="row" for="x"><span>Exaggerate the flattening</span><output id="x-out"></output></label>
+      <input id="x" type="range" min="0" max="2.3" step="0.005" aria-label="Flattening exaggeration, on a log scale">
+      <div id="xs" class="buttons" role="group" aria-label="Exaggeration"></div>
+      <p class="hint" id="globe-mm"></p>
+    </section>
+
+    <section>
+      <label class="row" for="lat"><span>Geodetic latitude of the point</span><output id="lat-out"></output></label>
+      <input id="lat" type="range" min="-90" max="90" step="0.1" aria-label="Latitude">
+      <label class="row" for="lon"><span>Longitude (the meridian)</span><output id="lon-out"></output></label>
+      <input id="lon" type="range" min="-180" max="180" step="0.5" aria-label="Longitude">
+      <p class="hint">Click the globe to pick a point, or drag along the ellipse on the right.</p>
+      <div class="toggles">
+        <label><input id="sph" type="checkbox"> Sphere of radius a</label>
+        <label><input id="par" type="checkbox"> Parametric latitude</label>
+        <label><input id="osc" type="checkbox"> Meridian circle M</label>
+        <label><input id="coast" type="checkbox"> Coastlines</label>
+      </div>
+    </section>
+
+    <section>
+      <table id="out" class="readout both"></table>
+      <pre id="proj" class="projdef"></pre>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>The earth is close to an <b>ellipsoid of revolution</b>: an ellipse turned about its short
+          axis, the polar axis. Its equatorial radius is a and its polar radius b, and its
+          <b>flattening</b> f = (a - b) / a is about 1/298 (WGS84, GRS80). That is 21 km in 6378, too little
+          to see: at 1x the drawing is the true shape, and it sits on the sphere of radius a. The slider
+          multiplies f, keeping a, so the drawing can show what the numbers say. Every number is given for
+          the true shape and for the drawn one.</p>
+        <p>On an ellipsoid one point has three latitudes, and they differ because the surface is not
+          round:</p>
+        <ul>
+          <li><b>Geodetic latitude</b> (yellow) is the angle the <b>normal</b> to the surface makes with
+            the equator. It is the latitude of a map, a GPS and PROJ's longlat, and the one a plumb line
+            and the stars give (up to the geoid). The normal misses the centre: it crosses the polar axis on
+            the other side of the equator, and its length from the surface to the axis is <b>N</b>, the
+            radius of curvature across the meridian (in the prime vertical). A parallel is a circle of
+            radius N cos of the latitude.</li>
+          <li><b>Geocentric latitude</b> (cyan) is the angle at the centre. It is the latitude of
+            Earth-centred x, y, z (PROJ's <code>+proj=cart</code>, ECEF) and of a sphere. tan of it is
+            (1 - e^2) tan of the geodetic latitude, so the two agree at the equator and the poles and part
+            most near 45 degrees, by 11.5 minutes of arc on WGS84 (an angle that spans about 21 km of meridian).</li>
+          <li><b>Parametric</b> or reduced latitude (green) is the angle at the centre of the point on the
+            circle of radius a straight out from the point, parallel to the equator: the ellipse is that
+            circle squashed by b/a. tan of it is (1 - f) tan of the geodetic latitude, and it lies between the
+            other two. Geodesics on the ellipsoid are worked in it (Bessel, Vincenty, Karney).</li>
+        </ul>
+        <p><b>M</b> (pink) is the radius of the circle that best fits the meridian at the point: it is
+          smallest at the equator, where the ellipse is most curved, and largest at the poles, where it is
+          flattest. That is why a degree of latitude is about 1.1 km longer at the pole than at the equator,
+          the measurement (in Lapland and Peru, in the 1730s) that settled that the earth is flattened at the
+          poles rather than drawn out.</p>
+        <p>Formulas as in Snyder (1987), in <code>src/core/ellipsoid.js</code>, checked against PROJ in
+          <code>test/check-ellipsoid.mjs</code>: each ellipsoid's a and b from PROJ's ellps table, x, y, z
+          against <code>+proj=cart</code>, and meridian lengths against PROJ's geodesics, on the true shapes
+          and on WGS84 with its flattening times 100.</p>
+        <p>Hash keys: <code>ell</code> (a PROJ ellps name), <code>x</code> (the exaggeration),
+          <code>lat</code>, <code>lon</code>, <code>sph</code>, <code>par</code>, <code>osc</code>,
+          <code>coast</code>, <code>cam</code>.</p>
+        <ul class="credits">
+          <li>Snyder, J. P. (1987) <i>Map Projections: A Working Manual</i>, USGS Professional Paper 1395
+            (the auxiliary latitudes, radii of curvature). Ellipsoid parameters from
+            <a href="https://proj.org/">PROJ</a> (<code>proj -le</code>). Karney, C. F. F. (2013) Algorithms
+            for geodesics, J. Geodesy 87, 43, as PROJ has them.</li>
+          <li>Coastlines from <a href="https://www.naturalearthdata.com/">Natural Earth</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

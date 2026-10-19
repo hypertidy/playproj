@@ -132,6 +132,25 @@ the spacing), `size` (fixed radius, degrees), `norm` (shape only), `field`
 `grat`; older links with `step` and `color` still work; `tissot=1` on the
 perspective and cones pages.
 
+## Ellipsoid
+
+`ellipsoid.html` draws the earth's ellipsoid (WGS84 by default, or any of
+eight other PROJ `ellps`) on a globe and in the plane of one meridian, with a
+slider that multiplies the flattening. At 1x it is the true shape, which no
+screen can tell from the sphere of radius a; exaggerated, the three
+latitudes of one point come apart: geodetic (the normal, which misses the
+centre and meets the axis after a length N), geocentric (the line to the
+centre, as in Earth-centred x, y, z) and parametric (the point straight out
+on the circle of radius a). The circle of radius M that fits the meridian
+can be drawn too. A table gives every number for the true shape and the
+drawn one, so the picture never stands in for the values.
+
+`src/core/ellipsoid.js` has the formulas (Snyder 1987), checked against PROJ
+by `test/check-ellipsoid.mjs`: a and b of each `ellps`, x, y, z against
+`+proj=cart`, the inverse, and meridian lengths, on the true shapes and on
+WGS84 with its flattening times 100. Hash keys: `ell`, `x` (exaggeration),
+`lat`, `lon`, `sph`, `par`, `osc`, `coast`, `cam`.
+
 ## Globals and interrupteds
 
 `globals.html` takes the whole-world formulas: Mollweide, Goode homolosine,
@@ -677,6 +696,7 @@ homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters
 sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
 bins.html, js/bins.js                  L3 bins page
 tissot.html, js/tissot-page.js         Distortion page (Tissot's indicatrix and factor fields)
+ellipsoid.html, js/ellipsoid-page.js   Ellipsoid: exaggerated flattening, the three latitudes, M and N
 nuyina.html, js/nuyina.js              Nuyina: voyage track, sea ice, two bathymetry mosaics, near-ship maps
 rhumb.html, js/rhumb.js                Rhumb lines: rhumb line and great circle on four maps, composite sailing
 
@@ -721,6 +741,7 @@ src/core/polarstere.js            ellipsoidal polar stereographic (EPSG:3031, 93
 src/core/seaice.js                NSIDC Sea Ice Index grid, values and daily file addresses
 src/core/track.js                 ship tracks from underway CSV or parquet rows; Nuyina voyages; place, heading, distance run
 src/core/rhumb.js                 rhumb lines, geodesics and great circles, the whole loxodrome, composite sailing
+src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
 
 data/countries-110m.json   Natural Earth 110m country parts as flat [lon, lat] rings
