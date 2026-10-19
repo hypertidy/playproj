@@ -5,7 +5,6 @@
 // the two views are independent checks on each other.
 
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { CSS2DRenderer, CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import * as persp from "../src/core/families/perspective.js";
 import * as azi from "../src/core/families/azimuthal.js";
@@ -16,6 +15,7 @@ import { sources, reproject, sampleElev } from "../src/core/basemap.js";
 import { loadWorld } from "./basemap-load.js";
 import { writeGeoTIFF } from "../src/core/geotiff-write.js";
 import { drawLattice } from "./tissot-draw.js";
+import { makeStage, readParams, hashWriter, oneOf, shareLinks, copyText } from "../src/scene/index.js";
 
 const RAY_REACH = 6;      // rays from lights further than this start at the edge of the scene
 const MAX_RAYS = 5000; // the slider's top end
@@ -45,22 +45,14 @@ const COLORS = {
 
 const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, ts: 90, seed: 1, from: "tri", detail: "110m", grat: 1, tissot: 0, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
 const state = { ...defaults };
-const embed = new URLSearchParams(location.search).has("embed");
 
 function readHash() {
-  const h = new URLSearchParams(location.hash.slice(1));
-  for (const k of Object.keys(defaults)) {
-    if (!h.has(k)) continue;
-    const raw = h.get(k);
-    if (k === "detail") state.detail = raw === "50m" ? "50m" : "110m";
-    else if (k === "from") state.from = SAMPLE_MODES.includes(raw) ? raw : "tri";
-    else if (k === "bm") state.bm = raw in sources ? raw : "none";
-    else if (k === "az") state.az = CONSTRUCTIONS.includes(raw) ? raw : "light";
-    else if (k === "cam") {
-      const c = raw.split(",").map(Number);
-      if (c.length === 6 && c.every(isFinite)) state.cam = c;
-    } else if (isFinite(+raw)) state[k] = +raw;
-  }
+  readParams(state, defaults, {
+    detail: oneOf(["50m"], "110m"),
+    from: oneOf(SAMPLE_MODES, "tri"),
+    bm: (raw) => (raw in sources ? raw : "none"),
+    az: oneOf(CONSTRUCTIONS, "light")
+  });
   state.v = Math.max(-1, Math.min(1, state.v));
   state.lat = Math.max(-90, Math.min(90, state.lat));
   state.lon = ((state.lon + 540) % 360) - 180;
@@ -70,20 +62,7 @@ function readHash() {
   state.relief = Math.max(0, Math.min(100, state.relief));
 }
 
-let hashTimer = 0;
-function writeHash() {
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => {
-    const h = new URLSearchParams();
-    for (const k of Object.keys(defaults)) {
-      if (k === "cam") { if (state.cam) h.set("cam", state.cam.map((x) => +x.toFixed(2)).join(",")); continue; }
-      const val = typeof state[k] === "number" ? +state[k].toFixed(3) : state[k];
-      if (val !== defaults[k]) h.set(k, String(val));
-    }
-    const s = h.toString();
-    history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
-  }, 200);
-}
+const writeHash = hashWriter(state, defaults);
 
 // The light construction is the perspective family; the compass and string
 // constructions are the azimuthal family, on the same sphere and plane.
@@ -98,32 +77,21 @@ const params = () => {
 // ---------------------------------------------------------------- scene
 
 const stage = document.getElementById("three");
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(COLORS.bg);
-stage.appendChild(renderer.domElement);
+const { renderer, scene, camera, controls, setCamera, resize } = makeStage(stage, {
+  bg: COLORS.bg,
+  onCamera: (c) => { state.cam = c; writeHash(); },
+  onResize: (w, h) => {
+    labels.setSize(w, h);
+    drawMap(params());
+  }
+});
 
 const labels = new CSS2DRenderer();
 labels.domElement.className = "labels";
 stage.appendChild(labels.domElement);
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 200);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-
 const DEFAULT_CAM = [4.6, 2.6, 6.2, 0, 0.5, 0];
-function setCamera(c) {
-  camera.position.set(c[0], c[1], c[2]);
-  controls.target.set(c[3], c[4], c[5]);
-  controls.update();
-}
 setCamera(state.cam || DEFAULT_CAM);
-controls.addEventListener("end", () => {
-  const p = camera.position, t = controls.target;
-  state.cam = [p.x, p.y, p.z, t.x, t.y, t.z];
-  writeHash();
-});
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 const sun = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -808,30 +776,11 @@ sweepBtn.addEventListener("click", () => {
   lastT = performance.now();
 });
 
-function copy(text, btn) {
-  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1200); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => prompt("Copy:", text));
-  else prompt("Copy:", text);
-}
-const pageUrl = () => location.origin + location.pathname;
-$("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
-$("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="Map projection playground"></iframe>`,
-  e.target));
-$("copy-proj").addEventListener("click", (e) => copy(ui.proj.textContent, e.target));
-$("open-full").href = pageUrl() + location.hash;
+shareLinks("Map projection playground");
+$("copy-proj").addEventListener("click", (e) => copyText(ui.proj.textContent, e.target));
 
 // ---------------------------------------------------------------- loop
 
-function resize() {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setSize(w, h);
-  labels.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  drawMap(params());
-}
-new ResizeObserver(resize).observe(stage);
 new ResizeObserver(() => drawMap(params())).observe(mapCanvas);
 
 function tick(t) {
@@ -856,11 +805,6 @@ async function loadData() {
 }
 
 window.addEventListener("hashchange", () => { readHash(); globe.visible = !!state.globe; controls.autoRotate = !!state.spin; if (state.cam) setCamera(state.cam); setBasemap(); loadData().then(sync); });
-
-if (embed) {
-  document.body.classList.add("embed");
-  $("open-full").hidden = false;
-}
 
 readHash();
 globe.visible = !!state.globe;

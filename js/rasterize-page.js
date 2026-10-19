@@ -10,6 +10,7 @@ import * as R from "../src/core/rasterize.js";
 import * as S from "../src/core/structure.js";
 import { coastRings, landPolygons } from "../src/core/landmesh.js";
 import { loadCoastline } from "./data.js";
+import { readParams, hashWriter, shareLinks, copyText } from "../src/scene/index.js";
 
 const proj4 = window.proj4, d3 = window.d3;
 const $ = (id) => document.getElementById(id);
@@ -69,17 +70,9 @@ const defaults = { at: "tas", detail: "110m", crs: "ll", def: "", n: 24, sx: 0, 
 const STRINGS = new Set(["at", "detail", "crs", "def", "left", "src"]);
 const CRS_KEYS = ["ll", "laea", "merc", "polar", "utm", "file", "custom"];
 const state = { ...defaults };
-const embed = new URLSearchParams(location.search).has("embed");
 
 function readHash() {
-  const h = new URLSearchParams(location.hash.slice(1));
-  Object.assign(state, defaults);
-  for (const k of Object.keys(defaults)) {
-    if (!h.has(k)) continue;
-    const raw = h.get(k);
-    if (STRINGS.has(k)) state[k] = raw;
-    else if (isFinite(+raw)) state[k] = +raw;
-  }
+  readParams(state, defaults, Object.fromEntries([...STRINGS].map((k) => [k, String])));
   if (!CRS_KEYS.includes(state.crs)) state.crs = "ll";
   if (state.crs === "custom" && !state.def) state.crs = "ll";
   if (!["centre", "touched", "warp"].includes(state.left)) state.left = "centre";
@@ -90,21 +83,9 @@ function readHash() {
   if (![4, 8, 16, 32, 64].includes(state.tile)) state.tile = 8;
 }
 
-let hashTimer = 0;
-function writeHash() {
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => {
-    const h = new URLSearchParams();
-    for (const k of Object.keys(defaults)) {
-      if (k === "def" && state.crs !== "custom") continue;
-      if ((k === "src" || k === "lvl") && state.crs !== "file") continue;
-      const v = typeof state[k] === "number" ? +state[k].toFixed(3) : state[k];
-      if (v !== defaults[k]) h.set(k, String(v));
-    }
-    const s = h.toString();
-    history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
-  }, 200);
-}
+const writeHash = hashWriter(state, defaults, {
+  skip: (k) => (k === "def" && state.crs !== "custom") || ((k === "src" || k === "lvl") && state.crs !== "file")
+});
 
 // ---------------------------------------------------------------- shapes
 
@@ -925,17 +906,8 @@ function update(opts = {}) {
 
 // ---------------------------------------------------------------- share and boot
 
-function copy(text, btn) {
-  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1200); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => prompt("Copy:", text));
-  else prompt("Copy:", text);
-}
-const pageUrl = () => location.origin + location.pathname;
-$("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
-$("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="Rasterize: centre in and exact coverage"></iframe>`,
-  e.target));
-$("copy-def").addEventListener("click", (e) => copy($("def").value, e.target));
+shareLinks("Rasterize: centre in and exact coverage");
+$("copy-def").addEventListener("click", (e) => copyText($("def").value, e.target));
 
 const main = $("stage");
 new ResizeObserver(() => {
@@ -944,12 +916,6 @@ new ResizeObserver(() => {
 }).observe(main);
 
 window.addEventListener("hashchange", () => { readHash(); update({ shape: true, file: state.crs === "file", refit: true }); });
-
-if (embed) {
-  document.body.classList.add("embed");
-  $("open-full").hidden = false;
-  $("open-full").href = pageUrl() + location.hash;
-}
 
 readHash();
 syncUI();
