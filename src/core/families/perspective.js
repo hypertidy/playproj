@@ -24,6 +24,7 @@
 // the same map on every parallel plane.
 
 import { esriGeoKeys } from "../geotiff-write.js";
+import { sceneFrame } from "../geo.js";
 
 export const R = 6370997; // the PROJ "sphere" radius used in the 2016 examples
 
@@ -193,6 +194,93 @@ function describeLight(p) {
   if (a > 1) return `Near-side perspective: the light is ${fmt((a - 1))} radii above the tangent point, like a camera in orbit.`;
   if (a < -1) return "Far-side perspective: the light is outside the sphere behind it, and the rays pass through the globe.";
   return "Internal perspective: the light is inside the sphere. This is a valid construction with no PROJ equivalent.";
+}
+
+// The aspect, from lat_0 alone. PROJ's azimuthals make the same test and
+// keep one branch of their formulas for each (gnom.cpp: N_POLE, S_POLE,
+// EQUIT and OBLIQ, within 1e-10 radians of a pole or the equator). The
+// branches are the same projection with sin and cos of lat_0 worked out, so
+// the aspect changes how the graticule looks, not the projection.
+export function aspect(lat0) {
+  const phi0 = lat0 * D2R;
+  if (Math.abs(Math.abs(phi0) - Math.PI / 2) < 1e-10) return phi0 < 0 ? "south" : "north";
+  if (Math.abs(phi0) < 1e-10) return "equatorial";
+  return "oblique";
+}
+
+export function aspectText(p) {
+  const asp = aspect(p.lat0), gnom = p.a === 0;
+  if (asp === "north" || asp === "south") {
+    return `Polar aspect: the tangent point is the ${asp} pole. Meridians are straight lines out from it and parallels are circles around it.`;
+  }
+  if (asp === "equatorial") {
+    const g = gnom ? " In the gnomonic every meridian is a straight line, all of them parallel, and every other parallel is a hyperbola." : "";
+    return `Equatorial aspect: the tangent point is on the equator. The equator and the central meridian are straight lines.${g}`;
+  }
+  const s = Math.sign(p.lat0), x = 90 - Math.abs(p.lat0), pole = s > 0 ? "north" : "south";
+  const g = gnom ? ` In the gnomonic every meridian is a straight line through the pole and so is the equator. Parallels closer than ${fmt(x)} degrees to the ${pole} pole are ellipses, latitude ${fmt(s * x)} is a parabola, and the rest are hyperbolas.` : "";
+  return `Oblique aspect: the tangent point is neither a pole nor on the equator. The central meridian is a straight line through the pole.${g}`;
+}
+
+// The rays from the light through the parallel at `lat` make a cone (a
+// cylinder when the light is infinitely far), and the plane cuts it in a
+// conic. Returns its kind and the curve on the plane, as polylines of plane
+// x/y in sphere radii, each marked `near` when its points reach the plane
+// in the projection itself. The rest come from the other half of the cone,
+// behind the light, or (near-side perspective) from points beyond the
+// horizon. With the light at the centre (gnomonic) the far half of the cone
+// is also where the parallel at -lat lands.
+export function parallelConic(p, lat, n = 1440) {
+  const { a, lat0 } = p;
+  const sp = Math.sin(lat * D2R), cp = Math.cos(lat * D2R);
+  const sp0 = Math.sin(lat0 * D2R), cp0 = Math.cos(lat0 * D2R);
+  const polar = Math.abs(cp0) < 1e-10, eps = 1e-9;
+  let kind;
+  // a cone flattens into a plane when the light lies in the parallel's own plane
+  const flat = isFinite(a) ? Math.abs(a * sp0 - sp) < eps : polar ? false : Math.abs(sp0) < 1e-10;
+  if (flat) kind = polar ? "at infinity" : "line";
+  // a cone from the antipode cuts every plane parallel to the tangent plane
+  // in a circle: the stereographic keeps circles
+  else if (polar || Math.abs(a + 1) < eps) kind = "circle";
+  else if (!isFinite(a) || Math.abs(a) > 1) kind = "ellipse";
+  else {
+    const ymin = sp0 * sp - cp0 * cp, ymax = sp0 * sp + cp0 * cp;
+    if (Math.abs(ymin - a) < eps || Math.abs(ymax - a) < eps) kind = "parabola";
+    else kind = ymin > a || ymax < a ? "ellipse" : "hyperbola";
+  }
+  const toScene = sceneFrame(lat0, p.lon0), S = [0, 0, 0], PY = planeY(p), thr = horizonCos(a);
+  const pts = [];
+  for (let k = 0; k <= n; k++) {
+    toScene(p.lon0 + (360 * k) / n, lat, S);
+    const near = S[1] > thr + 1e-6;
+    let x, y, t = 1;
+    if (isFinite(a)) {
+      const d = S[1] - a;
+      if (Math.abs(d) < 1e-12) { pts.push(null); continue; }
+      t = (PY - a) / d;
+      x = t * S[0]; y = -t * S[2];
+    } else { x = S[0]; y = -S[2]; }
+    pts.push({ x, y, near, s: [S[0], S[1], S[2]], behind: t < 0 });
+  }
+  // split where the reach changes or the curve runs off to infinity
+  const brkAt = (q, r) => !q || !r || q.near !== r.near || q.behind !== r.behind || Math.hypot(q.x - r.x, q.y - r.y) > 1;
+  const lines = [];
+  let cur = null;
+  for (let k = 0; k < pts.length; k++) {
+    const q = pts[k], prev = k ? pts[k - 1] : null;
+    const brk = !q || !prev || brkAt(q, prev);
+    if (brk) cur = null;
+    if (!q) continue;
+    if (!cur) { cur = { near: q.near, xy: [] }; lines.push(cur); }
+    cur.xy.push(q.x, q.y);
+  }
+  // the samples start and end at the same place, so join the ends
+  const first = lines[0], last = lines[lines.length - 1];
+  if (lines.length > 1 && first.near === last.near && pts[0] && pts[n] && !brkAt(pts[0], pts[n - 1]) && !brkAt(pts[1], pts[0])) {
+    lines.pop();
+    first.xy = last.xy.concat(first.xy.slice(2));
+  }
+  return { kind, lines: lines.filter((l) => l.xy.length >= 4), points: pts };
 }
 
 function fmt(x, digits = 4) {

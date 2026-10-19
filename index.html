@@ -89,10 +89,22 @@
     </section>
 
     <section>
+      <div id="aspects" class="presets three" role="group" aria-label="Aspect">
+        <button type="button" data-aspect="polar">Polar</button>
+        <button type="button" data-aspect="equatorial">Equatorial</button>
+        <button type="button" data-aspect="oblique">Oblique</button>
+      </div>
       <label class="row"><span>Tangent latitude</span><output id="lat-out"></output></label>
       <input id="lat" type="range" min="-90" max="90" step="1">
       <label class="row"><span>Tangent longitude</span><output id="lon-out"></output></label>
       <input id="lon" type="range" min="-180" max="180" step="1">
+      <p id="aspect-text" class="describe"></p>
+      <div id="cone-controls">
+        <div class="toggles"><label><input id="cone" type="checkbox"> Cone through a parallel</label></div>
+        <label class="row"><span>Parallel</span><output id="par-out"></output></label>
+        <input id="par" type="range" min="-89" max="89" step="1" aria-label="Latitude of the parallel whose cone of rays is drawn">
+        <p id="conic-text" class="describe"></p>
+      </div>
       <label class="row"><span>Plane half-width</span><output id="w-out"></output></label>
       <input id="w" type="range" min="1" max="8" step="0.25">
       <label class="row"><span>Rays</span><output id="rays-out"></output></label>
@@ -143,6 +155,18 @@
           the tangent point to the point, then pull it flat onto the plane: that is the azimuthal
           equidistant projection. The Rays slider sets how many of these are drawn, and the orange ring is
           where the antipode lands.</p>
+        <p><b>Aspects.</b> The tangent point sets the aspect: at a pole it is <b>polar</b>, on the equator
+          <b>equatorial</b>, and anywhere else <b>oblique</b>. PROJ has no aspect parameter for the azimuthals:
+          <code>+lat_0</code> decides it, and <code>gnom</code> (like <code>stere</code>, <code>ortho</code>
+          and <code>laea</code>) keeps a branch of its formulas for each of north pole, south pole, equatorial
+          and oblique, the same projection with the sines and cosines of <code>lat_0</code> worked out.
+          The aspect changes what the graticule looks like. In the gnomonic every great circle is a straight
+          line, so the meridians and the equator always are; each parallel is where the plane cuts the cone of
+          rays from the centre through it, which makes it a circle (polar), an ellipse, a parabola or a
+          hyperbola. Tick <b>Cone through a parallel</b> to see the cone and the conic it leaves on the plane.
+          The dashed part comes from the half of the cone behind the light: in the gnomonic, a line through
+          the centre meets the sphere twice, so the dashed branch of a hyperbola is also where the opposite
+          latitude lands.</p>
         <p>The bright part of the coastline on the globe is what reaches the plane, and the orange ring is
           the horizon beyond which rays miss it. Lights between those positions give valid perspective
           projections that PROJ does not name.</p>
