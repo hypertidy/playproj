@@ -2,6 +2,7 @@
 // and the Greenland slide keeping area.
 import fs from "fs";
 import * as d3 from "d3-geo";
+import { scene, camera, arc, obliquity, SYENE, ALEXANDRIA } from "../src/core/eratosthenes.js";
 import { worldProjection, polar, slide, icosahedron, unfold, FULLER_VERTICES, trueSize, mercator } from "../src/core/homage-geo.js";
 
 const fx = JSON.parse(fs.readFileSync(new URL("./fixtures/homage-proj.json", import.meta.url)));
@@ -60,6 +61,33 @@ check(net && net.cut.length === 30 - 19, "net from a spanning tree has 19 joins 
   const m = mercator(s, t)(one.centre), p = d3.geoMercator().scale(s).translate(t)(one.centre);
   check(Math.hypot(m[0] - p[0], m[1] - p[1]) < 1e-9, "hand Mercator matches d3");
 }
+
+// Eratosthenes: with parallel rays, Alexandria's shadow angle less Syene's is
+// the cities' angle at the centre, whatever the sun's height; the shadow tip
+// lies on the ground plane at Alexandria
+for (const sep of [1, 7.2, 30]) for (const zenith of [0, 6, 47.5]) {
+  const s = scene({ sep, zenith, h: 0.3 });
+  check(Math.abs(s.centre - sep) < 1e-9, `centre angle ${s.centre} vs ${sep}`);
+  check(Math.abs(s.zenithA - s.zenithS - sep) < 1e-9, `shadow difference ${s.zenithA} - ${s.zenithS} vs ${sep}`);
+  const d = s.shadow.map((x, i) => x - s.A[i]);
+  check(Math.abs(d[0] * s.A[0] + d[1] * s.A[1] + d[2] * s.A[2]) < 1e-12, "shadow tip on the ground");
+  check(Math.abs(s.shadowLength - 0.3 * Math.tan(s.zenithA * Math.PI / 180)) < 1e-12, "shadow length h tan(z)");
+}
+// the hand camera is d3's orthographic view
+{
+  const cam = camera(110.9, 18), p = d3.geoOrthographic().rotate([-110.9, -18]).scale(1).translate([0, 0]);
+  let worst = 0;
+  for (const [lon, lat] of [[32.9, 24.1], [29.9, 31.2], [150, -40], [100, 60]]) {
+    const r = Math.PI / 180, P = [Math.cos(lat * r) * Math.cos(lon * r), Math.cos(lat * r) * Math.sin(lon * r), Math.sin(lat * r)];
+    const [x, y] = cam(P), q = p([lon, lat]);
+    worst = Math.max(worst, Math.abs(x - q[0]), Math.abs(-y - q[1]));
+  }
+  check(worst < 1e-12, `camera vs d3 orthographic ${worst}`);
+  check(cam.hidden([0, 0, 0]) && !cam.hidden([0, 0, 5]), "centre hidden, far point not");
+}
+check(Math.abs(obliquity(2000) - 23.4392911) < 1e-6, `obliquity J2000 ${obliquity(2000)}`);
+check(Math.abs(obliquity(-239) - 23.72) < 0.01, `obliquity 240 BC ${obliquity(-239)}`);
+check(Math.abs(arc(SYENE, ALEXANDRIA) - 7.58) < 0.01, `Syene to Alexandria ${arc(SYENE, ALEXANDRIA)}`);
 
 if (fails) { console.log(`${fails} failures`); process.exit(1); }
 console.log("homage: ok");

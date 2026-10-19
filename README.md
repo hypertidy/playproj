@@ -531,7 +531,15 @@ countries from `data/countries-110m.json`, Natural Earth 110m via
 world-atlas); Gall-Peters and south-up, after the Cartographers for Social
 Equality in The West Wing (season 2, episode 16); Equal Earth (Savric,
 Jenny and Patterson 2018); Fuller's Dymaxion; and the projections named in
-[xkcd 977](https://xkcd.com/977/). The credits are in the page's About panel.
+[xkcd 977](https://xkcd.com/977/); and Eratosthenes' measurement of the
+Earth, in three steps: a 3D globe (drag to turn it) with the well at Syene, a
+gnomon at Alexandria, parallel sun rays and the equal angles at the stick and
+at the centre; the same with the sun off overhead, where the difference of two
+shadow angles does the job; and the real map, with Alexandria about 3 degrees
+west of Syene, Syene north of the Tropic of Cancer as it was in 240 BC
+(Laskar 1986 obliquity), and a slider for the unknown length of the stadion.
+The geometry is in `src/core/eratosthenes.js`. The credits are in the page's
+About panel.
 Robinson, Winkel tripel, Van der Grinten and cylindrical equal-area (Gall-Peters,
 Hobo-Dyer) are written as d3 raw projections in `src/core/homage-geo.js`;
 `test/check-homage.mjs` checks them and the rest against PROJ 9.8
@@ -728,7 +736,7 @@ structure.html, js/structure-page.js   tiles and overviews page
 regular.html, js/regular-page.js       regular in what? storyline: geostationary, lon/lat arrays
 rasterize.html, js/rasterize-page.js   rasterize page
 example.html, js/example.js            For example storyboard
-homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977
+homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977, Eratosthenes
 vicgrid.html, js/vicgrid.js            VicGrid: Victoria's one-zone grid against MGA, NSW/SA Lambert, Albers
 sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
 bins.html, js/bins.js                  L3 bins page
@@ -771,6 +779,7 @@ src/core/structure.js             grid, tile and file structure of COG, Zarr, WM
 src/core/rasterize.js             centre-in scanline fill, exact coverage fractions, runs, tiles and bytes
 src/core/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 src/core/homage-geo.js            Robinson, Winkel tripel, Van der Grinten, cea; Dymaxion icosahedron and net
+src/core/eratosthenes.js          Eratosthenes' well, gnomon and sun rays in 3D; obliquity of the ecliptic
 src/core/mgrs.js                  UTM, MGRS references and Sentinel-2 tiles
 src/core/tissot.js                distortion factors (h, k, s, omega, ...) from any forward function
 src/core/distortion.js            factor grids, colour scales, contours and auto-sized lattices

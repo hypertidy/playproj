@@ -37,6 +37,7 @@ export * as geo from "./geo.js";
 export * as landmesh from "./landmesh.js";
 export * as mishaps from "./mishaps.js";
 export * as homageGeo from "./homage-geo.js";
+export * as eratosthenes from "./eratosthenes.js";
 export * as rasterize from "./rasterize.js";
 
 export * as structure from "./structure.js";
