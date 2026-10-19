@@ -38,12 +38,13 @@ const COLORS = {
   horizon: 0xffb347,
   trueScale: 0xffe08a,
   compass: 0xff7ab8,
-  string: 0x7ad7ff
+  string: 0x7ad7ff,
+  cone: 0xc59bff
 };
 
 // ---------------------------------------------------------------- state
 
-const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, ts: 90, seed: 1, from: "tri", detail: "110m", grat: 1, tissot: 0, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cam: null };
+const defaults = { az: "light", v: -0.5, lat: -90, lon: 0, w: 2.5, rays: 120, ts: 90, seed: 1, from: "tri", detail: "110m", grat: 1, tissot: 0, globe: 1, bm: "none", relief: 0, wire: 0, spin: 0, cone: 0, par: 30, cam: null };
 const state = { ...defaults };
 
 function readHash() {
@@ -60,6 +61,7 @@ function readHash() {
   state.ts = Math.max(0, Math.min(90, state.ts));
   state.rays = Math.max(0, Math.min(MAX_RAYS, Math.round(state.rays)));
   state.relief = Math.max(0, Math.min(100, state.relief));
+  state.par = Math.max(-89, Math.min(89, Math.round(state.par)));
 }
 
 const writeHash = hashWriter(state, defaults);
@@ -401,6 +403,8 @@ function rebuild() {
     hitsP.push(P[0], P[1], P[2]);
     n++;
   }
+  drawCone(p, toScene, lit, finite);
+
   setLines("rays", rays, COLORS.ray, 0.35, { order: 1 });
   setLines("arcs", arcs, state.az === "aeqd" ? COLORS.string : COLORS.compass, 0.55, { order: 1 });
   setPoints("hitsS", hitsS, 0xffffff, 3);
@@ -408,6 +412,98 @@ function rebuild() {
 
   drawMap(p);
   updatePanel(p);
+}
+
+// The cone of rays from the light through one parallel, the parallel on the
+// sphere, and the conic the cone leaves on the plane. Generators that reach
+// the plane in the projection are solid; the rest (behind the light, or
+// beyond a near-side horizon) are faint.
+const CONE_GENERATORS = 48;
+const coneSurface = new THREE.Mesh(
+  new THREE.BufferGeometry(),
+  new THREE.MeshBasicMaterial({ color: COLORS.cone, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false })
+);
+scene.add(coneSurface);
+
+function drawCone(p, toScene, lit, finite) {
+  const show = lit && !!state.cone;
+  const names = ["coneCurve", "coneCurveFar", "coneGen", "coneGenFar", "coneParallel", "coneParallelFar"];
+  if (!show) {
+    for (const k of names) if (layers[k]) layers[k].visible = false;
+    coneSurface.visible = false;
+    return;
+  }
+  const PY = planeY(p), con = persp.parallelConic(p, state.par);
+  const curve = [], curveFar = [];
+  for (const l of con.lines) {
+    const out = l.near ? curve : curveFar;
+    for (let i = 2; i < l.xy.length; i += 2) {
+      const a = [l.xy[i - 2], l.xy[i - 1]], b = [l.xy[i], l.xy[i + 1]];
+      if (inPlane(a) && inPlane(b)) out.push(a[0], PY + 0.003, -a[1], b[0], PY + 0.003, -b[1]);
+    }
+  }
+  const par = [], parFar = [], B = [0, 0, 0], A = [0, 0, 0], thr = fam.horizonCos(p.a);
+  for (let k = 0; k <= 360; k++) {
+    toScene(k, state.par, B);
+    if (k) (B[1] > thr + 1e-6 && A[1] > thr + 1e-6 ? par : parFar).push(A[0], A[1], A[2], B[0], B[1], B[2]);
+    A[0] = B[0]; A[1] = B[1]; A[2] = B[2];
+  }
+  // generators, and the surface as a fan from the light
+  const gen = [], genFar = [], tri = [];
+  const L = finite ? [0, p.a, 0] : null, pts = con.points, n = pts.length - 1, step = n / CONE_GENERATORS;
+  for (let k = 0; k < n; k++) {
+    const q = pts[k];
+    if (!q) continue;
+    const P = [q.x, PY, -q.y], S = q.s, hit = inPlane([q.x, q.y]);
+    let start = L;
+    if (!finite) {
+      const yEdge = (p.a > 0 ? 1 : -1) * RAY_REACH;
+      start = isFinite(p.a) ? [P[0] * (yEdge - p.a) / (PY - p.a), yEdge, P[2] * (yEdge - p.a) / (PY - p.a)] : [S[0], yEdge, S[2]];
+    }
+    if (k % step < 1) {
+      const out = q.near ? gen : genFar;
+      if (q.behind) {
+        out.push(S[0], S[1], S[2], start[0], start[1], start[2]);
+        if (hit) out.push(start[0], start[1], start[2], P[0], P[1], P[2]);
+      } else {
+        const dS = Math.hypot(S[0] - start[0], S[1] - start[1], S[2] - start[2]);
+        const dP = Math.hypot(P[0] - start[0], P[1] - start[1], P[2] - start[2]);
+        const end = hit && dP > dS ? P : S;
+        out.push(start[0], start[1], start[2], end[0], end[1], end[2]);
+      }
+    }
+    // the cone between the light and the sphere, and on to the plane where it lands
+    const r = pts[k + 1];
+    if (!r || !finite) continue;
+    tri.push(L[0], L[1], L[2], S[0], S[1], S[2], r.s[0], r.s[1], r.s[2]);
+    if (hit && inPlane([r.x, r.y]) && q.behind === r.behind && Math.hypot(q.x - r.x, q.y - r.y) < 1) {
+      tri.push(L[0], L[1], L[2], P[0], P[1], P[2], r.x, PY, -r.y);
+    }
+  }
+  setLines("coneCurve", curve, COLORS.cone, 1, { order: 3 }).visible = true;
+  setLines("coneCurveFar", curveFar, COLORS.cone, 0.45, { order: 3, dashed: true }).visible = true;
+  setLines("coneGen", gen, COLORS.cone, 0.6, { order: 1 }).visible = true;
+  setLines("coneGenFar", genFar, COLORS.cone, 0.25, { order: 1 }).visible = true;
+  setLines("coneParallel", par, COLORS.cone, 1, { order: 2 }).visible = true;
+  setLines("coneParallelFar", parFar, COLORS.cone, 0.4, { order: 2 }).visible = true;
+  coneSurface.geometry.dispose();
+  coneSurface.geometry = new THREE.BufferGeometry();
+  coneSurface.geometry.setAttribute("position", new THREE.Float32BufferAttribute(tri, 3));
+  coneSurface.visible = true;
+}
+
+function conicText(p) {
+  const con = persp.parallelConic(p, state.par), lat = `latitude ${state.par}${DEG}`;
+  const what = {
+    "at infinity": `the rays through ${lat} run parallel to the plane, so it never reaches the map.`,
+    line: `the light lies in the plane of ${lat}, so its rays make a flat fan and the plane cuts it in a straight line.`,
+    circle: `the plane cuts the cone of rays through ${lat} in a circle.`,
+    ellipse: `the plane cuts the ${isFinite(p.a) ? "cone" : "cylinder"} of rays through ${lat} in an ellipse.`,
+    parabola: `one ray through ${lat} runs parallel to the plane, so the cone is cut in a parabola, open on that side.`,
+    hyperbola: `${lat} crosses the horizon, the circle level with the light, so its rays make a cone with a half on each side of the light and the plane cuts both: a hyperbola.`
+  }[con.kind];
+  const far = p.a === 0 && con.kind === "hyperbola" ? ` The dashed branch is from the half of the cone behind the light, and is also where latitude ${-state.par}${DEG} lands.` : "";
+  return `${what[0].toUpperCase()}${what.slice(1)}${far}`;
 }
 
 // Compass (laea): the straight chord from the tangent point T to the sphere
@@ -634,6 +730,19 @@ function drawMap(p) {
     drawLattice(ctx, geo, (x, y) => [X(x), Y(y)], { lon0: p.lon0, maxR: 0.5 * w });
   }
 
+  // the conic left by the cone through one parallel, from the construction
+  if (state.cone && state.az === "light") {
+    ctx.strokeStyle = "#c59bff";
+    for (const l of persp.parallelConic(p, state.par).lines) {
+      ctx.lineWidth = l.near ? 1.6 : 1;
+      ctx.setLineDash(l.near ? [] : [4, 4]);
+      ctx.beginPath();
+      for (let i = 0; i < l.xy.length; i += 2) (i ? ctx.lineTo : ctx.moveTo).call(ctx, X(l.xy[i]), Y(l.xy[i + 1]));
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
   // horizon circle
   const thr = fam.horizonCos(p.a);
   if (thr > -1 + 1e-9 || fam.edgeRadius) {
@@ -680,6 +789,7 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   v: $("v"), ts: $("ts"), tsOut: $("ts-out"), lat: $("lat"), lon: $("lon"), w: $("w"), rays: $("rays"),
   vOut: $("v-out"), latOut: $("lat-out"), lonOut: $("lon-out"), wOut: $("w-out"), raysOut: $("rays-out"),
+  aspects: $("aspects"), aspectText: $("aspect-text"), cone: $("cone"), par: $("par"), parOut: $("par-out"), conicText: $("conic-text"), coneControls: $("cone-controls"),
   proj: $("projstring"), describe: $("describe"), presets: $("presets"), az: $("construction"), lightControls: $("light-controls"),
   grat: $("grat"), tissot: $("tissot"), globe: $("globe"), detail: $("detail"), from: $("from"),
   spin: $("spin"), relief: $("relief"), reliefOut: $("relief-out"), wire: $("wire"), bm: $("basemap"), bmStatus: $("bm-status"), credit: $("credit"), tifSize: $("tif-size"), tif: $("download-tif")
@@ -693,6 +803,15 @@ for (const [id, src] of Object.entries(sources)) {
 
 for (const b of ui.az.children) {
   b.addEventListener("click", () => { stopSweep(); state.az = b.dataset.az; sync(); });
+}
+
+// polar keeps the hemisphere, oblique goes halfway to the pole
+for (const b of ui.aspects.children) {
+  b.addEventListener("click", () => {
+    const s = state.lat > 0 ? 1 : -1;
+    state.lat = { polar: 90 * s, equatorial: 0, oblique: 45 * s }[b.dataset.aspect];
+    sync();
+  });
 }
 
 for (const pr of persp.presets) {
@@ -715,7 +834,14 @@ function updatePanel(p) {
   ui.ts.value = state.ts;
   ui.tsOut.textContent = persp.planeY(p) >= 1 - 1e-9 ? "90\u00b0 (tangent)"
     : `${+(Math.asin(persp.planeY(p)) * 180 / Math.PI).toFixed(1)}${DEG} (secant, k0 = ${persp.planeScale(p).toFixed(3)})`;
-  ui.latOut.textContent = state.lat + DEG;
+  const asp = persp.aspect(state.lat);
+  ui.latOut.textContent = `${state.lat}${DEG} (${asp === "north" || asp === "south" ? "polar" : asp})`;
+  for (const b of ui.aspects.children) b.classList.toggle("active", b.dataset.aspect === (asp === "north" || asp === "south" ? "polar" : asp));
+  ui.aspectText.textContent = persp.aspectText({ ...p, a: state.az === "light" ? p.a : null });
+  ui.coneControls.hidden = state.az !== "light";
+  ui.cone.checked = !!state.cone; ui.par.value = state.par; ui.par.disabled = !state.cone;
+  ui.parOut.textContent = state.par + DEG;
+  ui.conicText.textContent = state.cone && state.az === "light" ? conicText(p) : "";
   ui.lonOut.textContent = state.lon + DEG;
   ui.wOut.textContent = `${state.w} R`;
   ui.raysOut.textContent = state.from === "even" && coast.length
@@ -750,6 +876,8 @@ function sync() {
 ui.v.addEventListener("input", () => { stopSweep(); state.v = persp.snapSlider(+ui.v.value); sync(); });
 ui.ts.addEventListener("input", () => { state.ts = +ui.ts.value; sync(); });
 ui.lat.addEventListener("input", () => { state.lat = +ui.lat.value; sync(); });
+ui.cone.addEventListener("change", () => { state.cone = ui.cone.checked ? 1 : 0; sync(); });
+ui.par.addEventListener("input", () => { state.par = +ui.par.value; sync(); });
 ui.lon.addEventListener("input", () => { state.lon = +ui.lon.value; sync(); });
 ui.w.addEventListener("input", () => { state.w = +ui.w.value; sync(); });
 ui.rays.addEventListener("input", () => { state.rays = +ui.rays.value; if (state.from === "even") buildRayPool(); sync(); });
