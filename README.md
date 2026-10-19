@@ -506,6 +506,46 @@ little), and the net is found rather than copied: a maximum spanning tree of the
 faces weighted by the land each edge crosses, so the cuts fall in the sea. Hash
 keys: `s` (step, from 0), `p` (the step's slider).
 
+## Nuyina
+
+`nuyina.html` follows RSV Nuyina, Australia's icebreaker, along a voyage. The
+track is the ship's underway data (a fix a minute) from the Australian
+Antarctic Data Centre's feature service (`underway:nuyina_underway`, one voyage
+per `set_code`); the time slider puts the ship on the map, and Play runs it.
+The map is either the Antarctic polar stereographic (EPSG:3031) or an
+azimuthal centred on the ship (laea, aeqd or stere, optionally heading up),
+rebuilt as the ship moves. A map centred on the ship is a map of what is near
+it: range rings are circles of true distance drawn as geodesics (round in
+aeqd, ovals in EPSG:3031), and the readout gives the nearest place and the
+nearest sea ice edge as distance and bearing.
+
+The seafloor comes from two overlapping mosaics, IBCSO v2 (500 m, EPSG:9354)
+and GEBCO 2026 (15 arc seconds, lon/lat). Which one a pixel is read from is a
+plan kept apart from either grid, after the wxylib design note
+[m10: overlapping COG mosaics](https://github.com/wxylib/design/blob/150b4d3bb078bdd1f12ec0a3ced2fde9bc191985/docs/m10-overlapping-mosaics.md):
+IBCSO first, a cut at a latitude, either alone, or IBCSO minus GEBCO.
+"Cells at the ship" draws each source's own cells (and the 25 km sea ice
+cells) round the ship. Sea ice is the NSIDC Sea Ice Index (G02135 v4) daily
+GeoTIFF for the day at the slider. Source addresses come from the R package
+[sds](https://github.com/hypertidy/sds) (its registry and `nsidc_seaice()`);
+IBCSO is read from the LFS host of its COG copy, since the GitHub redirect sds
+lists has no CORS headers.
+
+Every source is sampled in its own CRS: map pixel to lon/lat (exactly on a
+lattice every 8 pixels, interpolated between), to EPSG:3031, then by a scale
+to EPSG:9354 or through lon/lat to EPSG:3412. `src/core/polarstere.js` is
+ellipsoidal polar stereographic (Snyder 1987) for 3031, 9354, 3412, 3976, 3413
+and 3411, checked against PROJ 9.8 (`test/fixtures/nuyina-proj.json`, from
+`test/make-nuyina-fixture.py`). proj4js 2.12.1's ellipsoidal aeqd inverse
+returns latitude + 180 in the southern hemisphere; the page folds it back and
+the test checks the result against PROJ. If the AADC service or NSIDC does not
+allow this page to read it, the page says so: the track falls back to the
+ports of call joined by great circles (labelled as not the track), and a
+downloaded track CSV can be loaded. Hash keys: `v` (voyage code), `t`, `view`
+(`ship`, `polar`), `proj`, `up`, `span` (log10 km across), `cx`, `cy`
+(polar pan, km), `plan`, `cut`, `src`, `ice`, `cells`, `coast`, `rings`,
+`by` (an underway column to colour the track).
+
 ## Basemaps and GeoTIFF export
 
 The plane can carry a basemap, reprojected pixel by pixel by casting each
@@ -603,6 +643,7 @@ homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters
 sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
 bins.html, js/bins.js                  L3 bins page
 tissot.html, js/tissot-page.js         Distortion page (Tissot's indicatrix and factor fields)
+nuyina.html, js/nuyina.js              Nuyina: voyage track, sea ice, two bathymetry mosaics, near-ship maps
 
 js/data.js          loads the coastlines in data/
 js/basemap-load.js  fetches the basemaps in the browser and makes their canvases
@@ -641,6 +682,10 @@ src/core/mgrs.js                  UTM, MGRS references and Sentinel-2 tiles
 src/core/tissot.js                distortion factors (h, k, s, omega, ...) from any forward function
 src/core/distortion.js            factor grids, colour scales, contours and auto-sized lattices
 src/core/l3bin.js                 SeaWiFS / MODIS level-3 bin grid
+src/core/polarstere.js            ellipsoidal polar stereographic (EPSG:3031, 9354, 3412, 3976, 3413, 3411)
+src/core/seaice.js                NSIDC Sea Ice Index grid, values and daily file addresses
+src/core/track.js                 ship tracks from underway CSV; Nuyina voyages; place, heading, distance run
+src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
 
 data/countries-110m.json   Natural Earth 110m country parts as flat [lon, lat] rings
 data/s2-tiles.json         which MGRS squares are Sentinel-2 tiles (ESA tiling grid)
@@ -675,6 +720,8 @@ frames against d3-geo and the areas behind its captions. `test/check-s2.mjs` che
 cell tokens and corners against `test/fixtures/s2-cells.json`, made with
 s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js.
 `test/check-roms.mjs` checks the s-coordinate against ROMS and the Zarr grid reader against zarr-python.
+`test/check-nuyina.mjs` checks polar stereographic and the ship-centred maps against PROJ, the sea ice
+grid, the overlap plan and level choice, and reading tracks from GeoServer CSV.
 `test/check-structure.mjs` checks the tile and overview readers against
 GDAL, tifffile and zarr-python. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
 GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid.

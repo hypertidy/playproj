@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Nuyina</title>
+<meta name="description" content="RSV Nuyina's voyages on a map that follows the ship: sea ice for the day, two overlapping bathymetry mosaics with the cut between them, and each source's own grid at the ship.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/dist/d3-geo.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "earcut": "https://cdn.jsdelivr.net/npm/earcut@3.0.2/src/earcut.js",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/nuyina.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <canvas id="map" class="view" aria-label="Map of the voyage: bathymetry, sea ice, the ship's track and the ship"></canvas>
+    <span id="map-label" class="half-label"></span>
+    <a id="open-full" class="open-full" href="./nuyina.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./regular.html">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a></span><span class="group"><a href="./nuyina.html" aria-current="page">Nuyina</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="voyage"><span>Voyage</span></label>
+      <select id="voyage" class="wide" aria-label="Voyage"></select>
+      <p id="voyage-about" class="hint"></p>
+      <label class="row" for="t"><span>Time</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.0005" aria-label="Time along the voyage">
+      <div class="buttons">
+        <button id="play" type="button">Play</button>
+        <label class="inline" for="speed">Speed
+          <select id="speed">
+            <option value="0.25">6 hours a second</option>
+            <option value="1">a day a second</option>
+            <option value="3">3 days a second</option>
+          </select>
+        </label>
+      </div>
+      <p id="track-status" class="status"></p>
+      <div id="track-file" class="buttons" hidden>
+        <label class="small-file"><input id="csv" type="file" accept=".csv,text/csv" hidden><button id="csv-btn" type="button" class="small">Load the track CSV</button></label>
+        <a id="csv-link" href="#" target="_blank" rel="noopener">Download it from the AADC</a>
+      </div>
+    </section>
+
+    <section>
+      <div id="views" class="presets" role="group" aria-label="Map">
+        <button type="button" data-view="ship">Follow the ship</button>
+        <button type="button" data-view="polar">Antarctic (EPSG:3031)</button>
+      </div>
+      <div id="ship-ctl">
+        <div class="buttons" style="margin-top:0">
+          <label class="inline" for="proj">Projection
+            <select id="proj">
+              <option value="laea">Equal area (laea)</option>
+              <option value="aeqd">Equidistant (aeqd)</option>
+              <option value="stere">Conformal (stere)</option>
+            </select>
+          </label>
+          <label class="inline"><input id="up" type="checkbox"> Heading up</label>
+        </div>
+      </div>
+      <label class="row" for="span"><span>Across the map</span><output id="span-out"></output></label>
+      <input id="span" type="range" min="1" max="4" step="0.01" aria-label="Width of the map, kilometres on a log scale">
+      <div class="projline" style="margin-top:8px">
+        <input id="def" class="token" type="text" readonly spellcheck="false" aria-label="PROJ string of the map">
+        <button id="copy-def" type="button" class="small">Copy</button>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="plan"><span>Bathymetry</span><output id="cut-out"></output></label>
+      <select id="plan" class="wide" aria-label="Which bathymetry source each pixel is read from"></select>
+      <input id="cut" type="range" min="-75" max="-50" step="0.5" aria-label="Latitude of the cut between IBCSO and GEBCO">
+      <div class="toggles">
+        <label><input id="by-source" type="checkbox"> Colour by source</label>
+        <label><input id="ice" type="checkbox"> Sea ice</label>
+        <label><input id="cells-on" type="checkbox"> Cells at the ship</label>
+        <label><input id="coast" type="checkbox"> Coast</label>
+        <label><input id="rings" type="checkbox"> Range rings</label>
+      </div>
+      <label class="row" for="by"><span>Colour the track by</span></label>
+      <select id="by" class="wide" aria-label="Underway column to colour the track by"><option value="">Nothing</option></select>
+      <canvas id="legend" class="cbar" width="560" height="34" aria-label="Colour key"></canvas>
+      <p id="status" class="status"></p>
+    </section>
+
+    <section>
+      <table id="ship" class="readout"></table>
+      <p id="hover" class="badge"></p>
+    </section>
+
+    <section>
+      <canvas id="inset" class="inset" width="560" height="360" aria-label="The map's footprint and the voyage on the globe"></canvas>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>RSV Nuyina is Australia's icebreaker. Its underway system logs the ship's position, weather and sea
+          surface every minute, and the Australian Antarctic Data Centre publishes each voyage as a feature
+          service. The page reads the voyage you pick and puts the ship on a map at the time on the slider.</p>
+        <p><b>Follow the ship</b> centres an azimuthal projection on the ship (<code>+proj=laea +lat_0 +lon_0</code>
+          at its position), so the map is rebuilt as the ship moves; with <b>heading up</b> it also turns so the
+          ship's course points up the screen, as a chart plotter does. The Antarctic view is the fixed
+          EPSG:3031 polar stereographic most Antarctic maps use.</p>
+        <p><b>Near the ship.</b> A map centred on the ship is a map of what is close to it, and the choice
+          of azimuthal says what "close" keeps: aeqd keeps distance and bearing from the ship true, so the
+          <b>range rings</b> (circles of true distance, drawn as geodesics) are exact circles; laea keeps
+          area, stere keeps shape, and both pull the rings slightly out of round far out. In EPSG:3031 the
+          same rings are ovals. The readout gives the nearest place and the nearest ice edge on the map, as
+          distance and bearing from the ship.</p>
+        <p><b>Two mosaics that overlap.</b> The seafloor comes from two sources: IBCSO v2 (500 m, in its own polar
+          stereographic, EPSG:9354, south of 50 degrees S) and GEBCO 2026 (15 arc seconds of longitude and
+          latitude, the whole world). Where both cover a pixel, something has to choose which one is read. The
+          choice is a plan, separate from either grid: IBCSO first, a cut at a latitude, either alone, or the
+          difference where both have data. <b>Colour by source</b> paints the plan; <b>IBCSO minus GEBCO</b>
+          measures what the choice changes. GEBCO builds its Southern Ocean with IBCSO's compilation, so
+          the two should mostly agree there; the difference shows where they do not, and the ship's
+          readout gives both depths under the keel.</p>
+        <p><b>Cells at the ship</b> draws each source's own cells round the ship: GEBCO's lon/lat cells
+          (narrow in longitude this far south), IBCSO's 500 m squares and the 25 km sea ice cells, in three
+          CRSs. The grids never share an edge, so one place is a different cell, and a different (column, row),
+          in each. Lines are drawn only where the cells are big enough to see.</p>
+        <p><b>Sea ice</b> is the NSIDC Sea Ice Index for the day at the slider: concentration on a 25 km polar
+          stereographic grid, white from 15 percent (the usual ice edge, drawn as a line) to full cover.
+          Every source is read in its own CRS and resampled per pixel into the map; the polar stereographic
+          formulas are checked against PROJ for EPSG:3031, 9354, 3412 and 3976 in
+          <code>test/check-nuyina.mjs</code>.</p>
+        <p>Hash keys: <code>v</code> (voyage code), <code>t</code> (0 to 1 along it), <code>view</code>
+          (<code>ship</code>, <code>polar</code>), <code>proj</code>, <code>up</code>, <code>span</code> (log10 km),
+          <code>plan</code>, <code>cut</code>, <code>src</code>, <code>ice</code>, <code>cells</code>,
+          <code>coast</code>, <code>rings</code>, <code>by</code>.</p>
+        <ul class="credits">
+          <li>Voyage data: RSV Nuyina underway data, <a href="https://data.aad.gov.au/">Australian Antarctic Data Centre</a>
+            (CC BY 4.0), each voyage cited by its record (linked under the voyage list).</li>
+          <li><a href="https://ibcso.org/">IBCSO v2</a>: Dorschel, B. et al. (2022) The International Bathymetric Chart of the
+            Southern Ocean Version 2, Scientific Data 9, 275, doi:10.1038/s41597-022-01366-7; read from a
+            <a href="https://github.com/mdsumner/ibcso-cog">COG copy</a>.</li>
+          <li>GEBCO Compilation Group (2026) GEBCO 2026 Grid, from <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>.</li>
+          <li>Fetterer, F. et al. Sea Ice Index, Version 4 (G02135), <a href="https://nsidc.org/data/g02135">NSIDC</a>.</li>
+          <li>Source addresses from the R package <a href="https://github.com/hypertidy/sds">sds</a> (its registry and
+            <code>nsidc_seaice()</code>). The overlap and grid distinction follows the wxylib design note
+            <a href="https://github.com/wxylib/design/blob/150b4d3bb078bdd1f12ec0a3ced2fde9bc191985/docs/m10-overlapping-mosaics.md">m10: overlapping COG mosaics</a>.</li>
+          <li>Map projections with <a href="https://github.com/proj4js/proj4js">proj4js</a>, checked against
+            <a href="https://proj.org/">PROJ</a>; polar stereographic after Snyder (1987) <i>Map Projections: A Working Manual</i>.
+            COGs read with <a href="https://geotiffjs.github.io/">geotiff.js</a>; coastlines from
+            <a href="https://www.naturalearthdata.com/">Natural Earth</a>; the globe drawn with <a href="https://github.com/d3/d3-geo">d3-geo</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
