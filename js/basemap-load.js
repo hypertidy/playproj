@@ -19,15 +19,22 @@ export function loadWorld(id, status = () => {}) {
   return cache.get(id);
 }
 
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) return resolve();
-    const s = document.createElement("script");
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error(`could not load ${src}`));
-    document.head.appendChild(s);
-  });
+// One promise per script, so two callers asking at once both wait for it
+// to run (a page can need geotiff.js for several sources).
+const scripts = new Map();
+export function loadScript(src) {
+  if (!scripts.has(src)) {
+    const p = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error(`could not load ${src}`));
+      document.head.appendChild(s);
+    });
+    p.catch(() => scripts.delete(src));
+    scripts.set(src, p);
+  }
+  return scripts.get(src);
 }
 
 // RGBA rows as a canvas, kept on the world or window it came with.

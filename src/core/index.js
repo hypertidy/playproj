@@ -25,6 +25,9 @@ export * as regular from "./regular.js";
 export * as s2 from "./s2.js";
 export * as l3bin from "./l3bin.js";
 export * as mgrs from "./mgrs.js";
+export * as polarstere from "./polarstere.js";
+export * as seaice from "./seaice.js";
+export * as track from "./track.js";
 
 export * as geo from "./geo.js";
 export * as landmesh from "./landmesh.js";
@@ -36,3 +39,4 @@ export * as structure from "./structure.js";
 export * as basemap from "./basemap.js";
 export * as geotiff from "./geotiff-write.js";
 export * as cellexport from "./cellexport.js";
+export * as mosaic from "./mosaic.js";
