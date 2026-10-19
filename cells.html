@@ -51,7 +51,9 @@
       <div class="buttons">
         <button id="cell-up" type="button" class="small" disabled>Parent</button>
         <button id="cell-down" type="button" class="small" disabled>Child</button>
+        <button id="close-up" type="button" class="small" disabled>Close up</button>
       </div>
+      <p id="close-hint" class="hint" hidden></p>
     </section>
 
     <section>
@@ -96,6 +98,10 @@
         <p>The cells are numbered along a Hilbert curve that runs through face 0, then 1, and on to 5, so
           cells close in number are close on the globe. A cell's id is its face and its path down the
           curve; the token is that id in hexadecimal without its trailing zeros.</p>
+        <p>Below level 10 or so a cell is too small to see on the whole globe. "Close up" restricts the view
+          to the picked cell and its neighbours on the same face, drawn at their own scale, so Child and
+          Parent walk all the way down to level 30, a square about 2 cm across. The grid shows the
+          next two levels inside each cell and the curve runs three levels down.</p>
       </details>
     </section>
 
