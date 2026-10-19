@@ -28,6 +28,7 @@ export * as mgrs from "./mgrs.js";
 export * as polarstere from "./polarstere.js";
 export * as seaice from "./seaice.js";
 export * as track from "./track.js";
+export * as rhumb from "./rhumb.js";
 
 export * as geo from "./geo.js";
 export * as landmesh from "./landmesh.js";

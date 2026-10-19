@@ -31,7 +31,7 @@
   <aside id="panel">
     <header>
       <h1>playproj</h1>
-      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./regular.html">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a></span><span class="group"><a href="./nuyina.html" aria-current="page">Nuyina</a></span></nav>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./regular.html">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a></span><span class="group"><a href="./nuyina.html" aria-current="page">Nuyina</a><a href="./rhumb.html">Rhumb lines</a></span></nav>
     </header>
 
     <section class="embed-keep">
@@ -50,10 +50,15 @@
           </select>
         </label>
       </div>
+      <label class="row" for="from"><span>Track from</span></label>
+      <select id="from" class="wide" aria-label="Where the track is read from">
+        <option value="wfs">The AADC underway service</option>
+        <option value="pq">A parquet copy of the whole record</option>
+      </select>
       <p id="track-status" class="status"></p>
       <div id="track-file" class="buttons" hidden>
-        <label class="small-file"><input id="csv" type="file" accept=".csv,text/csv" hidden><button id="csv-btn" type="button" class="small">Load the track CSV</button></label>
-        <a id="csv-link" href="#" target="_blank" rel="noopener">Download it from the AADC</a>
+        <label class="small-file"><input id="csv" type="file" accept=".csv,text/csv,.parquet" hidden><button id="csv-btn" type="button" class="small">Load the track file</button></label>
+        <a id="csv-link" href="#" target="_blank" rel="noopener">Download it</a>
       </div>
     </section>
 
@@ -93,6 +98,8 @@
         <label><input id="coast" type="checkbox"> Coast</label>
         <label><input id="rings" type="checkbox"> Range rings</label>
       </div>
+      <label class="row" for="to"><span>Crow lines to</span></label>
+      <select id="to" class="wide" aria-label="Draw the great circle and the rhumb line from the ship to"><option value="">Nowhere</option></select>
       <label class="row" for="by"><span>Colour the track by</span></label>
       <select id="by" class="wide" aria-label="Underway column to colour the track by"><option value="">Nothing</option></select>
       <canvas id="legend" class="cbar" width="560" height="34" aria-label="Colour key"></canvas>
@@ -124,6 +131,12 @@
           area, stere keeps shape, and both pull the rings slightly out of round far out. In EPSG:3031 the
           same rings are ovals. The readout gives the nearest place and the nearest ice edge on the map, as
           distance and bearing from the ship.</p>
+        <p><b>Crow lines</b> run from the ship to a place two ways: the great circle (solid), the shortest
+          way, whose course changes as the ship goes, and the rhumb line (dashed), one course all the way.
+          At these latitudes they part by hundreds of kilometres over a few thousand, and the great circle
+          bends towards the pole and the ice. The readout gives both, and how much farther the ship has
+          run than the great circle from where the voyage began; the
+          <a href="./rhumb.html">Rhumb lines</a> page puts the two on four maps.</p>
         <p><b>Two mosaics that overlap.</b> The seafloor comes from two sources: IBCSO v2 (500 m, in its own polar
           stereographic, EPSG:9354, south of 50 degrees S) and GEBCO 2026 (15 arc seconds of longitude and
           latitude, the whole world). Where both cover a pixel, something has to choose which one is read. The
@@ -144,10 +157,14 @@
         <p>Hash keys: <code>v</code> (voyage code), <code>t</code> (0 to 1 along it), <code>view</code>
           (<code>ship</code>, <code>polar</code>), <code>proj</code>, <code>up</code>, <code>span</code> (log10 km),
           <code>plan</code>, <code>cut</code>, <code>src</code>, <code>ice</code>, <code>cells</code>,
-          <code>coast</code>, <code>rings</code>, <code>by</code>.</p>
+          <code>coast</code>, <code>rings</code>, <code>by</code>, <code>to</code> (where the crow lines go),
+          <code>from</code> (<code>wfs</code>, <code>pq</code>) and <code>pq</code> (the parquet file's address).</p>
         <ul class="credits">
           <li>Voyage data: RSV Nuyina underway data, <a href="https://data.aad.gov.au/">Australian Antarctic Data Centre</a>
-            (CC BY 4.0), each voyage cited by its record (linked under the voyage list).</li>
+            (CC BY 4.0), each voyage cited by its record (linked under the voyage list). The parquet copy of the
+            whole record is <a href="https://github.com/mdsumner/nuyina-underway">nuyina-underway</a>, read a few
+            columns and row groups at a time with <a href="https://github.com/hyparam/hyparquet">hyparquet</a>
+            and <a href="https://github.com/101arrowz/fzstd">fzstd</a>.</li>
           <li><a href="https://ibcso.org/">IBCSO v2</a>: Dorschel, B. et al. (2022) The International Bathymetric Chart of the
             Southern Ocean Version 2, Scientific Data 9, 275, doi:10.1038/s41597-022-01366-7; read from a
             <a href="https://github.com/mdsumner/ibcso-cog">COG copy</a>.</li>

@@ -237,10 +237,22 @@ body.embed #shapes, body.embed #detail, body.embed label[for="detail"] { display
   border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
 }
 #answer { word-break: break-word; }
-.presets[hidden] { display: none; }
+.presets[hidden], .buttons[hidden] { display: none; }
 /* Tissot: colour bar and the distortion summary */
 .cbar { display: block; width: 100%; height: 34px; margin-top: 10px; }
 .readout.summary { font-size: 12px; margin-top: 8px; }
 .readout.summary td { padding: 2px 4px; text-align: right; }
 .readout.summary td:first-child { text-align: left; }
 .readout.summary th { font-weight: normal; color: var(--muted); text-align: right; padding: 2px 4px; }
+/* rhumb.html: four maps of the same two lines */
+#stage.quad { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+#stage.quad > .half { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+#stage.quad > .half:nth-child(even) { border-left: 1px solid var(--line); }
+#stage.quad > .half:nth-child(n+3) { border-top: 1px solid var(--line); }
+@media (max-width: 820px) {
+  #app:has(#stage.quad) { grid-template-rows: auto auto; }
+  #stage.quad { height: auto; grid-template-columns: 1fr; grid-template-rows: repeat(4, min(80vw, 60vh)); }
+  #stage.quad > .half:nth-child(even) { border-left: 0; }
+  #stage.quad > .half + .half { border-top: 1px solid var(--line); }
+}
+body.embed #stage.quad .half-label { display: none; }

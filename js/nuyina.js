@@ -11,6 +11,7 @@ import * as P from "../src/core/polarstere.js";
 import * as S from "../src/core/seaice.js";
 import * as M from "../src/core/mosaic.js";
 import * as T from "../src/core/track.js";
+import * as H from "../src/core/rhumb.js";
 import { isolines } from "../src/core/distortion.js";
 import { loadCoastline } from "./data.js";
 import { loadWorld, readWindow, loadScript } from "./basemap-load.js";
@@ -20,6 +21,8 @@ const proj4 = window.proj4, d3 = window.d3;
 const $ = (id) => document.getElementById(id);
 const DEG = "\u00b0";
 const GEOTIFF_JS = "https://cdn.jsdelivr.net/npm/geotiff@3.0.5/dist-browser/geotiff.js";
+const HYPARQUET = "https://cdn.jsdelivr.net/npm/hyparquet@1.31.2/src/index.js";
+const FZSTD = "https://cdn.jsdelivr.net/npm/fzstd@0.1.1/+esm";
 // sds lists IBCSO as github.com/mdsumner/ibcso-cog/raw/main/...; that
 // redirects (without CORS) to the LFS host, which is read directly
 const IBCSO = "https://media.githubusercontent.com/media/mdsumner/ibcso-cog/main/IBCSO_v2_ice-surface_cog.tif";
@@ -34,7 +37,7 @@ const TO_IBCSO = P.rescale("EPSG:3031", "EPSG:9354");
 const COLORS = {
   bg: "#05070d", coast: "rgba(232,240,250,0.85)", grat: "rgba(160,200,255,0.18)",
   past: "#ffd34d", future: "rgba(255,211,77,0.35)", ship: "#ff7ab8", edge: "#7fe0ff",
-  place: "#f2f6fb", cells: { 1: "rgba(96,170,255,0.95)", 2: "rgba(255,170,80,0.95)", ice: "rgba(127,224,255,0.95)" }
+  place: "#f2f6fb", gc: "#c9a7ff", rhumb: "#ffb347", cells: { 1: "rgba(96,170,255,0.95)", 2: "rgba(255,170,80,0.95)", ice: "rgba(127,224,255,0.95)" }
 };
 
 // ---------------------------------------------------------------- state
@@ -42,14 +45,15 @@ const COLORS = {
 const VIEW_SPAN = { ship: 3, polar: Math.log10(7000) };
 const defaults = {
   v: T.VOYAGES[0].code, t: 0.3, view: "ship", proj: "laea", up: 0, span: VIEW_SPAN.ship, cx: 0, cy: 0,
-  plan: "first", cut: -60, src: 0, ice: 1, cells: 0, coast: 1, rings: 1, by: ""
+  plan: "first", cut: -60, src: 0, ice: 1, cells: 0, coast: 1, rings: 1, by: "", to: "hobart", from: "wfs", pq: ""
 };
 const state = { ...defaults };
 
 function readHash() {
   readParams(state, defaults, {
     v: (s) => s, view: oneOf(["ship", "polar"], "ship"), proj: oneOf(["laea", "aeqd", "stere"], "laea"),
-    plan: oneOf(M.PLANS.map((p) => p.key), "first"), by: (s) => s
+    plan: oneOf(M.PLANS.map((p) => p.key), "first"), by: (s) => s,
+    to: (s) => (s === "" || T.PLACES[s] ? s : undefined), from: oneOf(["wfs", "pq"], "wfs"), pq: (s) => s
   });
   if (!new URLSearchParams(location.hash.slice(1)).has("span")) state.span = VIEW_SPAN[state.view];
   state.t = Math.max(0, Math.min(1, state.t));
@@ -179,35 +183,82 @@ function loadIce(day) {
 // The track: the CSV header first (one row), to learn the column names,
 // then only time, place and the colour column.
 async function loadTrack() {
-  const v = voyage(), key = `${v.code}|${state.by}`;
+  const v = voyage(), key = `${v.code}|${state.by}|${state.from}|${state.pq}|${pqLocal ? pqLocal.name : ""}`;
   if (key === trackKey) return;
   trackKey = key;
-  $("csv-link").href = T.wfsUrl(v.code);
   try {
-    setTrackStatus(`Asking the AADC for voyage ${v.label}...`);
-    const head = await fetchText(T.wfsUrl(v.code, { max: 1 }));
-    const rows = T.parseCSV(head);
-    if (rows.length < 1) throw new Error("no rows");
-    const cols = T.detectColumns(rows[0]);
-    const names = [cols.time, cols.lon, cols.lat, cols.geom].filter((i) => i >= 0).map((i) => rows[0][i]);
-    if (state.by && rows[0].includes(state.by)) names.push(state.by);
-    setTrackStatus(`Reading voyage ${v.label}, one fix a minute...`);
-    const text = await fetchText(T.wfsUrl(v.code, { props: names.filter((n) => n !== "FID") }));
-    const tr = T.trackFromCSV(text, state.by);
-    tr.numeric = T.numericColumns(rows, cols);
-    if (trackKey !== key) return;
-    track = tr; trackNote = "";
+    if (state.from === "pq") {
+      const url = state.pq || T.PARQUET;
+      $("csv-link").href = url;
+      setTrackStatus(`Reading voyage ${v.label} from the parquet copy...`);
+      const pq = pqLocal || await parquetAt(url);
+      const tr = await readParquet(pq, v);
+      if (trackKey !== key) return;
+      track = tr; trackNote = pqLocal ? `from ${pqLocal.name}` : "";
+    } else {
+      $("csv-link").href = T.wfsUrl(v.code);
+      setTrackStatus(`Asking the AADC for voyage ${v.label}...`);
+      const head = await fetchText(T.wfsUrl(v.code, { max: 1 }));
+      const rows = T.parseCSV(head);
+      if (rows.length < 1) throw new Error("no rows");
+      const cols = T.detectColumns(rows[0]);
+      const names = [cols.time, cols.lon, cols.lat, cols.geom].filter((i) => i >= 0).map((i) => rows[0][i]);
+      if (state.by && rows[0].includes(state.by)) names.push(state.by);
+      setTrackStatus(`Reading voyage ${v.label}, one fix a minute...`);
+      const text = await fetchText(T.wfsUrl(v.code, { props: names.filter((n) => n !== "FID") }));
+      const tr = T.trackFromCSV(text, state.by);
+      tr.numeric = T.numericColumns(rows, cols);
+      if (trackKey !== key) return;
+      track = tr; trackNote = "";
+    }
     setTrackStatus("");
     $("track-file").hidden = true;
   } catch (e) {
     if (trackKey !== key) return;
     track = T.portsOfCall(v);
     trackNote = "schematic";
-    setTrackStatus(`The AADC underway service did not answer this page (${e.message || e}). Shown instead: the ports of call joined by great circles, which is not the ship's track. The CSV can be downloaded and loaded here.`);
+    const why = e.message || e;
+    setTrackStatus(state.from === "pq"
+      ? `The parquet copy could not be read from this page (${why}). GitHub's release downloads send no CORS header, so a page on another site cannot read them: download the file and load it here, or give a copy that allows it as pq= in the link. Shown instead: the ports of call joined by great circles, which is not the ship's track.`
+      : `The AADC underway service did not answer this page (${why}). Shown instead: the ports of call joined by great circles, which is not the ship's track. The CSV can be downloaded and loaded here.`);
     $("track-file").hidden = false;
   }
   fillBy();
   schedule();
+}
+
+// The parquet copy: its footer once, then for each voyage only the row
+// groups its dates fall in, and of those only the columns drawn.
+let pqLocal = null;   // a parquet file loaded from disk
+const pqByUrl = new Map();
+function parquetAt(url) {
+  if (!pqByUrl.has(url)) pqByUrl.set(url, openParquet(url).catch((e) => { pqByUrl.delete(url); throw e; }));
+  return pqByUrl.get(url);
+}
+async function openParquet(src) {
+  const hp = await import(HYPARQUET);
+  const raw = typeof src === "string" ? await hp.asyncBufferFromUrl({ url: src })
+    : { byteLength: src.size, slice: (a, b) => src.slice(a, b).arrayBuffer() };
+  const file = hp.cachedAsyncBuffer(raw);
+  const md = await hp.parquetMetadataAsync(file);
+  const skip = new Set(["latitude", "longitude", "xmin", "ymin", "xmax", "ymax"]);
+  const numeric = md.schema.filter((c) => c.type === "DOUBLE" && !skip.has(c.name)).map((c) => c.name);
+  return { hp, file, md, numeric, name: typeof src === "string" ? "" : src.name };
+}
+
+async function readParquet(pq, v) {
+  const { hp, file, md, numeric } = pq;
+  const { decompress } = await import(FZSTD);
+  const stat = (g) => { const c = g.columns.find((k) => k.meta_data.path_in_schema[0] === "datetime"); return c && c.meta_data.statistics; };
+  const groups = md.row_groups.map((g) => { const st = stat(g); return { rows: Number(g.num_rows), min: st ? Number(st.min_value) : -Infinity, max: st ? Number(st.max_value) : Infinity }; });
+  const ranges = T.rowRanges(groups, Date.parse(v.from) - 3 * 864e5, Date.parse(v.to) + 4 * 864e5);
+  const by = numeric.includes(state.by) ? state.by : "";
+  const columns = ["datetime", "longitude", "latitude", "set_code", ...(by ? [by] : [])];
+  const rows = [];
+  for (const r of ranges) {
+    await hp.parquetRead({ file, metadata: md, columns, ...r, compressors: { ZSTD: (input) => decompress(input) }, onComplete: (d) => { for (const x of d) rows.push(x); } });
+  }
+  return T.trackFromRows(rows, v, { by, numeric, columns: md.schema.map((c) => c.name) });
 }
 
 async function fetchText(url) {
@@ -221,6 +272,15 @@ $("csv").addEventListener("change", async (e) => {
   const f = e.target.files[0];
   if (!f) return;
   try {
+    if (/\.parquet$/i.test(f.name)) {
+      // keep the file, so another voyage reads from it too
+      setTrackStatus(`Reading ${f.name}...`);
+      pqLocal = await openParquet(f);
+      state.from = "pq";
+      trackKey = "";
+      await loadTrack();
+      return;
+    }
     track = T.trackFromCSV(await f.text(), state.by);
     trackNote = `from ${f.name}`;
     setTrackStatus("");
@@ -531,6 +591,28 @@ function drawRings(ctx, v) {
   }
 }
 
+// Crow lines from the ship to a place: the great circle and the rhumb line
+// (src/core/rhumb.js), recomputed as the ship moves.
+function crow(v) {
+  const ship = v.ship, tg = T.PLACES[state.to];
+  if (!ship || !tg) return null;
+  return {
+    tg, c: H.compare(ship.lon, ship.lat, tg.lon, tg.lat),
+    gc: H.greatCirclePoints(ship.lon, ship.lat, tg.lon, tg.lat, 128),
+    rh: H.rhumbPoints(ship.lon, ship.lat, tg.lon, tg.lat, 256)
+  };
+}
+
+function drawCrow(ctx, v, cr) {
+  if (!cr) return;
+  const get = (a, i) => a[i];
+  ctx.lineCap = "round";
+  ctx.beginPath(); polyline(ctx, v, cr.rh, cr.rh.length, get);
+  ctx.strokeStyle = COLORS.rhumb; ctx.lineWidth = 1.8; ctx.setLineDash([7, 5]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.beginPath(); polyline(ctx, v, cr.gc, cr.gc.length, get);
+  ctx.strokeStyle = COLORS.gc; ctx.lineWidth = 1.8; ctx.stroke();
+}
+
 // What is near the ship: the closest ice edge (15 percent) on today's map,
 // and the closest station or place, as distance and bearing.
 function nearest(v) {
@@ -591,6 +673,7 @@ function drawAll() {
   }
   drawCells(ctx, v);
   drawRings(ctx, v);
+  drawCrow(ctx, v, crow(v));
   drawPlaces(ctx, v);
   drawTrack(ctx, v);
   drawScale(ctx, v);
@@ -636,6 +719,18 @@ function readouts() {
     rows.push([`Sea ice, ${iceDay}`, frame && frame.iceW ? (flag || (Number.isFinite(d.c) ? `${Math.round(d.c * 100)} percent` : "no data")) : iceShown && iceShown.err ? "did not load" : state.ice ? "loading" : "off"]);
     const near = nearest(v);
     if (near.place) rows.push([`Nearest place`, `${near.place.name}, ${Math.round(near.place.km).toLocaleString("en")} km at ${Math.round(near.place.brg)}${DEG}`]);
+    const cr = crow(v);
+    if (cr) {
+      const g = cr.c.geodesic, r = cr.c.rhumb, k = (x) => `${Math.round(x / 1000).toLocaleString("en")} km`;
+      rows.push([`<span style="color:${COLORS.gc}">Great circle to ${cr.tg.name}</span>`, `${k(g.s)}, course ${Math.round(g.azi1)}${DEG}`]);
+      rows.push([`<span style="color:${COLORS.rhumb}">Rhumb line to ${cr.tg.name}</span>`, `${k(r.s)}, course ${Math.round(r.azi)}${DEG}, ${(cr.c.extra * 100).toFixed(1)} percent longer`]);
+      const f = (x) => +x.toFixed(4);
+      rows.push(["", `<a href="./rhumb.html#alon=${f(ship.lon)}&alat=${f(ship.lat)}&blon=${f(cr.tg.lon)}&blat=${f(cr.tg.lat)}">Both on four maps</a>`]);
+    }
+    if (track && !track.schematic) {
+      const s0 = H.geodesicInverse(track.lon[0], track.lat[0], ship.lon, ship.lat).s / 1000;
+      if (s0 > 1) rows.push(["Run so far, and the great circle from the start", `${Math.round(ship.dist).toLocaleString("en")} km, ${Math.round(s0).toLocaleString("en")} km: ${((ship.dist / s0 - 1) * 100).toFixed(0)} percent more`]);
+    }
     if (near.edge) rows.push([near.edge.inIce ? "Open water (ice under 15 percent)" : "Ice edge (15 percent)", `${Math.round(near.edge.km).toLocaleString("en")} km at ${Math.round(near.edge.brg)}${DEG}, on this map`]);
     // the same place as a cell of each grid
     const [ix, iy] = ps54.forward(ship.lon, ship.lat);
@@ -726,6 +821,8 @@ for (const p of M.PLANS) {
   $("plan").appendChild(o);
 }
 
+for (const [k, p] of Object.entries(T.PLACES)) $("to").insertAdjacentHTML("beforeend", `<option value="${k}">${p.name}</option>`);
+
 function fillBy() {
   const sel = $("by"), cols = (track && track.numeric) || [];
   const want = state.by;
@@ -756,6 +853,8 @@ function syncUI() {
   $("cells-on").checked = !!state.cells;
   $("coast").checked = !!state.coast;
   $("rings").checked = !!state.rings;
+  $("to").value = state.to;
+  $("from").value = state.from;
   $("play").textContent = playing ? "Pause" : "Play";
 }
 
@@ -836,6 +935,8 @@ $("cells-on").addEventListener("change", (e) => { state.cells = e.target.checked
 $("coast").addEventListener("change", (e) => { state.coast = e.target.checked ? 1 : 0; schedule(); });
 $("rings").addEventListener("change", (e) => { state.rings = e.target.checked ? 1 : 0; schedule(); });
 $("by").addEventListener("change", (e) => { state.by = e.target.value; loadTrack(); });
+$("to").addEventListener("change", (e) => { state.to = e.target.value; schedule(); });
+$("from").addEventListener("change", (e) => { state.from = e.target.value; loadTrack(); schedule(); });
 $("copy-def").addEventListener("click", (e) => copyText($("def").value, e.target));
 
 // drag pans the Antarctic map; the wheel zooms either
