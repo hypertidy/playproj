@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: VicGrid</title>
+<meta name="description" content="VicGrid, Victoria's one-zone Lambert conformal conic, against the MGA zones that split the state at 144 E, the neighbouring NSW and SA Lambert grids and Australian Albers, with the AGD66, GDA94 and GDA2020 datums.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/vicgrid.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <canvas id="map" aria-label="South-east Australia in the chosen grid, with state borders, MGA zones and grid lines"></canvas>
+    <span class="half-label" id="map-label"></span>
+    <a id="open-full" class="open-full" href="./vicgrid.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./regular.html">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html" aria-current="page">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="crs"><span>Map in</span></label>
+      <select id="crs" class="wide" aria-label="The grid the map is drawn in"></select>
+      <label class="row" for="over"><span>Grid lines from</span></label>
+      <select id="over" class="wide" aria-label="Whose 100 km grid lines to draw">
+        <option value="mga">MGA zones 54 and 55</option>
+        <option value="vicgrid">VicGrid</option>
+        <option value="map">The map's own grid</option>
+        <option value="none">None</option>
+      </select>
+      <div class="toggles">
+        <label><input id="shade" type="checkbox"> Scale error</label>
+        <label><input id="zones" type="checkbox"> MGA zone edges</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+        <label><input id="towns" type="checkbox"> Towns</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+      <p class="hint">Drag to pan, scroll to zoom, click to pin a point.</p>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>The national grid of Australia is UTM on the national datum: the Australian Map Grid (AMG) on
+          AGD66, then the Map Grid of Australia (MGA) on GDA94 and now GDA2020. Each zone is 6 degrees wide,
+          and the edge between zones 54 and 55 is the meridian 144 E, which runs through the middle of
+          Victoria: Ballarat is in zone 54 and Bendigo, Geelong and Melbourne are in 55. Coordinates either
+          side of it are on different grids, and a map, a survey or a road that crosses it has to pick one
+          and live with the other zone's scale error.</p>
+        <p><b>VicGrid</b> puts the whole state on one grid: a Lambert conformal conic with standard parallels
+          36 and 38 S, where the cone cuts the ellipsoid and the scale is true, and its origin at 37 S 145 E.
+          Between the parallels the scale is a little small (0.99985 at 37 S), outside them a little large
+          (1.0005 at Wilsons Promontory, 1.0012 at the north-west corner), and it does not change along a
+          parallel, which suits a state wider than it is tall. Turn on <b>Scale error</b> to see it, and
+          switch to an MGA zone to compare: there the scale grows away from the central meridian, so it is
+          good in a strip and poor across the state.</p>
+        <p>The grid moved with the datum. <b>Vicgrid66</b> (EPSG:3110) is on AGD66 and the Australian
+          National Spheroid, with its false origin at 2 500 000 m east, 4 500 000 m north. <b>Vicgrid94</b>
+          (EPSG:3111) keeps the same cone on GDA94 and GRS80 but takes 2 500 000 m off the false northing,
+          so a Vicgrid94 northing (about 2.4 million in Melbourne) can never be read as a Vicgrid66 one
+          (about 4.4 million), whose points are also about 200 m away on the ground because of the datum.
+          <b>GDA2020 / Vicgrid</b> (EPSG:7899) keeps the numbers of Vicgrid94; its coordinates differ by
+          about 1.5 m in Melbourne, how far the continent moved between the datums.</p>
+        <p>The neighbours do the same for themselves: <b>NSW Lambert</b> (EPSG:8058, standard parallels
+          30.75 and 35.75 S) and <b>SA Lambert</b> (EPSG:8059, 28 and 36 S). Tasmania sits inside MGA zone
+          55. For the whole continent, <b>Australian Albers</b> (EPSG:3577 on GDA94, 9473 on GDA2020) is an
+          equal-area conic with standard parallels 18 and 36 S; it keeps area, not shape, so its scale
+          along a parallel and along a meridian differ (the readout gives the parallel's).</p>
+        <p>The map is drawn in the chosen grid's own eastings and northings, so its grid lines are straight
+          and everyone else's bend. The readout gives the point under the pointer in every grid, through
+          its datum: GDA2020 to GDA94 with EPSG:8048 and GDA94 to AGD66 with PROJ's "AGD66 to GDA94 (4)"
+          seven-parameter transformation for New South Wales and Victoria (about 1 m; the published
+          distortion grids do better). <code>src/core/vicgrid.js</code> has the projections (Snyder 1987) and
+          shifts, checked against PROJ in <code>test/check-vicgrid.mjs</code>.</p>
+        <p>Hash keys: <code>crs</code>, <code>over</code>, <code>shade</code>, <code>zones</code>,
+          <code>grat</code>, <code>towns</code>, <code>v</code> (centre lon, lat and width in km),
+          <code>pt</code>.</p>
+        <ul class="credits">
+          <li>Definitions from the <a href="https://epsg.org/">EPSG Geodetic Parameter Dataset</a> as
+            <a href="https://proj.org/">PROJ</a> carries it; the transformations are PROJ's.</li>
+          <li>Snyder, J. P. (1987) <i>Map Projections: A Working Manual</i>, USGS Professional Paper 1395
+            (Lambert conformal conic, Albers equal-area conic); Karney, C. F. F. (2011) Transverse Mercator
+            with an accuracy of a few nanometers, J. Geodesy 85, 475.</li>
+          <li>State borders from <a href="https://www.naturalearthdata.com/">Natural Earth</a> 1:10m admin-1
+            (public domain), made by <code>test/make-aus-states.py</code>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

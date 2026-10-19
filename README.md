@@ -543,6 +543,24 @@ little), and the net is found rather than copied: a maximum spanning tree of the
 faces weighted by the land each edge crosses, so the cuts fall in the sea. Hash
 keys: `s` (step, from 0), `p` (the step's slider).
 
+## VicGrid
+
+`vicgrid.html` draws south-east Australia in one grid's own eastings and
+northings: GDA2020 / Vicgrid (EPSG:7899), GDA94 / Vicgrid (3111), AGD66 /
+Vicgrid66 (3110), MGA zones 54 and 55 (7854, 7855), NSW Lambert (8058), SA
+Lambert (8059) or Australian Albers (3577). VicGrid is one Lambert conformal
+conic for the whole of Victoria (standard parallels 36 and 38 S), where the
+national UTM grid splits the state at 144 E; the page overlays the MGA zone
+edges and another grid's 100 km lines, shades the scale error, and gives the
+point under the pointer in every grid through its datum (GDA2020 to GDA94 by
+EPSG:8048, GDA94 to AGD66 by PROJ's "AGD66 to GDA94 (4)" for NSW and
+Victoria). `src/core/vicgrid.js` has the conics (Snyder 1987), MGA from
+`mgrs.js` and the Helmert shifts, checked against PROJ by
+`test/check-vicgrid.mjs` (`test/fixtures/vicgrid-proj.json`, from
+`test/make-vicgrid-fixture.py`). State borders are Natural Earth 1:10m admin-1
+(`data/aus-states-10m.json`, from `test/make-aus-states.py`). Hash keys: `crs`,
+`over`, `shade`, `zones`, `grat`, `towns`, `v`, `pt`.
+
 ## Nuyina
 
 `nuyina.html` follows RSV Nuyina, Australia's icebreaker, along a voyage. The
@@ -711,6 +729,7 @@ regular.html, js/regular-page.js       regular in what? storyline: geostationary
 rasterize.html, js/rasterize-page.js   rasterize page
 example.html, js/example.js            For example storyboard
 homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977
+vicgrid.html, js/vicgrid.js            VicGrid: Victoria's one-zone grid against MGA, NSW/SA Lambert, Albers
 sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
 bins.html, js/bins.js                  L3 bins page
 tissot.html, js/tissot-page.js         Distortion page (Tissot's indicatrix and factor fields)
@@ -762,6 +781,7 @@ src/core/track.js                 ship tracks from underway CSV or parquet rows;
 src/core/rhumb.js                 rhumb lines, geodesics and great circles, the whole loxodrome, composite sailing
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
+src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
 
 data/countries-110m.json   Natural Earth 110m country parts as flat [lon, lat] rings
