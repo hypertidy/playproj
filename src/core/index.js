@@ -30,6 +30,7 @@ export * as seaice from "./seaice.js";
 export * as track from "./track.js";
 export * as rhumb from "./rhumb.js";
 export * as ellipsoid from "./ellipsoid.js";
+export * as geoid from "./geoid.js";
 
 export * as geo from "./geo.js";
 export * as landmesh from "./landmesh.js";
