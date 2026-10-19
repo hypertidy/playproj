@@ -8,10 +8,10 @@
 // that finds the CRS from the arrays alone (src/core/regular.js).
 
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as R from "../src/core/regular.js";
 import { loadCoastline } from "./data.js";
 import { graticule } from "../src/core/geo.js";
+import { makeStage, readParams, hashWriter, shareLinks, copyText } from "../src/scene/index.js";
 
 R.init(window.proj4);
 
@@ -38,38 +38,19 @@ const satOf = () => SATS.find((s) => s.key === state.sat) || SATS[0];
 
 const defaults = { s: 0, sat: "goes-e", h: GEO_KM, h2: 3000, mag: 100, t: 0, m: 0, ex: "goes", pick: 0 };
 const state = { ...defaults };
-const embed = new URLSearchParams(location.search).has("embed");
 
 function readHash() {
-  const q = new URLSearchParams(location.hash.slice(1));
-  Object.assign(state, defaults);
-  for (const k of Object.keys(defaults)) {
-    if (!q.has(k)) continue;
-    const raw = q.get(k);
-    if (k === "sat") state.sat = SATS.some((x) => x.key === raw) ? raw : defaults.sat;
-    else if (k === "ex") state.ex = R.EXAMPLES.some((x) => x.key === raw) ? raw : defaults.ex;
-    else if (isFinite(+raw)) state[k] = +raw;
-  }
+  readParams(state, defaults, {
+    sat: (raw) => (SATS.some((x) => x.key === raw) ? raw : defaults.sat),
+    ex: (raw) => (R.EXAMPLES.some((x) => x.key === raw) ? raw : defaults.ex)
+  });
   const cl = (k, a, b) => { state[k] = Math.max(a, Math.min(b, state[k])); };
   cl("s", 0, STEPS.length - 1); state.s = Math.round(state.s);
   cl("h", 300, 120000); cl("h2", 300, 120000); cl("mag", 1, 1000); cl("t", 0, 1); cl("m", 0, 1);
   state.pick = Math.max(0, Math.round(state.pick));
 }
 
-let hashTimer = 0;
-function writeHash() {
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => {
-    const q = new URLSearchParams();
-    for (const k of Object.keys(defaults)) {
-      if (k === "ex" && pasted && state.ex === "paste") continue;
-      const v = typeof state[k] === "number" ? +state[k].toFixed(3) : state[k];
-      if (v !== defaults[k]) q.set(k, String(v));
-    }
-    const s = q.toString();
-    history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
-  }, 200);
-}
+const writeHash = hashWriter(state, defaults, { skip: (k) => k === "ex" && pasted && state.ex === "paste" });
 
 // ---------------------------------------------------------------- geometry
 
@@ -97,15 +78,14 @@ function hit(d, rg, lon0) {
 
 const stage = document.getElementById("three");
 const view = document.getElementById("view");
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(C.bg);
-stage.appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.01, 400);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
+const { renderer, scene, camera, controls, resize } = makeStage(stage, {
+  bg: C.bg,
+  near: 0.01,
+  far: 400,
+  onResize: () => {
+    if (STEPS[state.s].mode === "2d") sync();
+  }
+});
 
 // the Earth: a lon/lat lattice so the texture lines up with toScene
 const earthCanvas = document.createElement("canvas");
@@ -848,26 +828,8 @@ ui.play.addEventListener("click", () => {
   anim = true; dir = state[k] >= 1 ? -1 : 1; ui.play.textContent = "Stop"; lastT = performance.now();
 });
 
-function copy(text, btn) {
-  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1200); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => {});
-}
-const pageUrl = () => location.origin + location.pathname;
-$("copy-proj").addEventListener("click", (e) => copy(ui.proj.textContent, e.target));
-$("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
-$("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="Regular in what?"></iframe>`,
-  e.target));
-$("open-full").href = pageUrl() + location.hash;
-
-function resize() {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  if (STEPS[state.s].mode === "2d") sync();
-}
-new ResizeObserver(resize).observe(stage);
+shareLinks("Regular in what?");
+$("copy-proj").addEventListener("click", (e) => copyText(ui.proj.textContent, e.target));
 
 function tick(now) {
   if (anim) {
@@ -882,11 +844,6 @@ function tick(now) {
 }
 
 window.addEventListener("hashchange", () => { readHash(); resetCamera(); sync(); });
-
-if (embed) {
-  document.body.classList.add("embed");
-  $("open-full").hidden = false;
-}
 
 let coastLines = null;
 readHash();

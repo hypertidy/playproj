@@ -1,7 +1,7 @@
 // The core (everything under src/core) runs without a browser: no module
 // reaches for the DOM, a canvas or three.js, none imports from outside the
-// core, and each one, with everything it imports, loads in Node. Page,
-// scene and loading code (js/) is outside the core.
+// core, and each one, with everything it imports, loads in Node. Pages and
+// loading code (js/) and the three.js scene layer (src/scene) are outside it.
 import { readFileSync, readdirSync } from "fs";
 
 const root = new URL("../src/core/", import.meta.url);

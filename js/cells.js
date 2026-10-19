@@ -7,12 +7,12 @@
 // Hilbert curve runs unbroken.
 
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as s2 from "../src/core/s2.js";
 import { loadCoastline } from "./data.js";
 import { warpCanvas } from "./basemap-load.js";
 import { basemapControl, exportControl } from "./basemap-ui.js";
 import { gnomonic, ringOf } from "../src/core/cellexport.js";
+import { makeStage, readParams, hashWriter, shareLinks, copyText } from "../src/scene/index.js";
 
 const DEG = "\u00b0";
 const TEX = 1024;
@@ -35,39 +35,17 @@ const toScene = (p) => new THREE.Vector3(p[1], p[2], p[0]);
 
 const defaults = { lvl: 3, t: 0, curve: 1, grid: 1, coast: 1, uvgrid: 0, cell: "", bm: "none", cam: null };
 const state = { ...defaults };
-const embed = new URLSearchParams(location.search).has("embed");
 
 function readHash() {
-  const h = new URLSearchParams(location.hash.slice(1));
-  Object.assign(state, defaults);
-  for (const k of Object.keys(defaults)) {
-    if (!h.has(k)) continue;
-    const raw = h.get(k);
-    if (k === "bm") state.bm = raw;
-    else if (k === "cell") state.cell = s2.fromToken(raw) ? raw.toLowerCase() : "";
-    else if (k === "cam") {
-      const c = raw.split(",").map(Number);
-      if (c.length === 6 && c.every(isFinite)) state.cam = c;
-    } else if (isFinite(+raw)) state[k] = +raw;
-  }
+  readParams(state, defaults, {
+    bm: String,
+    cell: (raw) => (s2.fromToken(raw) ? raw.toLowerCase() : "")
+  });
   state.lvl = Math.max(0, Math.min(12, Math.round(state.lvl)));
   state.t = Math.max(0, Math.min(1, state.t));
 }
 
-let hashTimer = 0;
-function writeHash() {
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => {
-    const h = new URLSearchParams();
-    for (const k of Object.keys(defaults)) {
-      if (k === "cam") { if (state.cam) h.set("cam", state.cam.map((x) => +x.toFixed(2)).join(",")); continue; }
-      const val = typeof state[k] === "number" ? +state[k].toFixed(3) : state[k];
-      if (val !== defaults[k]) h.set(k, String(val));
-    }
-    const s = h.toString();
-    history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
-  }, 200);
-}
+const writeHash = hashWriter(state, defaults);
 
 // ---------------------------------------------------------------- face textures
 
@@ -193,28 +171,13 @@ function drawFace(face, picked) {
 // ---------------------------------------------------------------- scene
 
 const stage = document.getElementById("three");
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(COLORS.bg);
-stage.appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 200);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
+const { renderer, scene, camera, controls, setCamera, resize } = makeStage(stage, {
+  bg: COLORS.bg,
+  onCamera: (c) => { state.cam = c; writeHash(); }
+});
 
 const DEFAULT_CAM = [2.4, 1.9, 5.4, 0, 0, 0];
-function setCamera(c) {
-  camera.position.set(c[0], c[1], c[2]);
-  controls.target.set(c[3], c[4], c[5]);
-  controls.update();
-}
 setCamera(DEFAULT_CAM);
-controls.addEventListener("end", () => {
-  const p = camera.position, t = controls.target;
-  state.cam = [p.x, p.y, p.z, t.x, t.y, t.z];
-  writeHash();
-});
 
 const group = new THREE.Group();
 scene.add(group);
@@ -424,7 +387,7 @@ ui.geojson.addEventListener("click", (e) => {
   const c = pickedCell();
   if (!c) return;
   const ring = [...c.corners, c.corners[0]].map(([x, y]) => [+x.toFixed(9), +y.toFixed(9)]);
-  copy(JSON.stringify({ type: "Feature", properties: { token: s2.toToken(c.id), level: c.level, face: c.face },
+  copyText(JSON.stringify({ type: "Feature", properties: { token: s2.toToken(c.id), level: c.level, face: c.face },
     geometry: { type: "Polygon", coordinates: [ring] } }), e.target);
 });
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(DEFAULT_CAM); writeHash(); });
@@ -453,26 +416,9 @@ playBtn.addEventListener("click", () => {
   anim = true; dir = state.t >= 1 ? -1 : 1; playBtn.textContent = "Stop"; lastT = performance.now();
 });
 
-function copy(text, btn) {
-  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1200); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => {});
-}
-const pageUrl = () => location.origin + location.pathname;
-$("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
-$("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="s2 cells"></iframe>`,
-  e.target));
-$("open-full").href = pageUrl() + location.hash;
+shareLinks("s2 cells");
 
 // ---------------------------------------------------------------- loop
-
-function resize() {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-}
-new ResizeObserver(resize).observe(stage);
 
 function tick(now) {
   if (anim) {
@@ -490,11 +436,6 @@ function tick(now) {
 ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; writeHash(); basemap.set(state.bm); });
 
 window.addEventListener("hashchange", () => { readHash(); if (state.cam) setCamera(state.cam); basemap.set(state.bm); sync(); });
-
-if (embed) {
-  document.body.classList.add("embed");
-  $("open-full").hidden = false;
-}
 
 readHash();
 if (state.cam) setCamera(state.cam);

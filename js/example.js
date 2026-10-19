@@ -8,6 +8,7 @@
 import { loadCoastline } from "./data.js";
 import { coastRings, landPolygons } from "../src/core/landmesh.js";
 import { naivePath, resampleArc } from "../src/core/mishaps.js";
+import { shareLinks } from "../src/scene/index.js";
 
 const d3 = window.d3;
 const D2R = Math.PI / 180;
@@ -274,7 +275,6 @@ const ui = {
   title: $("step-title"), caption: $("caption"), param: $("param"), paramRow: $("param-row"),
   paramLabel: $("param-label"), paramOut: $("param-out"), steps: $("steps"), count: $("count")
 };
-const embed = new URLSearchParams(location.search).has("embed");
 const state = { s: 0, p: null, rot: [-10, -20, 0] };
 
 function readHash() {
@@ -394,24 +394,10 @@ canvas.addEventListener("pointermove", (e) => {
 });
 canvas.addEventListener("pointerup", () => { dragFrom = null; });
 
-function copy(text, btn) {
-  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1200); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => {});
-}
-const pageUrl = () => location.origin + location.pathname;
-$("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
-$("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="520" style="border:0" loading="lazy" title="For example"></iframe>`,
-  e.target));
-$("open-full").href = pageUrl() + location.hash;
+shareLinks("For example", { height: 520 });
 
 new ResizeObserver(sync).observe(canvas);
 window.addEventListener("hashchange", () => { readHash(); sync(); });
-
-if (embed) {
-  document.body.classList.add("embed");
-  $("open-full").hidden = false;
-}
 
 // land polygons from the coastlines, wound the way d3 wants
 async function loadLand() {

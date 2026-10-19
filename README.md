@@ -610,6 +610,13 @@ js/download.js      hands a file to the browser as a download
 js/basemap-ui.js    basemap picker and cell GeoTIFF button for the cells pages
 js/tissot-draw.js   indicatrices, the enlarged one and contours drawn on a 2D canvas
 
+src/scene/index.js   the scene layer in one import: three.js and the browser, on top of the core
+src/scene/stage.js   renderer, scene, camera and orbit controls sized to a page element
+src/scene/hash.js    page state in the URL hash, written only where it differs from the defaults
+src/scene/share.js   copy link, copy embed and open full buttons; embedded mode
+src/scene/homes.js   two homes for every vertex (index space and the world) and the warp between them
+src/scene/relief.js  relief on any surface, pushed along its normals by elevation
+
 src/core/index.js                 the whole core in one import; src/core/ needs no browser
 src/core/families/index.js        the families, and the interface each one has
 src/core/families/perspective.js  azimuthal perspective family: rays, PROJ string, GeoTIFF keys
@@ -640,6 +647,7 @@ data/s2-tiles.json         which MGRS squares are Sentinel-2 tiles (ESA tiling g
 test/fixtures/             reference points projected by PROJ
 data/                      Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-pure.mjs        the core modules load in Node with no DOM, canvas or three.js
+test/check-scene.mjs       the scene modules import only three.js and the core, and load in Node
 test/check-interfaces.mjs  every family and grid has the shared Family and Grid shape
 test/check-proj.mjs        ray construction vs proj4js
 test/check-secant.mjs      secant planes vs PROJ (fixture made with PROJ 9.8)
@@ -680,7 +688,10 @@ the sampled grids, contours, auto sizing and the float GeoTIFF writer.
 position. `test/check-pure.mjs` keeps everything in `src/core` (the
 families, the grids and cells, Tissot, the readers and writers) free of the
 DOM, canvases and three.js, and reachable from `src/core/index.js`, so the
-core runs in Node or any page as one import. `test/check-interfaces.mjs`
+core runs in Node or any page as one import. `test/check-scene.mjs` keeps
+`src/scene` (the stage, hash state, share buttons, two homes and relief
+that the pages share) on three.js and the core alone, and checks the hash
+reader and writer and the two-homes warp. `test/check-interfaces.mjs`
 checks that every projection family has the shape `src/core/families/index.js`
 describes, and every grid (model grids, ROMS grids, s2 cells) the patch
 shape `src/core/grids.js` describes. To check that GDAL reads the

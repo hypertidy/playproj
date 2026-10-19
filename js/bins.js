@@ -7,10 +7,10 @@
 // every row to the left edge, the ragged array the bins are stored in (1).
 
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as l3 from "../src/core/l3bin.js";
 import { loadCoastline } from "./data.js";
 import { basemapControl, exportControl } from "./basemap-ui.js";
+import { makeStage, readParams, hashWriter, shareLinks, copyText } from "../src/scene/index.js";
 
 const D2R = Math.PI / 180;
 const DEG = "\u00b0";
@@ -31,40 +31,18 @@ const COLORS = {
 
 const defaults = { rows: 3, t: 0, grid: "2160", bin: "", lines: 1, coast: 1, bm: "none", cam: null };
 const state = { ...defaults };
-const embed = new URLSearchParams(location.search).has("embed");
 
 function readHash() {
-  const h = new URLSearchParams(location.hash.slice(1));
-  Object.assign(state, defaults);
-  for (const k of Object.keys(defaults)) {
-    if (!h.has(k)) continue;
-    const raw = h.get(k);
-    if (k === "grid") state.grid = raw === "drawn" || /^\d+$/.test(raw) ? raw : "2160";
-    else if (k === "bin") state.bin = raw;
-    else if (k === "bm") state.bm = raw;
-    else if (k === "cam") {
-      const c = raw.split(",").map(Number);
-      if (c.length === 6 && c.every(isFinite)) state.cam = c;
-    } else if (isFinite(+raw)) state[k] = +raw;
-  }
+  readParams(state, defaults, {
+    grid: (raw) => (raw === "drawn" || /^\d+$/.test(raw) ? raw : "2160"),
+    bin: String,
+    bm: String
+  });
   state.rows = Math.max(0, Math.min(DRAWN.length - 1, Math.round(state.rows)));
   state.t = Math.max(0, Math.min(1, state.t));
 }
 
-let hashTimer = 0;
-function writeHash() {
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => {
-    const h = new URLSearchParams();
-    for (const k of Object.keys(defaults)) {
-      if (k === "cam") { if (state.cam) h.set("cam", state.cam.map((x) => +x.toFixed(2)).join(",")); continue; }
-      const val = typeof state[k] === "number" ? +state[k].toFixed(3) : state[k];
-      if (val !== defaults[k]) h.set(k, String(val));
-    }
-    const s = h.toString();
-    history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
-  }, 200);
-}
+const writeHash = hashWriter(state, defaults);
 
 const drawnGrid = () => l3.grid(DRAWN[state.rows]);
 const lookupGrid = () => l3.grid(state.grid === "drawn" ? DRAWN[state.rows] : Math.max(2, Math.min(1e6, +state.grid)));
@@ -140,28 +118,13 @@ function drawTexture(pick) {
 // ---------------------------------------------------------------- scene
 
 const stage = document.getElementById("three");
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(COLORS.bg);
-stage.appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 200);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
+const { renderer, scene, camera, controls, setCamera, resize } = makeStage(stage, {
+  bg: COLORS.bg,
+  onCamera: (c) => { state.cam = c; writeHash(); }
+});
 
 const DEFAULT_CAM = [0, 0.6, 8.2, 0, 0, 0];
-function setCamera(c) {
-  camera.position.set(c[0], c[1], c[2]);
-  controls.target.set(c[3], c[4], c[5]);
-  controls.update();
-}
 setCamera(DEFAULT_CAM);
-controls.addEventListener("end", () => {
-  const p = camera.position, t = controls.target;
-  state.cam = [p.x, p.y, p.z, t.x, t.y, t.z];
-  writeHash();
-});
 
 const texture = new THREE.CanvasTexture(tex);
 texture.colorSpace = THREE.SRGBColorSpace;
@@ -317,7 +280,7 @@ ui.geojson.addEventListener("click", (e) => {
   for (let i = 0; i <= k; i++) ring.push([p.west + ((p.east - p.west) * i) / k, p.south]);
   for (let i = 0; i <= k; i++) ring.push([p.east - ((p.east - p.west) * i) / k, p.north]);
   ring.push(ring[0]);
-  copy(JSON.stringify({ type: "Feature", properties: { bin: p.bin, nrows: p.g.nrows, row: p.row + 1, col: p.col + 1 },
+  copyText(JSON.stringify({ type: "Feature", properties: { bin: p.bin, nrows: p.g.nrows, row: p.row + 1, col: p.col + 1 },
     geometry: { type: "Polygon", coordinates: [ring.map(([x, y]) => [+x.toFixed(6), +y.toFixed(6)])] } }), e.target);
 });
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(DEFAULT_CAM); writeHash(); });
@@ -345,26 +308,9 @@ playBtn.addEventListener("click", () => {
   anim = true; dir = state.t >= 1 ? -1 : 1; playBtn.textContent = "Stop"; lastT = performance.now();
 });
 
-function copy(text, btn) {
-  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1200); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => {});
-}
-const pageUrl = () => location.origin + location.pathname;
-$("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
-$("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="L3 bins"></iframe>`,
-  e.target));
-$("open-full").href = pageUrl() + location.hash;
+shareLinks("L3 bins");
 
 // ---------------------------------------------------------------- loop
-
-function resize() {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-}
-new ResizeObserver(resize).observe(stage);
 
 function tick(now) {
   if (anim) {
@@ -382,11 +328,6 @@ function tick(now) {
 ui.bm.addEventListener("change", () => { state.bm = ui.bm.value; writeHash(); basemap.set(state.bm); });
 
 window.addEventListener("hashchange", () => { readHash(); if (state.cam) setCamera(state.cam); basemap.set(state.bm); sync(); });
-
-if (embed) {
-  document.body.classList.add("embed");
-  $("open-full").hidden = false;
-}
 
 readHash();
 if (state.cam) setCamera(state.cam);

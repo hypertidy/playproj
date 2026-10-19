@@ -7,9 +7,9 @@
 // data stays fixed to the Earth; flat, it is turned upright.
 
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as m from "../src/core/mishaps.js";
 import { loadCoastline } from "./data.js";
+import { makeStage, readParams, hashWriter, oneOf, shareLinks } from "../src/scene/index.js";
 
 const d3 = window.d3;
 const D2R = Math.PI / 180;
@@ -32,41 +32,19 @@ const COLORS = {
 const steps = m.catastrophes(d3);
 const defaults = { c: "seam", m: "naive", flip: 0, ghost: 1, lon: 0, lat: 0, flat: "eqc", t: 0, coast: 1, grat: 1, cam: null };
 const state = { ...defaults };
-const embed = new URLSearchParams(location.search).has("embed");
 
 function readHash() {
-  const h = new URLSearchParams(location.hash.slice(1));
-  Object.assign(state, defaults);
-  for (const k of Object.keys(defaults)) {
-    if (!h.has(k)) continue;
-    const raw = h.get(k);
-    if (k === "c") state.c = steps.some((s) => s.id === raw) ? raw : "seam";
-    else if (k === "m") state.m = raw === "sphere" ? "sphere" : "naive";
-    else if (k === "flat") state.flat = raw in m.flats ? raw : "eqc";
-    else if (k === "cam") {
-      const c = raw.split(",").map(Number);
-      if (c.length === 6 && c.every(isFinite)) state.cam = c;
-    } else if (isFinite(+raw)) state[k] = +raw;
-  }
+  readParams(state, defaults, {
+    c: (raw) => (steps.some((s) => s.id === raw) ? raw : "seam"),
+    m: oneOf(["sphere"], "naive"),
+    flat: (raw) => (raw in m.flats ? raw : "eqc")
+  });
   state.lon = ((state.lon + 540) % 360) - 180;
   state.lat = Math.max(-90, Math.min(90, state.lat));
   state.t = Math.max(0, Math.min(1, state.t));
 }
 
-let hashTimer = 0;
-function writeHash() {
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => {
-    const h = new URLSearchParams();
-    for (const k of Object.keys(defaults)) {
-      if (k === "cam") { if (state.cam) h.set("cam", state.cam.map((x) => +x.toFixed(2)).join(",")); continue; }
-      const val = typeof state[k] === "number" ? +state[k].toFixed(3) : state[k];
-      if (val !== defaults[k]) h.set(k, String(val));
-    }
-    const s = h.toString();
-    history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
-  }, 200);
-}
+const writeHash = hashWriter(state, defaults);
 
 const step = () => steps.find((s) => s.id === state.c);
 const rot = () => m.rotation(state.lon, state.lat);
@@ -161,28 +139,13 @@ function drawTexture() {
 // ---------------------------------------------------------------- scene
 
 const stage = document.getElementById("three");
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(COLORS.bg);
-stage.appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 200);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
+const { renderer, scene, camera, controls, setCamera, resize } = makeStage(stage, {
+  bg: COLORS.bg,
+  onCamera: (c) => { state.cam = c; writeHash(); }
+});
 
 const DEFAULT_CAM = [0, 0.5, 8.4, 0, 0, 0];
-function setCamera(c) {
-  camera.position.set(c[0], c[1], c[2]);
-  controls.target.set(c[3], c[4], c[5]);
-  controls.update();
-}
 setCamera(DEFAULT_CAM);
-controls.addEventListener("end", () => {
-  const p = camera.position, t = controls.target;
-  state.cam = [p.x, p.y, p.z, t.x, t.y, t.z];
-  writeHash();
-});
 
 const texture = new THREE.CanvasTexture(tex);
 texture.colorSpace = THREE.SRGBColorSpace;
@@ -409,26 +372,10 @@ playBtn.addEventListener("click", () => {
   anim = true; dir = state.t >= 1 ? -1 : 1; playBtn.textContent = "Stop"; lastT = performance.now();
 });
 
-function copy(text, btn) {
-  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1200); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => {});
-}
-const pageUrl = () => location.origin + location.pathname;
-$("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
-$("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="Map catastrophes"></iframe>`,
-  e.target));
-$("open-full").href = pageUrl() + location.hash;
+shareLinks("Map catastrophes");
 
 // ---------------------------------------------------------------- loop
 
-function resize() {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-}
-new ResizeObserver(resize).observe(stage);
 new ResizeObserver(drawPanelMap).observe(ui.map);
 
 function tick(now) {
@@ -455,11 +402,6 @@ async function loadData() {
 }
 
 window.addEventListener("hashchange", () => { readHash(); if (state.cam) setCamera(state.cam); sync(); });
-
-if (embed) {
-  document.body.classList.add("embed");
-  $("open-full").hidden = false;
-}
 
 readHash();
 if (state.cam) setCamera(state.cam);

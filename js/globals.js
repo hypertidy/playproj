@@ -10,7 +10,6 @@
 // gnomonic projection), then the octahedron's faces open flat.
 
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import * as fam from "../src/core/families/globals.js";
 import { samplePoints, evenSpacing, SAMPLE_MODES } from "../src/core/landmesh.js";
 import { loadCoastline } from "./data.js";
@@ -20,7 +19,7 @@ import { loadWorld, readWindow } from "./basemap-load.js";
 import { writeGeoTIFF, esriGeoKeys } from "../src/core/geotiff-write.js";
 import { crsGeoKeys } from "../src/core/cellexport.js";
 import { saveBlob } from "./download.js";
-import { displace, hasElevation } from "./relief.js";
+import { makeStage, readParams, hashWriter, oneOf, shareLinks, copyText, displace, hasElevation } from "../src/scene/index.js";
 
 const D2R = Math.PI / 180;
 const DEG = "\u00b0";
@@ -47,24 +46,16 @@ const defaults = {
 };
 const BUTTERFLY_EDGE = -20; // Cahill-Keyes puts an octahedron edge on 20 W
 const state = { ...defaults };
-const embed = new URLSearchParams(location.search).has("embed");
 
 const wrap180 = (v) => +(((v + 540) % 360) - 180).toFixed(4);
 function readHash() {
-  const h = new URLSearchParams(location.hash.slice(1));
-  for (const k of Object.keys(defaults)) {
-    if (!h.has(k)) continue;
-    const raw = h.get(k);
-    if (k === "base") state.base = raw in fam.BASES ? raw : defaults.base;
-    else if (k === "lobes") state.lobes = raw in fam.LOBES ? raw : defaults.lobes;
-    else if (k === "detail") state.detail = raw === "50m" ? "50m" : "110m";
-    else if (k === "from") state.from = SAMPLE_MODES.includes(raw) ? raw : "tri";
-    else if (k === "bm") state.bm = raw in sources ? raw : "none";
-    else if (k === "cam") {
-      const c = raw.split(",").map(Number);
-      if (c.length === 6 && c.every(isFinite)) state.cam = c;
-    } else if (isFinite(+raw)) state[k] = +raw;
-  }
+  readParams(state, defaults, {
+    base: (raw) => (raw in fam.BASES ? raw : defaults.base),
+    lobes: (raw) => (raw in fam.LOBES ? raw : defaults.lobes),
+    detail: oneOf(["50m"], "110m"),
+    from: oneOf(SAMPLE_MODES, "tri"),
+    bm: (raw) => (raw in sources ? raw : "none")
+  });
   state.lon0 = wrap180(state.lon0);
   state.t = Math.max(0, Math.min(1, state.t));
   state.s = Math.max(0, Math.min(1, state.s));
@@ -73,20 +64,7 @@ function readHash() {
   state.relief = Math.max(0, Math.min(100, state.relief));
 }
 
-let hashTimer = 0;
-function writeHash() {
-  clearTimeout(hashTimer);
-  hashTimer = setTimeout(() => {
-    const h = new URLSearchParams();
-    for (const k of Object.keys(defaults)) {
-      if (k === "cam") { if (state.cam) h.set("cam", state.cam.map((x) => +x.toFixed(2)).join(",")); continue; }
-      const val = typeof state[k] === "number" ? +state[k].toFixed(4) : state[k];
-      if (val !== defaults[k]) h.set(k, String(val));
-    }
-    const s = h.toString();
-    history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
-  }, 200);
-}
+const writeHash = hashWriter(state, defaults, { digits: 4 });
 
 const params = () => ({ base: state.base, lobes: state.lobes, gores: state.gores, s: state.s, lon0: state.lon0 });
 const pkey = (p) => `${p.base},${p.lobes},${p.gores},${p.s},${p.lon0}`;
@@ -208,30 +186,18 @@ function morph(map, pt, t, out, i = 0) {
 // ---------------------------------------------------------------- scene
 
 const stage = document.getElementById("three");
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(COLORS.bg);
-stage.appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 200);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
+const { renderer, scene, camera, controls, setCamera, resize } = makeStage(stage, {
+  bg: COLORS.bg,
+  onCamera: (c) => { state.cam = c; writeHash(); },
+  onResize: () => {
+    if (coast.length) drawMap(currentMap());
+  }
+});
 
 const DEFAULT_CAM = [2.6, 2.3, 8.2, 0, 0.1, 0.6];
 const BUTTERFLY_CAM = [0.5, 11, 8.5, 0, 0.6, 0];
 const defaultCam = () => (state.base === "butterfly" ? BUTTERFLY_CAM : DEFAULT_CAM);
-function setCamera(c) {
-  camera.position.set(c[0], c[1], c[2]);
-  controls.target.set(c[3], c[4], c[5]);
-  controls.update();
-}
 setCamera(DEFAULT_CAM);
-controls.addEventListener("end", () => {
-  const p = camera.position, t = controls.target;
-  state.cam = [p.x, p.y, p.z, t.x, t.y, t.z];
-  writeHash();
-});
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 const sun = new THREE.DirectionalLight(0xffffff, 1.1);
@@ -900,28 +866,11 @@ function play(key, btn) {
 playU.addEventListener("click", () => play("t", playU));
 ui.playI.addEventListener("click", () => play("s", ui.playI));
 
-function copy(text, btn) {
-  const done = () => { const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = t), 1200); };
-  if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => {});
-}
-const pageUrl = () => location.origin + location.pathname;
-$("copy-link").addEventListener("click", (e) => copy(pageUrl() + location.hash, e.target));
-$("copy-embed").addEventListener("click", (e) => copy(
-  `<iframe src="${pageUrl()}?embed=1${location.hash}" width="100%" height="480" style="border:0" loading="lazy" title="Map projection playground"></iframe>`,
-  e.target));
-$("copy-proj").addEventListener("click", (e) => copy(ui.proj.textContent, e.target));
-$("open-full").href = pageUrl() + location.hash;
+shareLinks("Map projection playground");
+$("copy-proj").addEventListener("click", (e) => copyText(ui.proj.textContent, e.target));
 
 // ---------------------------------------------------------------- loop
 
-function resize() {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  renderer.setSize(w, h);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
-  if (coast.length) drawMap(currentMap());
-}
-new ResizeObserver(resize).observe(stage);
 new ResizeObserver(() => { if (coast.length) drawMap(currentMap()); }).observe(mapCanvas);
 
 function tick(now) {
@@ -944,11 +893,6 @@ async function loadData() {
 }
 
 window.addEventListener("hashchange", () => { readHash(); controls.autoRotate = !!state.spin; if (state.cam) setCamera(state.cam); setBasemap(); loadData().then(sync); });
-
-if (embed) {
-  document.body.classList.add("embed");
-  $("open-full").hidden = false;
-}
 
 readHash();
 setCamera(state.cam || defaultCam());
