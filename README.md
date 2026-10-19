@@ -317,6 +317,30 @@ keys: `mode` (`utm`, `upsn` or `upss`), `zone` (1 to 60), `t` (0 globe, 0.5 cyli
 `tile`, `s2`, `nb` (next zones' tiles), `sq` (100 km squares), `coast`,
 `cyl`, `cam`.
 
+## AAT grid
+
+`aatgrid.html` is a mini version of [aatgrid](https://github.com/mdsumner/aatgrid),
+an R package with a tile scheme for the Australian Antarctic Territory (and a
+fuller [explorer](https://mdsumner.github.io/aatgrid/explorer/)). The scheme
+is three numbers: an origin at easting 140 000, northing 20 000 shared by every
+UTM south zone, 720 pixels on a tile's edge, and the resolution, so tiles are
+7.2 km at 10 m, 14.4 km at 20 m and 43.2 km at 60 m, and nest 3 x 3 and 6 x 6
+inside a 60 m tile. Ids read `43S_R0060_0005_0094` (zone, resolution, column,
+row); the older `L1` and `L2` names for 60 m and 10 m parse too.
+
+The page draws the chosen zone's lattice at the chosen resolution on the globe
+south of 45 S, carried past the zone's edge if asked, with the next zones' own
+lattices crossing it; the AAT claim (south of 60 S, 45 E to 160 E less Adelie
+Land); and, for a picked point, its 60 m tile with the 20 m and 10 m tiles in
+it, its tile at the chosen resolution, the extent and GDAL geotransform, the
+same ground's id in the next zone, and the Sentinel-2 tiles over it. 10 m and
+20 m pixels are Sentinel-2's own; 60 m ones sit 20 m off in each direction,
+since Sentinel-2's southern northings are 40 (mod 60) from the 10 000 000 m
+false northing. `src/core/aatgrid.js` has the arithmetic on top of the UTM in
+`src/core/mgrs.js`. Hash keys: `zone`, `res` (10, 20 or 60), `pt` (lon,lat),
+`past` (lattice past the zone edge), `nb` (next zones' lattices), `s2`, `aat`,
+`bm`, `cam`.
+
 ## Model grids
 
 `grids.html` shows the curvilinear grids that climate and ocean models compute
@@ -552,7 +576,15 @@ countries from `data/countries-110m.json`, Natural Earth 110m via
 world-atlas); Gall-Peters and south-up, after the Cartographers for Social
 Equality in The West Wing (season 2, episode 16); Equal Earth (Savric,
 Jenny and Patterson 2018); Fuller's Dymaxion; and the projections named in
-[xkcd 977](https://xkcd.com/977/). The credits are in the page's About panel.
+[xkcd 977](https://xkcd.com/977/); and Eratosthenes' measurement of the
+Earth, in three steps: a 3D globe (drag to turn it) with the well at Syene, a
+gnomon at Alexandria, parallel sun rays and the equal angles at the stick and
+at the centre; the same with the sun off overhead, where the difference of two
+shadow angles does the job; and the real map, with Alexandria about 3 degrees
+west of Syene, Syene north of the Tropic of Cancer as it was in 240 BC
+(Laskar 1986 obliquity), and a slider for the unknown length of the stadion.
+The geometry is in `src/core/eratosthenes.js`. The credits are in the page's
+About panel.
 Robinson, Winkel tripel, Van der Grinten and cylindrical equal-area (Gall-Peters,
 Hobo-Dyer) are written as d3 raw projections in `src/core/homage-geo.js`;
 `test/check-homage.mjs` checks them and the rest against PROJ 9.8
@@ -563,6 +595,24 @@ each face centre on Fuller's icosahedron (Fuller's own face transform differs a
 little), and the net is found rather than copied: a maximum spanning tree of the
 faces weighted by the land each edge crosses, so the cuts fall in the sea. Hash
 keys: `s` (step, from 0), `p` (the step's slider).
+
+## VicGrid
+
+`vicgrid.html` draws south-east Australia in one grid's own eastings and
+northings: GDA2020 / Vicgrid (EPSG:7899), GDA94 / Vicgrid (3111), AGD66 /
+Vicgrid66 (3110), MGA zones 54 and 55 (7854, 7855), NSW Lambert (8058), SA
+Lambert (8059) or Australian Albers (3577). VicGrid is one Lambert conformal
+conic for the whole of Victoria (standard parallels 36 and 38 S), where the
+national UTM grid splits the state at 144 E; the page overlays the MGA zone
+edges and another grid's 100 km lines, shades the scale error, and gives the
+point under the pointer in every grid through its datum (GDA2020 to GDA94 by
+EPSG:8048, GDA94 to AGD66 by PROJ's "AGD66 to GDA94 (4)" for NSW and
+Victoria). `src/core/vicgrid.js` has the conics (Snyder 1987), MGA from
+`mgrs.js` and the Helmert shifts, checked against PROJ by
+`test/check-vicgrid.mjs` (`test/fixtures/vicgrid-proj.json`, from
+`test/make-vicgrid-fixture.py`). State borders are Natural Earth 1:10m admin-1
+(`data/aus-states-10m.json`, from `test/make-aus-states.py`). Hash keys: `crs`,
+`over`, `shade`, `zones`, `grat`, `towns`, `v`, `pt`.
 
 ## Nuyina
 
@@ -731,8 +781,10 @@ structure.html, js/structure-page.js   tiles and overviews page
 regular.html, js/regular-page.js       regular in what? storyline: geostationary, lon/lat arrays
 rasterize.html, js/rasterize-page.js   rasterize page
 example.html, js/example.js            For example storyboard
-homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977
+homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977, Eratosthenes
+vicgrid.html, js/vicgrid.js            VicGrid: Victoria's one-zone grid against MGA, NSW/SA Lambert, Albers
 sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
+aatgrid.html, js/aatgrid.js            AAT grid: a mini aatgrid, one tile lattice in every UTM south zone
 bins.html, js/bins.js                  L3 bins page
 tissot.html, js/tissot-page.js         Distortion page (Tissot's indicatrix and factor fields)
 ellipsoid.html, js/ellipsoid-page.js   Ellipsoid: exaggerated flattening, the three latitudes, M and N
@@ -773,7 +825,9 @@ src/core/structure.js             grid, tile and file structure of COG, Zarr, WM
 src/core/rasterize.js             centre-in scanline fill, exact coverage fractions, runs, tiles and bytes
 src/core/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 src/core/homage-geo.js            Robinson, Winkel tripel, Van der Grinten, cea; Dymaxion icosahedron and net
+src/core/eratosthenes.js          Eratosthenes' well, gnomon and sun rays in 3D; obliquity of the ecliptic
 src/core/mgrs.js                  UTM, MGRS references and Sentinel-2 tiles
+src/core/aatgrid.js               the aatgrid tile lattice: ids, nesting, extents, Sentinel-2 shift
 src/core/tissot.js                distortion factors (h, k, s, omega, ...) from any forward function
 src/core/distortion.js            factor grids, colour scales, contours and auto-sized lattices
 src/core/l3bin.js                 SeaWiFS / MODIS level-3 bin grid
@@ -783,6 +837,7 @@ src/core/track.js                 ship tracks from underway CSV or parquet rows;
 src/core/rhumb.js                 rhumb lines, geodesics and great circles, the whole loxodrome, composite sailing
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
+src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
 
 data/countries-110m.json   Natural Earth 110m country parts as flat [lon, lat] rings
@@ -824,6 +879,8 @@ grid, the overlap plan and level choice, and reading tracks from GeoServer CSV a
 `test/check-structure.mjs` checks the tile and overview readers against
 GDAL, tifffile and zarr-python. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
 GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid.
+`test/check-aatgrid.mjs` checks the AAT grid lattice against the aatgrid R package's own tests
+(the Heard Island anchors and the Atlas Cove seam), ids, nesting and the Sentinel-2 pixel shift.
 `test/check-tissot.mjs` checks the distortion factors against PROJ's own
 `proj_factors()` for 27 projections, spheres and ellipsoids
 (`test/fixtures/tissot-proj.json`, from `test/make-tissot-fixture.py`): the

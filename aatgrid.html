@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: AAT grid</title>
+<meta name="description" content="A mini aatgrid: one tile lattice in every UTM south zone, 720 pixels a tile at 10, 20 and 60 m, nested, over the Australian Antarctic Territory.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "earcut": "https://cdn.jsdelivr.net/npm/earcut@3.0.2/src/earcut.js",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/aatgrid.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./aatgrid.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html" aria-current="page">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./regular.html">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <div id="places" class="presets" role="group" aria-label="Places"></div>
+      <div id="res" class="presets three" role="group" aria-label="Resolution">
+        <button type="button" data-res="10" title="7.2 km tiles">10 m</button>
+        <button type="button" data-res="20" title="14.4 km tiles">20 m</button>
+        <button type="button" data-res="60" title="43.2 km tiles">60 m</button>
+      </div>
+      <p id="res-out" class="hint"></p>
+      <label class="row" for="zone"><span>UTM zone</span><output id="zone-out"></output></label>
+      <input id="zone" type="range" min="1" max="60" step="1" aria-label="UTM zone">
+    </section>
+
+    <section>
+      <label class="row" for="lookup"><span>Point</span><output id="pt-out"></output></label>
+      <input id="lookup" class="token" type="text" spellcheck="false" autocomplete="off" placeholder="click, or paste lon, lat or a tile id" aria-label="Point or aatgrid tile id">
+      <div id="tile-chips" class="buttons"></div>
+      <p id="tile-info" class="hint"></p>
+      <p id="s2-info" class="hint"></p>
+      <div class="buttons">
+        <button id="zoom" type="button">Zoom to the tile</button>
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="toggles">
+        <label><input id="past" type="checkbox"> Lattice past the zone edge</label>
+        <label><input id="nb" type="checkbox"> Next zones' lattices</label>
+        <label><input id="s2" type="checkbox"> Sentinel-2 tiles</label>
+        <label><input id="aat" type="checkbox"> AAT claim</label>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="basemap"><span>Basemap</span></label>
+      <select id="basemap" class="wide"></select>
+      <p id="bm-status" class="status" role="status"></p>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>The grid is three numbers: an origin at easting 140 000 m, northing 20 000 m, the same in every
+          UTM south zone; 720 pixels on a tile's edge, at every resolution; and the resolution. So a tile is
+          7.2 km on a side at 10 m, 14.4 km at 20 m and 43.2 km at 60 m, and its id says all of it:
+          43S_R0060_0005_0094 is zone 43 south, 60 m pixels, column 5 and row 94 counted from the origin.</p>
+        <p>Tiles nest whenever one resolution divides another: a 60 m tile holds 3 x 3 tiles at 20 m and
+          6 x 6 at 10 m, and a tile's parent is its column and row divided and rounded down. Pick a point to
+          see its 60 m tile with the finer tiles inside it.</p>
+        <p>The lattice is square in the zone's own metres, so on the globe its columns are not meridians:
+          they lean away from them towards the zone's edges, more the further south. Each zone has its own
+          lattice, so where two zones meet the lattices cross at an angle. "Lattice past the zone edge" carries
+          this zone's lattice over the next zones' ground: the same place has a tile in each, in two
+          coordinate systems, and a tile id says which zone it means.</p>
+        <p>The origin is chosen to line up with Sentinel-2. Its tiles start on a 60 m lattice through
+          easting 0 and, in the south, through the equator, which is northing 10 000 000, not a multiple of 60.
+          At 10 m and 20 m the pixels here are Sentinel-2's own; at 60 m they sit 20 m off in each direction,
+          a constant shift that a warp absorbs.</p>
+        <p>The Australian Antarctic Territory is claimed south of 60&deg; S from 45&deg; E to 160&deg; E,
+          less Adelie Land (136&deg; E to 142&deg; E): twenty UTM zones, 38 to 57. Heard Island and
+          Macquarie Island are in zones 43 and 57.</p>
+        <p>Click the globe, or paste a longitude and latitude or a tile id (the older L1 and L2 names
+          for 60 m and 10 m read too).</p>
+        <ul class="credits">
+          <li>The scheme is the <a href="https://github.com/mdsumner/aatgrid">aatgrid</a> R package's, which has a
+            fuller <a href="https://mdsumner.github.io/aatgrid/explorer/">explorer</a> on UTM maps of the coast.
+            The Heard Island anchors and the Sentinel-2 alignment checked here are from its tests and notes.</li>
+          <li>UTM is transverse Mercator by Kruger's series (Karney 2011), as in <a href="https://proj.org/en/stable/operations/projections/tmerc.html">PROJ</a>,
+            checked against PROJ; Sentinel-2 tiles as on the MGRS and Sentinel-2 page.</li>
+          <li>Coastline: Natural Earth, public domain.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

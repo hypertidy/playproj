@@ -25,17 +25,20 @@ export * as regular from "./regular.js";
 export * as s2 from "./s2.js";
 export * as l3bin from "./l3bin.js";
 export * as mgrs from "./mgrs.js";
+export * as aatgrid from "./aatgrid.js";
 export * as polarstere from "./polarstere.js";
 export * as seaice from "./seaice.js";
 export * as track from "./track.js";
 export * as rhumb from "./rhumb.js";
 export * as ellipsoid from "./ellipsoid.js";
 export * as geoid from "./geoid.js";
+export * as vicgrid from "./vicgrid.js";
 
 export * as geo from "./geo.js";
 export * as landmesh from "./landmesh.js";
 export * as mishaps from "./mishaps.js";
 export * as homageGeo from "./homage-geo.js";
+export * as eratosthenes from "./eratosthenes.js";
 export * as rasterize from "./rasterize.js";
 export * as texmap from "./texmap.js";
 
