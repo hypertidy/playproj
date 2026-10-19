@@ -45,7 +45,7 @@ function readHash() {
   readParams(state, defaults, {
     mesh: oneOf(Object.keys(MESHES), "small"), proj: oneOf(PROJ_IDS, "stere"),
     seam: oneOf(["split", "shared"], "split"), pole: oneOf(["split", "single"], "split"),
-    look: oneOf(["vertex", "pixel"], "vertex"), bm: oneOf(["none", "gebco", "esri"], "none"),
+    look: oneOf(["vertex", "pixel"], "vertex"), bm: oneOf(["none", "photo", "gebco", "esri"], "none"),
     uv: (raw) => (/^[-0-9.,]*$/.test(raw) ? raw : "")
   });
   const M = MESHES[state.mesh];
@@ -53,7 +53,8 @@ function readHash() {
   state.bend = Math.max(0, Math.min(1, state.bend));
 }
 readHash();
-const writeHash = hashWriter(state, defaults, { digits: 3 });
+// an own image stays in this browser, so a link cannot carry it
+const writeHash = hashWriter(state, defaults, { digits: 3, skip: (k) => k === "bm" && state.bm === "own" });
 
 // ---------------------------------------------------------------- the mesh
 
@@ -167,7 +168,7 @@ void main() {
   gl_FragColor = texture2D(map, uv);
 }`;
 
-const texture = new THREE.CanvasTexture(document.createElement("canvas"));
+let texture = new THREE.CanvasTexture(document.createElement("canvas"));
 const material = new THREE.ShaderMaterial({
   vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide,
   uniforms: { map: { value: texture }, look: { value: 0 }, kind: { value: 0 }, proj: { value: 2 }, aff: { value: 0 } },
@@ -353,11 +354,26 @@ function testCard(coast) {
   return cv;
 }
 
-let card = null, world = null;
+// the photo and a viewer's own image are plain images, stretched over u, v
+// from 0 to 1 whatever their shape, as any texture is
+const PHOTO_CREDIT = "Caravaggio, <i>Basket of Fruit</i> (about 1599), public domain";
+let card = null, world = null, photo = null, own = null;
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error(`could not load ${src}`));
+    im.src = src;
+  });
+}
 function setTexture() {
-  const img = world ? world.canvas : card;
+  const img = state.bm === "photo" && photo ? photo : state.bm === "own" && own ? own : world ? world.canvas : card;
   if (!img) return;
-  texture.image = img;
+  // a new texture for each image: the GPU's storage for one is fixed at
+  // its first size
+  texture.dispose();
+  texture = new THREE.Texture(img);
+  material.uniforms.map.value = texture;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
   texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -603,8 +619,37 @@ const basemap = basemapControl({
   select: $("basemap"), status: $("bm-status"), credit: $("credit"),
   onWorld: (wd) => { world = wd; setTexture(); }
 });
-$("basemap").options[0].textContent = "Test card (built in)";
-$("basemap").addEventListener("change", () => { state.bm = $("basemap").value; basemap.set(state.bm); writeHash(); });
+const bmSelect = $("basemap");
+bmSelect.options[0].textContent = "Test card (built in)";
+bmSelect.add(new Option("Photo: Caravaggio's fruit basket", "photo"), 1);
+bmSelect.add(new Option("Your own image...", "own"));
+// the picker's own sources go through basemapControl; the photo and an
+// own image are read here, and leave the basemap at none
+async function setImage(id) {
+  state.bm = id;
+  bmSelect.value = id;
+  if (id === "photo" || id === "own") {
+    await basemap.set("none");
+    bmSelect.value = id;
+    if (id === "photo") {
+      $("credit").innerHTML = PHOTO_CREDIT;
+      if (!photo) photo = await loadImage(new URL("../data/caravaggio-basket-of-fruit.jpg", import.meta.url).href).catch(() => null);
+    } else $("credit").innerHTML = "";
+  } else await basemap.set(id);
+  setTexture();
+  writeHash();
+}
+bmSelect.addEventListener("change", () => {
+  if (bmSelect.value === "own" && !own) { bmSelect.value = state.bm; $("own-file").click(); return; }
+  setImage(bmSelect.value);
+});
+$("own-file").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  // read in this browser only: nothing is uploaded
+  own = await loadImage(URL.createObjectURL(f)).catch(() => null);
+  if (own) setImage("own");
+});
 
 // looking from direction dir (or the mesh's own), far enough back that the
 // mesh fits the narrower side of the view
@@ -654,7 +699,7 @@ function sync() {
 
   const what = state.mesh === "plane" ? `${T.PROJS[state.proj].label} (${T.PROJS[state.proj].proj.replace(" +R=1", "")})` : M.label;
   $("mesh-label").textContent = `${what}, ${state.look === "pixel" && isMap() ? "per-pixel" : "per-vertex"} lookup${state.aff ? ", affine" : ""}`;
-  $("uv-label").textContent = "The image in u, v, with the mesh's triangles at their texture coordinates";
+  $("uv-label").textContent = "The image in u, v, with the mesh's triangles";
   drawUv();
   readout();
   writeHash();
@@ -664,7 +709,7 @@ function sync() {
 
 window.addEventListener("hashchange", () => {
   readHash(); rebuild(); setCamera(state.cam || defaultCam());
-  if (state.bm !== basemap.id) basemap.set(state.bm);
+  if (state.bm !== basemap.id) setImage(state.bm);
 });
 new ResizeObserver(() => drawUv()).observe(map.parentElement);
 const main = $("stage");
@@ -686,4 +731,4 @@ labels.setSize(stage.clientWidth, stage.clientHeight);
 setCamera(state.cam || defaultCam());
 requestAnimationFrame(tick);
 loadCoastline("110m").then((c) => { card = testCard(c); if (!world) setTexture(); }).catch(() => {});
-if (state.bm !== "none") basemap.set(state.bm);
+if (state.bm !== "none") setImage(state.bm);

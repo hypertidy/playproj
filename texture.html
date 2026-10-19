@@ -49,6 +49,10 @@
         <option value="ico">Globe, icosphere</option>
         <option value="plane">Map in a projection</option>
       </select>
+      <label class="row" for="basemap"><span>Image</span></label>
+      <select id="basemap" class="wide"></select>
+      <input id="own-file" type="file" accept="image/*" hidden>
+      <p id="bm-status" class="status" role="status"></p>
       <label class="row" for="n"><span id="n-name">Divisions</span><output id="n-out"></output></label>
       <input id="n" type="range" min="1" max="32" step="1" aria-label="Mesh divisions">
       <div id="bend-box">
@@ -85,12 +89,6 @@
         <button id="reset-view" type="button">Reset view</button>
       </div>
       <p class="hint" id="hint"></p>
-    </section>
-
-    <section>
-      <label class="row" for="basemap"><span>Texture image</span></label>
-      <select id="basemap" class="wide"></select>
-      <p id="bm-status" class="status" role="status"></p>
     </section>
 
     <section>
@@ -148,11 +146,15 @@
           the shader, and checked against proj4js in <code>test/check-texmap.mjs</code>, with the mesh seams
           and poles and the size of the per-vertex miss.</p>
         <p>Hash keys: <code>mesh</code>, <code>n</code>, <code>bend</code>, <code>proj</code>, <code>seam</code>,
-          <code>pole</code>, <code>look</code>, <code>edges</code>, <code>aff</code>, <code>bm</code>,
+          <code>pole</code>, <code>look</code>, <code>edges</code>, <code>aff</code>, <code>bm</code> (<code>none</code> for the test card, <code>photo</code>,
+          <code>gebco</code>, <code>esri</code>),
           <code>uv</code> (dragged corners of the small mesh), <code>cam</code>.</p>
         <ul class="credits">
           <li>Tarini, M. (2012) Cylindrical and toroidal parameterizations without vertex seams, Journal of
             Graphics Tools 16(3), 144-150.</li>
+          <li>The photo is Caravaggio's <i>Basket of Fruit</i> (about 1599, Biblioteca Ambrosiana, Milan),
+            public domain, from <a href="https://commons.wikimedia.org/wiki/File:Canestra_di_frutta_(Caravaggio).jpg">Wikimedia
+            Commons</a> by way of the three.js examples.</li>
           <li>Coastlines from <a href="https://www.naturalearthdata.com/">Natural Earth</a>; GEBCO 2026 Grid
             (GEBCO Compilation Group) from <a href="https://source.coop/ausantarctic/gebco">Source
             Cooperative</a>; projections checked with <a href="https://github.com/proj4js/proj4js">proj4js</a>;

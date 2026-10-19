@@ -248,8 +248,11 @@ readout gives the miss in km). "Per pixel" interpolates the position instead
 and inverts it in the shader, which is exact at any mesh size. "Affine" turns
 off perspective-correct interpolation. The projections are in
 `src/core/texmap.js` and checked against proj4js in `test/check-texmap.mjs`.
+A photo (Caravaggio's *Basket of Fruit*) or any image of the viewer's own,
+read in the browser, shows the same mapping on a picture that is not a map.
 Hash keys: `mesh` (`small`, `globe`, `ico`, `plane`), `n`, `bend`, `proj`,
-`seam`, `pole`, `look` (`vertex` or `pixel`), `edges`, `aff`, `bm`, `uv`,
+`seam`, `pole`, `look` (`vertex` or `pixel`), `edges`, `aff`, `bm` (`none`, `photo`,
+`gebco`, `esri`), `uv`,
 `cam`.
 
 ## s2 cells
