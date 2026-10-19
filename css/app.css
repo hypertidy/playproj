@@ -256,3 +256,8 @@ body.embed #shapes, body.embed #detail, body.embed label[for="detail"] { display
   #stage.quad > .half + .half { border-top: 1px solid var(--line); }
 }
 body.embed #stage.quad .half-label { display: none; }
+
+/* ellipsoid.html: a readout with a true and a drawn column */
+.readout.both td.num { text-align: right; white-space: nowrap; }
+.readout.both tr.sub td { color: var(--text); font-weight: 600; padding-top: 8px; text-align: left; }
+pre.projdef { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: #070b16; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; }
