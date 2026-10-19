@@ -719,7 +719,7 @@ geoid.html, js/geoid.js                Geoid: EGM2008 exaggerated over the ellip
 nuyina.html, js/nuyina.js              Nuyina: voyage track, sea ice, two bathymetry mosaics, near-ship maps
 rhumb.html, js/rhumb.js                Rhumb lines: rhumb line and great circle on four maps, composite sailing
 
-js/data.js          loads the coastlines and the geoid grid in data/
+js/data.js          loads the coastlines in data/
 js/basemap-load.js  fetches the basemaps in the browser and makes their canvases
 js/download.js      hands a file to the browser as a download
 js/basemap-ui.js    basemap picker and cell GeoTIFF button for the cells pages

@@ -11,7 +11,7 @@ import * as THREE from "three";
 import * as G from "../src/core/geoid.js";
 import { graticule } from "../src/core/geo.js";
 import { sampleElev } from "../src/core/basemap.js";
-import { loadCoastline, loadGeoid } from "./data.js";
+import { loadCoastline } from "./data.js";
 import { basemapControl } from "./basemap-ui.js";
 import { makeStage, readParams, hashWriter, shareLinks, oneOf } from "../src/scene/index.js";
 import { PLACES } from "../src/core/track.js";
@@ -70,6 +70,16 @@ const exag = () => Math.round(10 ** state.nx);
 const ell = () => ({ a: 1, f: G.WGS84.f * state.fx });
 
 // ---------------------------------------------------------------- data
+
+// The EGM2008 geoid at whole degrees, as int16 centimetres (layout in
+// src/core/geoid.js). Fetched here rather than in data.js, so a browser
+// holding an older data.js still finds it.
+async function loadGeoid() {
+  const url = new URL("../data/geoid-egm2008-1deg.bin", import.meta.url);
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`could not load ${url}`);
+  return r.arrayBuffer();
+}
 
 let grid = null, coast = [], world = null, prof = [], terrain = null, hover = null;
 
