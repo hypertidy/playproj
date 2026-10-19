@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Texture mapping</title>
+<meta name="description" content="How a renderer drapes an image on a mesh: vertices, texture coordinates and per-triangle interpolation on a small mesh, then a globe and a projected map, and where it goes wrong at seams, poles and coarse triangles.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/texture.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split texture">
+    <div class="half">
+      <div id="three"></div>
+      <span class="half-label" id="mesh-label"></span>
+    </div>
+    <div class="half">
+      <canvas id="map" aria-label="The texture image with the mesh's triangles drawn at their texture coordinates"></canvas>
+      <span class="half-label" id="uv-label"></span>
+    </div>
+    <a id="open-full" class="open-full" href="./texture.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./regular.html">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html" aria-current="page">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a></span></nav>
+    </header>
+
+    <section>
+      <div id="presets" class="presets" role="group" aria-label="Examples"></div>
+    </section>
+
+    <section class="embed-keep">
+      <label class="row" for="mesh"><span>Mesh</span></label>
+      <select id="mesh" class="wide">
+        <option value="small">Small mesh</option>
+        <option value="globe">Globe, lon/lat grid</option>
+        <option value="ico">Globe, icosphere</option>
+        <option value="plane">Map in a projection</option>
+      </select>
+      <label class="row" for="n"><span id="n-name">Divisions</span><output id="n-out"></output></label>
+      <input id="n" type="range" min="1" max="32" step="1" aria-label="Mesh divisions">
+      <div id="bend-box">
+        <label class="row" for="bend"><span>Bend</span><output id="bend-out"></output></label>
+        <input id="bend" type="range" min="0" max="1" step="0.01" aria-label="Bend the small mesh round a cylinder">
+      </div>
+      <div id="proj-box">
+        <label class="row" for="proj"><span>Projection</span></label>
+        <select id="proj" class="wide"></select>
+      </div>
+      <div id="sphere-box">
+        <label class="row" for="seam"><span>Antimeridian</span></label>
+        <select id="seam" class="wide">
+          <option value="split">Two vertices, u = 0 and u = 1</option>
+          <option value="shared">One vertex, shared</option>
+        </select>
+        <label class="row" for="pole"><span>Poles</span></label>
+        <select id="pole" class="wide">
+          <option value="split">A pole vertex for each triangle</option>
+          <option value="single">One vertex at each pole</option>
+        </select>
+      </div>
+      <label class="row" for="look"><span>Texture lookup</span></label>
+      <select id="look" class="wide">
+        <option value="vertex">Per vertex: blend the corners' u, v</option>
+        <option value="pixel">Per pixel: invert the position</option>
+      </select>
+      <div class="toggles">
+        <label><input id="edges" type="checkbox"> Edges</label>
+        <label><input id="aff" type="checkbox"> Affine (no perspective)</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-uv" type="button">Reset u, v</button>
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+      <p class="hint" id="hint"></p>
+    </section>
+
+    <section>
+      <label class="row" for="basemap"><span>Texture image</span></label>
+      <select id="basemap" class="wide"></select>
+      <p id="bm-status" class="status" role="status"></p>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A renderer draws triangles. A <b>mesh</b> is a list of <b>vertices</b> (points in 3D) and a list of
+          triangles, each three vertex numbers. To put an image on it, each vertex also carries a
+          <b>texture coordinate</b> (u, v): where that corner sits on the image, from 0 to 1 across and up.
+          The right-hand view is the image with the triangles drawn at their u, v, the mesh's
+          <b>UV layout</b>. On the small mesh you can drag the corners there and watch the picture slide
+          over the surface.</p>
+        <p>For every pixel a triangle covers, the GPU works out the pixel's <b>barycentric weights</b>: three
+          numbers that add to 1 and say how near it is to each corner. It blends the corners' u, v by those
+          weights and reads the image there. Hover either view to see the weights, the blend and the point it
+          reads. Inside one triangle that blend is <b>linear</b>, so the image is stretched as a flat sheet
+          from corner to corner, and anything between the corners comes along for free, right or wrong.</p>
+        <p>The blend is linear on the triangle in 3D, not on the screen: a triangle seen at an angle is
+          nearer the eye at one corner, and the GPU divides by depth so the image stays put
+          (<b>perspective-correct</b> interpolation). <b>Affine</b> turns that off and blends on the screen,
+          as early game consoles did; tilt the small mesh and the picture swims and kinks along the diagonals.</p>
+        <p>A basemap such as GEBCO is an <b>equirectangular</b> image: u is longitude and v is latitude. Drape
+          it on a globe and each vertex's u, v is just its own lon and lat, so a lon/lat mesh lines up with the
+          image cell for cell. Three things go wrong:</p>
+        <ul>
+          <li><b>The seam.</b> Longitude jumps from 180 to -180. If the vertices on the antimeridian are
+            shared, the last column of triangles runs from u near 1 back to u = 0 and blends across the whole
+            image backwards, a smear of the entire map squeezed into one strip. The fix is two vertices in the
+            same place, one at u = 0 and one at u = 1. A triangulated globe (the icosphere) has triangles that
+            straddle the seam at odd angles; the fix there is to copy their western corners at u + 1 and let
+            the image repeat.</li>
+          <li><b>The poles.</b> The top row of the image, every longitude, is one point. With one vertex there
+            (and one u), the polar triangles shear into a fan of zigzags. A pole vertex for each triangle,
+            at that triangle's middle u, gives each its own slice of the top row.</li>
+          <li><b>Coarse triangles.</b> A lon/lat grid is linear in the image but not on the sphere or in a
+            projected map. Between the corners the blend follows the straight triangle, not the curve, so a
+            coarse mesh bends coastlines at the triangle edges. On the globe the facets also cut inside the
+            sphere. In a map the error is the projection's own curvature: none in plate carree (which is the
+            image), latitude only in Mercator, and the whole shape in polar stereographic and Mollweide. The
+            readout gives how far the point the GPU reads is from where the pixel really is.</li>
+        </ul>
+        <p><b>Per pixel</b> skips the u, v altogether: the GPU interpolates the position instead (a 3D point,
+          or x, y in the map), and a small shader turns it back into lon and lat for every pixel: the
+          direction of the point from the centre on the globe, or the projection's inverse in the map. That
+          is exact at any mesh size, with no seam or pole to fix, and it is how a warp with a projection's
+          inverse fills a map (as PROJ and GDAL do, pixel by pixel). The mesh then only has to cover the
+          right area. One catch: at the jump from 180 to -180 the GPU sees u change by nearly 1 between
+          neighbouring pixels and picks the smallest copy of the image, drawing a fine line along the seam.
+          The shader here picks whichever of u and u - 1/2 changes less across the pixel (a trick from
+          Tarini, 2012) to avoid it.</p>
+        <p>The projections are spherical (R = 1), written once in <code>src/core/texmap.js</code> and again in
+          the shader, and checked against proj4js in <code>test/check-texmap.mjs</code>, with the mesh seams
+          and poles and the size of the per-vertex miss.</p>
+        <p>Hash keys: <code>mesh</code>, <code>n</code>, <code>bend</code>, <code>proj</code>, <code>seam</code>,
+          <code>pole</code>, <code>look</code>, <code>edges</code>, <code>aff</code>, <code>bm</code>,
+          <code>uv</code> (dragged corners of the small mesh), <code>cam</code>.</p>
+        <ul class="credits">
+          <li>Tarini, M. (2012) Cylindrical and toroidal parameterizations without vertex seams, Journal of
+            Graphics Tools 16(3), 144-150.</li>
+          <li>Coastlines from <a href="https://www.naturalearthdata.com/">Natural Earth</a>; GEBCO 2026 Grid
+            (GEBCO Compilation Group) from <a href="https://source.coop/ausantarctic/gebco">Source
+            Cooperative</a>; projections checked with <a href="https://github.com/proj4js/proj4js">proj4js</a>;
+            drawn with <a href="https://threejs.org/">three.js</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

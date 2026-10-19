@@ -263,3 +263,12 @@ body.embed #stage.quad .half-label { display: none; }
 pre.projdef { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: #070b16; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 8px 0 0; white-space: pre-wrap; word-break: break-all; }
 /* geoid.html: the globe over its profile */
 #stage.split.stacked.geoid { grid-template-rows: 3fr 2fr; }
+/* texture.html: vertex numbers on the small mesh, and its vertex table */
+.vlabel {
+  font: bold 12px system-ui, sans-serif; color: var(--accent);
+  background: rgba(5, 7, 13, 0.7); padding: 0 4px; border-radius: 3px;
+}
+.readout table.vtable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.readout table.vtable th { color: var(--muted); font-weight: normal; text-align: right; padding: 1px 4px; }
+.readout table.vtable td { text-align: right; padding: 1px 4px; border-bottom: 0; color: var(--text); }
+.readout table.vtable tr.on td { color: var(--accent); }
