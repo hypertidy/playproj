@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Geoid</title>
+<meta name="description" content="The geoid as an exaggerated surface over the WGS84 ellipsoid, from EGM2008, with a profile between two places that relates ellipsoidal height, the geoid and the terrain: h = H + N.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/geoid.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split stacked geoid">
+    <div class="half">
+      <div id="three"></div>
+      <span class="half-label" id="globe-label"></span>
+    </div>
+    <div class="half">
+      <canvas id="map" aria-label="Heights along the profile: the ellipsoid, the geoid and, with a basemap, the terrain"></canvas>
+      <span class="half-label" id="profile-label"></span>
+    </div>
+    <a id="open-full" class="open-full" href="./geoid.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html" aria-current="page">Geoid</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./regular.html">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="nx"><span>Geoid exaggeration</span><output id="nx-out"></output></label>
+      <input id="nx" type="range" min="0" max="4.3" step="0.01" aria-label="Geoid exaggeration, as a power of ten">
+      <label class="row" for="fx"><span>Flattening exaggeration</span><output id="fx-out"></output></label>
+      <input id="fx" type="range" min="1" max="50" step="0.5" aria-label="Ellipsoid flattening exaggeration">
+      <div class="toggles">
+        <label><input id="ell" type="checkbox"> Ellipsoid</label>
+        <label><input id="coast" type="checkbox"> Coastline</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+        <label><input id="wall" type="checkbox"> Profile wall</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section>
+      <div id="presets" class="presets" role="group" aria-label="Profiles"></div>
+      <p class="hint">Click the globe to move the nearer end of the profile; hover the profile to read the heights.</p>
+    </section>
+
+    <section>
+      <label class="row" for="basemap"><span>Terrain</span></label>
+      <select id="basemap" class="wide"></select>
+      <p id="bm-status" class="status" role="status"></p>
+      <div class="toggles">
+        <label><input id="fit" type="checkbox"> Fit the profile to the terrain</label>
+      </div>
+      <p class="hint">With GEBCO, the profile adds the land and sea floor (heights above mean sea level, so above the geoid) and the readout gives h = H + N.</p>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>Projections start from a <b>datum</b>: a sphere or, for real work, an <b>ellipsoid</b> such as WGS84,
+          a smooth shape about 21 km shorter through the poles than across the equator (the
+          <a href="./ellipsoid.html">Ellipsoid</a> page exaggerates it). Height above it, the
+          <b>ellipsoidal height</b> h, is what a GNSS receiver gives. But water does not run downhill on the
+          ellipsoid. It runs downhill in the earth's gravity, and the level surface of gravity that best fits
+          mean sea level is the <b>geoid</b>. "Height above sea level", the <b>orthometric height</b> H, is
+          height above the geoid.</p>
+        <p>The geoid is lumpy because the earth's mass is: density differences, mostly deep in the mantle,
+          bend the level surfaces up over extra mass and down over less. The bumps are small, at most about
+          100 m against a radius of 6371 km, so the globe here exaggerates them (ten thousand times turns
+          a 100 m low into a 1000 km dent). They do not follow the mountains: the deepest low is over open
+          ocean south of Sri Lanka, the highest point is over New Guinea, and the Himalaya sit on a modest
+          geoid.</p>
+        <p>The height of the geoid above the ellipsoid is the <b>geoid undulation</b> N, and the three
+          heights add up: <b>h = H + N</b>. The profile draws them along the line between two places: the
+          ellipsoid is the straight line at zero, the geoid swings above and below it, and the terrain (with
+          GEBCO) stands on the geoid. Over the sea, the sea surface lies within a metre or two of the geoid
+          (the difference is the ocean's dynamic topography, which drives the currents).
+          <b>Profile wall</b> hangs the same profile on the globe, from the ellipsoid up or down to the geoid.</p>
+        <p>The slope of the geoid is the <b>deflection of the vertical</b>: the angle between a plumb line
+          and the ellipsoid normal, a few seconds of arc in most places. The readout gives it from the grid's
+          slope, which at a whole degree is the smooth, long-wavelength part.</p>
+        <p>The geoid is EGM2008 at whole degrees, every 24th node of PROJ's 2.5 minute grid, read bilinear
+          as PROJ's <code>vgridshift</code> reads it and checked against PROJ in
+          <code>test/check-geoid.mjs</code> (the whole degree grid is within about 5 m of the full model).
+          The PROJ pipeline from ellipsoidal heights (EPSG:4979) to EGM2008 heights (EPSG:4326+3855) is in the
+          readout. Places on the globe are geocentric positions on WGS84 (on the exaggerated ellipsoid when
+          flattening is exaggerated) moved N times the exaggeration along the ellipsoid normal.</p>
+        <p>Hash keys: <code>alon</code>, <code>alat</code>, <code>blon</code>, <code>blat</code> (the
+          profile's ends), <code>nx</code> (geoid exaggeration), <code>fx</code> (flattening exaggeration),
+          <code>ell</code>, <code>coast</code>, <code>grat</code>, <code>wall</code>, <code>bm</code>, <code>fit</code>,
+          <code>cam</code>.</p>
+        <ul class="credits">
+          <li>Pavlis, N. K., Holmes, S. A., Kenyon, S. C. and Factor, J. K. (2012) The development and
+            evaluation of the Earth Gravitational Model 2008 (EGM2008), J. Geophys. Res. 117, B04406. Model
+            by the US National Geospatial-Intelligence Agency (NGA).</li>
+          <li>The grid <code>us_nga_egm08_25.tif</code> from <a href="https://cdn.proj.org/">cdn.proj.org</a>
+            (<a href="https://github.com/OSGeo/PROJ-data">PROJ-data</a>), with
+            <a href="https://proj.org/">PROJ</a>'s
+            <a href="https://proj.org/operations/transformations/vgridshift.html">vgridshift</a> as the
+            reference; the shipped whole degree grid is made by <code>test/make-geoid-fixture.py</code>.</li>
+          <li>Terrain from the GEBCO 2026 Grid (GEBCO Compilation Group), from
+            <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>; coastlines from
+            <a href="https://www.naturalearthdata.com/">Natural Earth</a>; drawn with
+            <a href="https://threejs.org/">three.js</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

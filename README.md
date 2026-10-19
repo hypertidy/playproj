@@ -151,6 +151,24 @@ by `test/check-ellipsoid.mjs`: a and b of each `ellps`, x, y, z against
 WGS84 with its flattening times 100. Hash keys: `ell`, `x` (exaggeration),
 `lat`, `lon`, `sph`, `par`, `osc`, `coast`, `cam`.
 
+## Geoid
+
+`geoid.html` draws the geoid over the WGS84 ellipsoid with its undulation N
+exaggerated (ten thousand times by default, so the 107 m low south of Sri
+Lanka is a 1000 km dent), and under it a profile between two places with the
+three heights a point has: on the ellipsoid (h = 0), on the geoid (h = N) and,
+with GEBCO, on the terrain (h = H + N, H being height above the geoid, "above
+sea level"). The flattening can be exaggerated too, the profile hangs on the
+globe as a wall from the ellipsoid to the geoid, and the readout gives N, H, h
+and the deflection of the vertical from the geoid's slope. The geoid is EGM2008
+at whole degrees (`data/geoid-egm2008-1deg.bin`, 128 KB of int16 centimetres:
+every 24th node of PROJ's `us_nga_egm08_25.tif`, written by
+`test/make-geoid-fixture.py`), read bilinear the way PROJ's `vgridshift` reads
+grids; `src/core/geoid.js` matches PROJ on that grid to float rounding, and is
+within about 5 m of the full 2.5 minute model. Hash keys: `alon`, `alat`,
+`blon`, `blat`, `nx` (exaggeration as a power of ten), `fx`, `ell`, `coast`,
+`grat`, `wall`, `bm`, `fit`.
+
 ## Globals and interrupteds
 
 `globals.html` takes the whole-world formulas: Mollweide, Goode homolosine,
@@ -697,10 +715,11 @@ sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
 bins.html, js/bins.js                  L3 bins page
 tissot.html, js/tissot-page.js         Distortion page (Tissot's indicatrix and factor fields)
 ellipsoid.html, js/ellipsoid-page.js   Ellipsoid: exaggerated flattening, the three latitudes, M and N
+geoid.html, js/geoid.js                Geoid: EGM2008 exaggerated over the ellipsoid, h = H + N profile
 nuyina.html, js/nuyina.js              Nuyina: voyage track, sea ice, two bathymetry mosaics, near-ship maps
 rhumb.html, js/rhumb.js                Rhumb lines: rhumb line and great circle on four maps, composite sailing
 
-js/data.js          loads the coastlines in data/
+js/data.js          loads the coastlines and the geoid grid in data/
 js/basemap-load.js  fetches the basemaps in the browser and makes their canvases
 js/download.js      hands a file to the browser as a download
 js/basemap-ui.js    basemap picker and cell GeoTIFF button for the cells pages
@@ -742,6 +761,7 @@ src/core/seaice.js                NSIDC Sea Ice Index grid, values and daily fil
 src/core/track.js                 ship tracks from underway CSV or parquet rows; Nuyina voyages; place, heading, distance run
 src/core/rhumb.js                 rhumb lines, geodesics and great circles, the whole loxodrome, composite sailing
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
+src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
 
 data/countries-110m.json   Natural Earth 110m country parts as flat [lon, lat] rings
