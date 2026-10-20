@@ -290,6 +290,27 @@ checked against s2sphere in `test/fixtures/s2-cells.json`. Hash keys: `lvl`
 (0 to 12), `t` (unfold, 0 globe, 0.5 cube, 1 net), `cell` (a token),
 `curve`, `grid`, `coast`, `uvgrid`, `cam`.
 
+## H3 hexagons
+
+`h3.html` puts [H3](https://h3geo.org/), Uber's hexagonal grid, on the
+icosahedron it is built on. A light at the centre of the globe casts every
+point onto one of twenty faces (the gnomonic projection, twenty times), and
+on each face's plane H3's hexagons are exactly regular. "Unfold" swells the
+globe to the icosahedron (placed as Fuller placed it for the Dymaxion map,
+every corner in the ocean) and opens it into the strip net. The twelve
+pentagons, one at each corner, are outlined at every resolution; "Children"
+shows the seven children of the picked cell spilling over its edge, and the
+19.1 degree turn between Class II and Class III resolutions.
+
+Click a cell for its index, resolution, base cell, faces and area, or paste
+an index. Parent and Child step through resolutions 0 to 15; GeoJSON copies
+the cell. The cells come from [h3-js](https://github.com/uber/h3-js) 4.4.0
+(from jsDelivr); `src/core/icosa.js` builds the icosahedron from H3's twelve
+pentagons, its gnomonic face frames and the hinges of the net, checked
+against h3-js in `test/check-icosa.mjs`. Hash keys: `res` (0 to 3), `t`
+(unfold, 0 globe, 0.5 icosahedron, 1 net), `cell` (an H3 index), `grid`,
+`kids`, `coast`, `col` (`base`, `digit`, `none`), `bm`, `cam`.
+
 ## MGRS and Sentinel-2
 
 `sentinel.html` shows UTM as one transverse Mercator cylinder laid on its
@@ -831,6 +852,7 @@ spilhaus.html, js/spilhaus.js          Spilhaus page
 globals.html, js/globals.js            globals and interrupteds page
 catastrophes.html, js/catastrophes.js  map catastrophes page
 cells.html, js/cells.js                s2 cells page
+h3.html, js/h3.js                      H3 hexagons on the icosahedron
 grids.html, js/grids-page.js           model grids page
 indexspace.html, js/indexspace.js      index space page
 structure.html, js/structure-page.js   tiles and overviews page
@@ -878,6 +900,7 @@ src/core/geotiff-write.js         GeoTIFF writer with user-defined CRS keys
 src/core/cellexport.js            GeoTIFF of one cell, tile or lobe in its own CRS
 src/core/mishaps.js               catastrophe steps, vertex-by-vertex and spherical drawing
 src/core/s2.js                    S2 faces, cell ids and tokens, from s2geometry
+src/core/icosa.js                 icosahedron from 12 vertices, gnomonic face frames, strip net hinges
 src/core/roms.js                  ROMS s-coordinate, synthetic grids and data, Zarr grid reader
 src/core/regular.js               which CRS makes a lon/lat array regular; example grids; geos scan angles
 src/core/structure.js             grid, tile and file structure of COG, Zarr, WMTS, ArcGIS, XYZ and specs
