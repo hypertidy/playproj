@@ -458,6 +458,20 @@ zarr-python (`test/fixtures/structure`, made by
 `lev`, then `lvl`, `t` (unfold), `ex` (stack), `pick` (x,y in the CRS),
 `tiles`, `pix`, `coast`, `grat`, `cam`.
 
+## Rectilinear chunks
+
+`rectilinear.html` compares a regular Zarr chunk grid with a rectilinear one
+(the `rectilinear` chunk grid of zarr-extensions, after ZEP0003): one list of
+chunk lengths per axis, cut across the whole array. Cases: the overhanging last
+chunk of a regular grid, days in months and years, years of files each chunked
+inside (a short last chunk per file, exact only if the file did not pad it),
+and mosaics of uneven, staggered and overlapping tiles (a grid is a partition,
+so overlap cannot be expressed). A read along time shows the chunks it touches
+and the values decoded against those wanted, for both grids. Paste a zarr.json
+or read one from a URL to draw its grid. `src/core/chunkgrid.js`, checked in
+`test/check-chunkgrid.mjs`. Hash keys: `case`, `grid` (`reg`, `rect`), `c`,
+`a`, `w`, `where` (`map`, `pixel`), `ex`, `cam`.
+
 ## Rasterize
 
 `rasterize.html` puts one polygon on one grid two ways, side by side. On the
@@ -820,6 +834,7 @@ cells.html, js/cells.js                s2 cells page
 grids.html, js/grids-page.js           model grids page
 indexspace.html, js/indexspace.js      index space page
 structure.html, js/structure-page.js   tiles and overviews page
+rectilinear.html, js/rectilinear.js    rectilinear chunks: regular and rectilinear Zarr chunk grids, calendars, files, mosaics
 regular.html, js/regular-page.js       regular in what? storyline: geostationary, lon/lat arrays
 rasterize.html, js/rasterize-page.js   rasterize page
 affine.html, js/affine.js              Affine: the geotransform, world file, registering an image by two points
@@ -866,6 +881,7 @@ src/core/s2.js                    S2 faces, cell ids and tokens, from s2geometry
 src/core/roms.js                  ROMS s-coordinate, synthetic grids and data, Zarr grid reader
 src/core/regular.js               which CRS makes a lon/lat array regular; example grids; geos scan angles
 src/core/structure.js             grid, tile and file structure of COG, Zarr, WMTS, ArcGIS, XYZ and specs
+src/core/chunkgrid.js             regular and rectilinear chunk grids: lookup, read cost, zarr.json chunk_grid, calendars, mosaics
 src/core/rasterize.js             centre-in scanline fill, exact coverage fractions, runs, tiles and bytes
 src/core/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 src/core/homage-geo.js            Robinson, Winkel tripel, Van der Grinten, cea; Dymaxion icosahedron and net

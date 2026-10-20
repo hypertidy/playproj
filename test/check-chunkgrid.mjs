@@ -7,11 +7,17 @@ let fails = 0;
 const check = (ok, msg) => { if (!ok) { fails++; console.log("FAIL " + msg); } };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-// regular axes: full chunks and what is left
-check(same(g.regularAxis(100, 30), [30, 30, 30, 10]), "100 by 30");
+// regular axes: whole chunks, the last overhanging, or trimmed to what is left
+check(same(g.regularAxis(100, 30), [30, 30, 30, 30]), "100 by 30");
+check(same(g.regularAxis(100, 30, { trim: true }), [30, 30, 30, 10]), "100 by 30, trimmed");
 check(same(g.regularAxis(90, 30), [30, 30, 30]), "90 by 30");
-check(same(g.regularAxis(5, 30), [5]), "one short chunk");
-check(g.regularSize([30, 30, 30, 10]) === 30 && g.regularSize([30, 31, 30]) === null && g.regularSize([30, 40]) === null, "regular sizes");
+check(same(g.regularAxis(5, 30), [30]) && same(g.regularAxis(5, 30, { trim: true }), [5]), "one short chunk");
+check(g.regularSize([30, 30, 30, 30], 100) === 30 && g.regularSize([30, 30, 30, 10], 100) === null && g.regularSize([30, 31, 30]) === null, "regular sizes");
+check(g.regularSize([30, 30, 30, 30, 30], 100) === null, "an overflow chunk is not regular");
+{
+  const off = g.offsets(g.regularAxis(100, 30));
+  check(g.filled(off, 3, 100) === 10 && g.filled(off, 0, 100) === 30, "filled");
+}
 
 // runs
 check(same(g.expandRuns([[31, 1], 28, [30, 2]]), [31, 28, 30, 30]), "expand runs");
@@ -38,7 +44,7 @@ for (const bad of [[0], [[3, 0]], [1.5], "1,2"]) {
   const feb24 = g.dayOf(2023, 2024, 1);
   check(feb24 === 365 + 31, "1 Feb 2024");
   check(same(g.span(off, feb24, feb24 + 29), [13, 13]), "February 2024 is one chunk");
-  check(same(g.span(g.offsets(g.regularAxis(1096, 30)), feb24, feb24 + 29), [13, 14]), "February 2024 in 30-day chunks is two");
+  check(same(g.span(g.offsets(g.regularAxis(1096, 30)), feb24, feb24 + 29, 1096), [13, 14]), "February 2024 in 30-day chunks is two");
   check(g.years(2023, 2025).sizes.join() === "365,366,365", "years");
   check(g.isLeap(2000) && !g.isLeap(1900) && g.isLeap(2024), "leap years");
 }
@@ -57,21 +63,26 @@ for (const bad of [[0], [[3, 0]], [1.5], "1,2"]) {
   check(j.name === "rectilinear" && same(j.configuration.chunk_shapes, [[31, 29, 31, 30, 31, 30, [31, 2], 30, 31, 30, 31], 90, 90]), "rectilinear json");
   const p = g.parseChunkGrid(j, [366, 180, 360]);
   check(p.kind === "rectilinear" && same(p.grid.axes, rg.axes), "rectilinear round trip");
-  check(same(g.chunkGridJson(g.grid([100], [g.regularAxis(100, 30)]), { force: "rectilinear" }).configuration.chunk_shapes, [[[30, 3], 10]]), "edge chunk as runs");
+  check(same(g.chunkGridJson(g.grid([100], [g.regularAxis(100, 30, { trim: true })])).configuration.chunk_shapes, [[[30, 3], 10]]), "trimmed edge chunk as runs");
+  check(same(g.chunkGridJson(g.grid([100], [g.regularAxis(100, 30)]), { force: "rectilinear" }).configuration.chunk_shapes, [30]), "overhanging edge chunk as an integer");
   let threw = false;
   try { g.grid([100], [[30, 30, 30]]); } catch (e) { threw = true; }
-  check(threw, "sizes must add to the shape");
-  check(g.parseChunkGrid({ shape: [10, 10], chunks: [4, 5] }).grid.axes[0].join() === "4,4,2", "v2 .zarray");
+  check(threw, "sizes must reach the shape");
+  check(g.grid([12], [[4, 4, 4, 4]]).axes[0].length === 4, "overflow chunks are allowed");
+  check(g.parseChunkGrid({ shape: [10, 10], chunks: [4, 5] }).grid.axes[0].join() === "4,4,4", "v2 .zarray");
+  // the extension's own example (zarr-extensions chunk-grids/rectilinear README)
+  const ex = g.parseChunkGrid({ shape: [6, 6, 6, 6, 6], chunk_grid: { name: "rectilinear", configuration: { kind: "inline", chunk_shapes: [4, [1, 2, 3], [[4, 2]], [[1, 3], 3], [4, 4, 4]] } } });
+  check(same(ex.grid.axes, [[4, 4], [1, 2, 3], [4, 4], [1, 1, 1, 3], [4, 4, 4]]), "the extension's example");
 }
 
 // keys and read cost
 {
   check(g.chunkKey([1, 0, 3]) === "c/1/0/3" && g.chunkKey([1, 0, 3], { version: 2 }) === "1.0.3", "chunk keys");
   const r = g.regularGrid([100, 10], [30, 10]);
-  const c = g.readCost(r, [[95, 100], [0, 10]], { stored: g.regularStored(r) });
+  const c = g.readCost(r, [[95, 100], [0, 10]]);
   check(c.chunks === 1 && c.read === 300 && c.want === 50, `edge chunk read ${JSON.stringify(c)}`);
-  const c2 = g.readCost(r, [[95, 100], [0, 10]]);
-  check(c2.read === 100, "edge chunk data");
+  const t = g.grid([100, 10], [g.regularAxis(100, 30, { trim: true }), [10]]);
+  check(g.readCost(t, [[95, 100], [0, 10]]).read === 100, "trimmed edge chunk read");
 }
 
 // mosaics

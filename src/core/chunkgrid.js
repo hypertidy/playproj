@@ -3,17 +3,22 @@
 // A regular grid has one chunk size per axis; a rectilinear grid has a
 // list of sizes per axis, so the cuts along an axis can fall anywhere, but
 // every cut still runs the whole way across the array. Each axis here is a
-// list of chunk sizes (the extent of data in each chunk), and the grid is
-// the cross product of the axes. Pure functions, no DOM.
+// list of chunk edge lengths, and the grid is the cross product of the
+// axes. The edges add up to at least the array's length: the last chunk
+// may overhang the end (always, in a regular grid that does not divide the
+// shape), and a chunk is stored at its edge length, so an overhang is
+// stored as fill. Pure functions, no DOM.
 
 // ---------------------------------------------------------------- axes
 
-// A regular axis of length n cut every c: full chunks and a last one that
-// holds what is left (stored at the full size c, padded with fill value).
-export function regularAxis(n, c) {
+// A regular axis of length n cut every c: ceil(n / c) chunks of c, the
+// last overhanging the end when c does not divide n. With trim, the last
+// is cut back to what is left (a rectilinear axis can say that; a regular
+// grid cannot).
+export function regularAxis(n, c, { trim = false } = {}) {
   if (!(n >= 0) || !(c >= 1)) throw new Error(`bad regular axis ${n} / ${c}`);
   const out = [];
-  for (let s = 0; s < n; s += c) out.push(Math.min(c, n - s));
+  for (let s = 0; s < n; s += c) out.push(trim ? Math.min(c, n - s) : c);
   return out;
 }
 
@@ -55,7 +60,7 @@ export function offsets(sizes) {
 }
 
 // The chunk holding index i: a division on a regular axis, a binary search
-// of the offsets on a rectilinear one.
+// of the offsets on a rectilinear one (the first offset past i, less one).
 export function locate(off, i) {
   if (i < 0 || i >= off[off.length - 1]) return -1;
   let lo = 0, hi = off.length - 2;
@@ -68,20 +73,24 @@ export function locate(off, i) {
 export const locateRegular = (c, i) => Math.floor(i / c);
 
 // The chunks a half-open selection [a, b) touches, as [first, last], or null.
-export function span(off, a, b) {
-  const n = off[off.length - 1];
+// n is the array's length (defaults to the end of the last chunk).
+export function span(off, a, b, n = off[off.length - 1]) {
   a = Math.max(0, a); b = Math.min(n, b);
   if (!(b > a)) return null;
   return [locate(off, a), locate(off, b - 1)];
 }
 
-// Is this list of sizes a regular axis (all c but the last, which is <= c)?
-export function regularSize(sizes) {
+// The regular chunk size of an axis of length n, or null: every edge c,
+// and no more chunks than ceil(n / c).
+export function regularSize(sizes, n) {
   if (!sizes.length) return null;
   const c = sizes[0];
-  for (let k = 1; k < sizes.length - 1; k++) if (sizes[k] !== c) return null;
-  return sizes[sizes.length - 1] <= c ? c : null;
+  if (sizes.some((s) => s !== c)) return null;
+  return n == null || sizes.length === Math.max(1, Math.ceil(n / c)) ? c : null;
 }
+
+// How much of chunk k of an axis of length n holds data (the rest overhangs).
+export const filled = (off, k, n) => Math.max(0, Math.min(off[k + 1], n) - off[k]);
 
 // ---------------------------------------------------------------- grids
 
@@ -90,36 +99,34 @@ export function grid(shape, axes) {
   if (shape.length !== axes.length) throw new Error("one list of sizes per axis");
   axes.forEach((a, d) => {
     const t = a.reduce((x, y) => x + y, 0);
-    if (t !== shape[d]) throw new Error(`axis ${d}: chunk sizes add to ${t}, the shape is ${shape[d]}`);
+    if (t < shape[d]) throw new Error(`axis ${d}: chunk sizes add to ${t}, short of the shape ${shape[d]}`);
   });
   return { shape: shape.slice(), axes: axes.map((a) => a.slice()), off: axes.map(offsets) };
 }
 export const regularGrid = (shape, chunks) => grid(shape, shape.map((n, d) => regularAxis(n, chunks[d])));
-export const isRegular = (g) => g.axes.every((a) => regularSize(a) !== null);
+export const isRegular = (g) => g.axes.every((a, d) => regularSize(a, g.shape[d]) !== null);
 export const chunkCount = (g) => g.axes.reduce((p, a) => p * a.length, 1);
 
 // The chunk_grid of zarr.json for a grid: regular when every axis is,
 // otherwise rectilinear (zarr-extensions chunk-grids/rectilinear), each
-// axis written as an integer when it is regular and runs otherwise.
+// axis written as an integer when it is regular and as a list with runs
+// otherwise.
 export function chunkGridJson(g, { force } = {}) {
   if (isRegular(g) && force !== "rectilinear") {
-    return { name: "regular", configuration: { chunk_shape: g.axes.map(regularSize) } };
+    return { name: "regular", configuration: { chunk_shape: g.axes.map((a, d) => regularSize(a, g.shape[d])) } };
   }
   return {
     name: "rectilinear",
     configuration: {
       kind: "inline",
-      chunk_shapes: g.axes.map((a) => {
-        const c = regularSize(a);
-        return c !== null && a.length > 1 && a[a.length - 1] === c ? c : compressRuns(a);
-      })
+      chunk_shapes: g.axes.map((a, d) => regularSize(a, g.shape[d]) ?? compressRuns(a))
     }
   };
 }
 
 // Read a chunk_grid (or a whole zarr.json, or a v2 .zarray) against a shape.
-// A regular axis given as an integer inside a rectilinear grid is expanded
-// the same way a regular grid is.
+// An integer inside a rectilinear grid is a regular axis, repeated until it
+// reaches the shape; lists may overflow it by whole chunks.
 export function parseChunkGrid(meta, shape) {
   if (meta && meta.shape && !shape) shape = meta.shape;
   if (!shape) throw new Error("no shape: give the zarr.json, or the shape with the chunk_grid");
@@ -144,26 +151,22 @@ export function chunkKey(idx, { version = 3, separator } = {}) {
 }
 
 // What a selection costs: per axis a half-open [a, b); returns the chunks
-// touched, and the elements read (whole chunks, at their stored size) and
-// wanted. stored(d, k) gives a chunk's stored size along d (the full c of
-// a regular edge chunk, the size itself on a rectilinear axis).
-export function readCost(g, sel, { stored } = {}) {
+// touched, and the elements decoded (whole chunks at their edge lengths,
+// overhang and all) and wanted.
+export function readCost(g, sel) {
   let chunks = 1, read = 1, want = 1;
   const spans = [];
   for (let d = 0; d < g.axes.length; d++) {
     const [a, b] = sel[d] || [0, g.shape[d]];
-    const s = span(g.off[d], a, b);
+    const s = span(g.off[d], a, b, g.shape[d]);
     if (!s) return { chunks: 0, read: 0, want: 0, spans: null };
     spans.push(s);
     let r = 0;
-    for (let k = s[0]; k <= s[1]; k++) r += stored ? stored(d, k) : g.axes[d][k];
+    for (let k = s[0]; k <= s[1]; k++) r += g.axes[d][k];
     chunks *= s[1] - s[0] + 1; read *= r; want *= Math.min(b, g.shape[d]) - Math.max(a, 0);
   }
   return { chunks, read, want, spans };
 }
-
-// Stored sizes for a regular grid: every chunk is c, the edge one padded.
-export const regularStored = (g) => (d, k) => regularSize(g.axes[d]) || g.axes[d][k];
 
 // ---------------------------------------------------------------- calendars
 

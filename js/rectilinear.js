@@ -32,9 +32,19 @@ function timeCase({ y0, y1, by, label, regular }) {
   return { kind: "time", label, y0, files: cal, filesLabel, n, rect: () => cal.sizes, regular, unit: "day" };
 }
 const CASES = {
-  edge: { kind: "time", label: "The last chunk", n: 100, files: null, rect: (c) => G.regularAxis(100, c), regular: 30, unit: "step" },
+  edge: { kind: "time", label: "The last chunk", n: 100, files: null, rect: (c) => G.regularAxis(100, c, { trim: true }), regular: 30, unit: "step" },
   months: timeCase({ y0: 2023, y1: 2024, by: "month", label: "Days in months", regular: 30 }),
   years: timeCase({ y0: 2019, y1: 2024, by: "year", label: "Years of daily files", regular: 365 }),
+  // each file chunked inside (netCDF-4, say) every c days: the last chunk of
+  // each file is short, and a reference to it can only be exact if the file
+  // did not pad it out to c on disk
+  native: (() => {
+    const k = timeCase({ y0: 2022, y1: 2024, by: "year", label: "Files with their own chunks", regular: 100 });
+    k.filesLabel = "Files, one a year, each chunked inside";
+    k.rect = (c) => k.files.sizes.flatMap((n) => G.regularAxis(n, c, { trim: true }));
+    k.native = true;
+    return k;
+  })(),
   uneven: {
     kind: "mosaic", label: "Uneven tiles",
     rects: grid2([0, 100, 160, 240], [0, 50, 80])
@@ -149,26 +159,20 @@ function clearGroup() {
 let world = { X: 9, Y: 2.2, Z: 4.4 };
 const MAX_BOXES = 6000;
 
-// position of index i along axis d of grid g, with a gap between chunks
-function place(g, d, i, len, gap) {
-  const off = g.off[d], n = off[off.length - 1];
-  let k = G.locate(off, Math.min(i, n - 1));
-  if (i >= n) k = off.length - 2;
-  return (i / n) * len + k * gap;
-}
-
 function buildTime() {
   const k = cur(), g = state.grid === "reg" ? grids.reg : grids.rect;
   const L = [world.X, world.Y, world.Z];
   const gap = state.ex * 0.25;
-  const n = g.shape;
-  const span = (d) => L[d] + (g.axes[d].length - 1) * gap;
+  const n = g.shape, offs = g.off;
+  const sc = L.map((l, d) => l / n[d]);
+  // where index i of axis d sits: its own place plus a gap for each chunk before it
+  const at = (d, kk, i) => i * sc[d] + kk * gap;
+  const span = (d) => at(d, g.axes[d].length - 1, offs[d][offs[d].length - 1]);
   const ox = -span(0) / 2, oy = 0, oz = -span(2) / 2;
+  const o = [ox, oy, oz];
   const sel = selection(g);
   const cost = G.readCost(g, sel);
   const count = G.chunkCount(g);
-  const pos = (d, i) => place(g, d, i, L[d], gap);
-  const regC = state.grid === "reg" ? state.c : null;
 
   if (count > MAX_BOXES) {
     $("note3d").textContent = `${count} chunks: too many to draw one by one, so only the outline is shown.`;
@@ -176,44 +180,42 @@ function buildTime() {
     return;
   }
   $("note3d").textContent = "";
-  const offs = g.off;
+  // a chunk's data along an axis, and the overhang past the end of the array
+  const seg = (d, kk) => {
+    const p0 = o[d] + at(d, kk, offs[d][kk]);
+    return [p0, p0 + G.filled(offs[d], kk, n[d]) * sc[d], p0 + g.axes[d][kk] * sc[d]];
+  };
+  const inSpan = (d, kk) => cost.spans && kk >= cost.spans[d][0] && kk <= cost.spans[d][1];
   for (let i = 0; i < g.axes[0].length; i++) for (let j = 0; j < g.axes[1].length; j++) for (let l = 0; l < g.axes[2].length; l++) {
-    const x0 = ox + pos(0, offs[0][i]), x1 = x0 + (g.axes[0][i] / n[0]) * L[0];
-    const y0 = oy + pos(1, offs[1][j]), y1 = y0 + (g.axes[1][j] / n[1]) * L[1];
-    const z0 = oz + pos(2, offs[2][l]), z1 = z0 + (g.axes[2][l] / n[2]) * L[2];
-    const hit = cost.spans && i >= cost.spans[0][0] && i <= cost.spans[0][1] && j >= cost.spans[1][0] && j <= cost.spans[1][1] && l >= cost.spans[2][0] && l <= cost.spans[2][1];
+    const [x0, x1, xe] = seg(0, i), [y0, y1, ye] = seg(1, j), [z0, z1, ze] = seg(2, l);
+    const hit = inSpan(0, i) && inSpan(1, j) && inSpan(2, l);
     const base = (i + j + l) % 2 ? C.b : C.a;
-    box(x0, x1, y0, y1, z0, z1, hit ? mat(C.hit, 0.55) : mat(base, 0.92), lineMat(hit ? C.hit : 0x05070d, hit ? 1 : 0.6));
-    // the padding a regular edge chunk is stored with, past the end of the array
-    if (regC && i === g.axes[0].length - 1 && g.axes[0][i] < regC) {
-      const xp = x1 + ((regC - g.axes[0][i]) / n[0]) * L[0];
-      box(x1, xp, y0, y1, z0, z1, mat(C.pad, 0.12), lineMat(C.pad, 0.5));
-    }
+    if (x1 > x0 && y1 > y0 && z1 > z0) box(x0, x1, y0, y1, z0, z1, hit ? mat(C.hit, 0.55) : mat(base, 0.92), lineMat(hit ? C.hit : 0x05070d, hit ? 1 : 0.6));
+    // the overhang: stored, as fill, but not part of the array
+    if (xe > x1) box(x1, xe, y0, ye, z0, ze, mat(C.pad, 0.12), lineMat(C.pad, 0.5));
+    else if (ye > y1) box(x0, xe, y1, ye, z0, ze, mat(C.pad, 0.12), lineMat(C.pad, 0.5));
+    else if (ze > z1) box(x0, xe, y0, ye, z1, ze, mat(C.pad, 0.12), lineMat(C.pad, 0.5));
   }
   // the part of the touched chunks the read wants
   if (cost.spans) {
-    const [a, b] = sel[0], [ya, yb] = sel[1], [za, zb] = sel[2];
+    const part = (d, kk) => {
+      const [va, vb] = sel[d];
+      const a = Math.max(va, offs[d][kk]), b = Math.min(vb, offs[d][kk + 1], n[d]);
+      return [o[d] + at(d, kk, a), o[d] + at(d, kk, b)];
+    };
+    const e = 0.004;
     for (let i = cost.spans[0][0]; i <= cost.spans[0][1]; i++) for (let j = cost.spans[1][0]; j <= cost.spans[1][1]; j++) for (let l = cost.spans[2][0]; l <= cost.spans[2][1]; l++) {
-      const lo = (d, v, kk) => Math.max(v, offs[d][kk]), hi = (d, v, kk) => Math.min(v, offs[d][kk + 1]);
-      const seg = (d, va, vb, kk, o) => {
-        const s = lo(d, va, kk), e = hi(d, vb, kk);
-        const p0 = o + pos(d, offs[d][kk]) + ((s - offs[d][kk]) / n[d]) * L[d];
-        return [p0, p0 + ((e - s) / n[d]) * L[d]];
-      };
-      const [x0, x1] = seg(0, a, b, i, ox), [y0, y1] = seg(1, ya, yb, j, oy), [z0, z1] = seg(2, za, zb, l, oz);
-      const e = 0.004;
+      const [x0, x1] = part(0, i), [y0, y1] = part(1, j), [z0, z1] = part(2, l);
       box(x0 - e, x1 + e, y0 - e, y1 + e, z0 - e, z1 + e, mat(C.want, 1), null);
     }
   }
-  // file boundaries, where the case has files
+  // file boundaries, where the case has files: in the gap when a chunk starts there
   if (k.files) {
-    const fo = G.offsets(k.files.sizes);
     const pts = [];
-    for (const f of fo) {
-      let x = ox + pos(0, Math.min(f, n[0]));
-      const kk = G.locate(offs[0], f);
-      if (f > 0 && kk >= 0 && offs[0][kk] === f) x -= gap / 2;
-      if (f >= n[0]) x = ox + span(0);
+    for (const f of G.offsets(k.files.sizes)) {
+      const kk = f >= n[0] ? g.axes[0].length - 1 : G.locate(offs[0], f);
+      let x = ox + at(0, kk, f);
+      if (f > 0 && f < n[0] && offs[0][kk] === f) x -= gap / 2;
       const y0 = oy - 0.02, y1 = oy + span(1) + 0.02, z0 = oz - 0.02, z1 = oz + span(2) + 0.02;
       pts.push(x, y0, z0, x, y1, z0, x, y1, z0, x, y1, z1, x, y1, z1, x, y0, z1, x, y0, z1, x, y0, z0);
     }
@@ -278,6 +280,15 @@ function defaultCam() {
   return [v.x, v.y, v.z, c.x, c.y, c.z];
 }
 
+// Chunks of the rectilinear axis shorter than the files' own chunk, not at
+// the end: a file's last chunk, which HDF5 and tiled TIFF store padded.
+function shortInterior(g) {
+  const a = g.axes[0], out = new Set();
+  if (!cur().native) return out;
+  for (let i = 0; i + 1 < a.length; i++) if (a[i] < state.c) out.add(i);
+  return out;
+}
+
 // ---------------------------------------------------------------- 2D
 
 const cv = $("axis");
@@ -300,16 +311,16 @@ function draw2d() {
 // three bands along time: the files or calendar, the regular cuts and the rectilinear ones
 function drawAxes(g, f) {
   const k = cur(), n = k.n;
-  const regOver = Math.ceil(n / state.c) * state.c;
+  const ends = [grids.reg, grids.rect].map((gg) => gg.off[0][gg.off[0].length - 1]);
   const left = 16, right = f.w - 16;
-  const sx = (right - left) / Math.max(n, regOver);
+  const sx = (right - left) / Math.max(n, ...ends);
   const X = (i) => left + i * sx;
   const bandH = Math.min(46, (f.h - 120) / 3.6);
   const top = Math.max(40, f.h / 2 - bandH * 2.2);
   const rows = [
     { y: top, label: k.filesLabel || `The array, ${n} ${k.unit}s` },
     { y: top + bandH * 1.5, label: `Regular, every ${state.c} ${k.unit}s`, grid: grids.reg, reg: true },
-    { y: top + bandH * 3, label: k === CASES.edge ? "Rectilinear, the same cuts" : "Rectilinear, the case's own sizes", grid: grids.rect }
+    { y: top + bandH * 3, label: k === CASES.edge ? "Rectilinear, the last chunk cut to what is left" : k.native ? `Rectilinear, each file's own ${state.c}-day chunks` : k.files ? "Rectilinear, one chunk per file" : "Rectilinear, as given", grid: grids.rect }
   ];
   frame = { X, sx, left, n, rows, bandH, kind: "time" };
   // selection
@@ -340,28 +351,37 @@ function drawAxes(g, f) {
       continue;
     }
     const a = r.grid.axes[0], off = r.grid.off[0];
-    const sp = G.span(off, state.a, state.a + state.w);
+    const sp = G.span(off, state.a, state.a + state.w, n);
     const fileOff = k.files ? new Set(G.offsets(k.files.sizes)) : null;
-    a.forEach((s, i) => {
+    const short = r.reg ? new Set() : shortInterior(r.grid);
+    a.forEach((edge, i) => {
+      const s = G.filled(off, i, n);
       const hit = sp && i >= sp[0] && i <= sp[1];
       const x0 = X(off[i]), w = s * sx;
+      // past the end of the array: the overhang, stored as fill
+      if (edge > s) {
+        const xp = X(off[i] + s), wp = (edge - s) * sx;
+        g.fillStyle = C.padCss; g.fillRect(xp, r.y, wp, bandH);
+        g.strokeStyle = C.muted; g.setLineDash([3, 3]); g.strokeRect(xp + 0.5, r.y + 0.5, wp - 1, bandH - 1); g.setLineDash([]);
+        if (wp > 40) { g.fillStyle = C.ink; g.textAlign = "center"; g.fillText("fill", xp + wp / 2, r.y + bandH / 2); }
+      }
+      if (!s) return;
       g.fillStyle = hit ? "rgba(255,211,77,0.55)" : i % 2 ? C.bCss : C.aCss;
       g.fillRect(x0 + (w > 3 ? 0.5 : 0), r.y, Math.max(0.5, w - (w > 3 ? 1 : 0)), bandH);
       // a chunk that straddles a file boundary would need bytes from two files
       if (fileOff) {
         let straddle = false;
-        for (const fo of fileOff) if (fo > off[i] && fo < off[i + 1]) { straddle = true; break; }
+        for (const fo of fileOff) if (fo > off[i] && fo < off[i + 1] && fo < n) { straddle = true; break; }
         if (straddle) { g.fillStyle = C.lapCss; g.fillRect(x0, r.y + bandH - 4, w, 4); }
+      }
+      // a file's short last chunk, padded to the full chunk in HDF5 or a tiled TIFF
+      if (short.has(i)) {
+        g.fillStyle = "rgba(255,122,89,0.35)"; g.fillRect(x0, r.y, Math.max(1, w), bandH);
+        g.fillStyle = C.fileCss; g.fillRect(x0, r.y, Math.max(1, w), 4);
       }
       const t = String(s);
       if (w > g.measureText(t).width + 2) { g.fillStyle = hit ? "#05070d" : C.ink; g.textAlign = "center"; g.fillText(t, x0 + w / 2, r.y + bandH / 2); }
     });
-    // the regular grid's last chunk, stored at full size past the end of the array
-    if (r.reg && regOver > n) {
-      g.fillStyle = C.padCss; g.fillRect(X(n), r.y, (regOver - n) * sx, bandH);
-      g.strokeStyle = C.muted; g.setLineDash([3, 3]); g.strokeRect(X(n) + 0.5, r.y + 0.5, (regOver - n) * sx - 1, bandH - 1); g.setLineDash([]);
-      if ((regOver - n) * sx > 40) { g.fillStyle = C.ink; g.textAlign = "center"; g.fillText("fill", X(n + (regOver - n) / 2), r.y + bandH / 2); }
-    }
   }
   // the end of the array
   g.strokeStyle = C.ink; g.setLineDash([2, 4]);
@@ -447,22 +467,25 @@ function readout() {
   const pre = $("json");
   if (k.kind === "time") {
     rows.push(["Shape", grids.reg.shape.join(" x ")]);
-    for (const [name, g, stored] of [["Regular", grids.reg, G.regularStored(grids.reg)], ["Rectilinear", grids.rect, null]]) {
-      const c = G.readCost(g, selection(g), { stored: stored || undefined });
+    for (const [name, g] of [["Regular", grids.reg], ["Rectilinear", grids.rect]]) {
+      const c = G.readCost(g, selection(g));
       const amp = c.want ? c.read / c.want : 0;
       rows.push([`<b>${name}</b>`, `${fmt(G.chunkCount(g))} chunks`]);
       rows.push(["Chunks read", fmt(c.chunks)]);
-      rows.push(["Values read / wanted", `${fmt(c.read)} / ${fmt(c.want)} (${amp.toFixed(2)}x)`]);
+      rows.push(["Values decoded / wanted", `${fmt(c.read)} / ${fmt(c.want)} (${amp.toFixed(2)}x)`]);
       if (k.files) {
         const fo = G.offsets(k.files.sizes);
         const off = g.off[0];
         let straddle = 0;
-        for (let i = 0; i + 1 < off.length; i++) if (fo.some((f) => f > off[i] && f < off[i + 1])) straddle++;
+        for (let i = 0; i + 1 < off.length; i++) if (fo.some((f) => f > off[i] && f < off[i + 1] && f < g.shape[0])) straddle++;
         rows.push(["Chunks across a file edge", straddle ? `<span class="warn">${straddle}</span>` : "none"]);
       }
-      if (name === "Regular" && g.axes[0][g.axes[0].length - 1] < state.c) {
-        rows.push(["Last chunk", `${g.axes[0][g.axes[0].length - 1]} of ${state.c} filled`]);
+      if (name === "Rectilinear" && k.native) {
+        const sh = shortInterior(g).size;
+        rows.push(["Short chunks inside the array", sh ? `<span class="warn">${sh}</span>, exact only if the files did not pad them` : "none"]);
       }
+      const last = g.axes[0].length - 1, fill = G.filled(g.off[0], last, g.shape[0]);
+      if (fill < g.axes[0][last]) rows.push(["Last chunk", `${fill} of ${g.axes[0][last]} filled`]);
     }
     const g = state.grid === "reg" ? grids.reg : grids.rect;
     pre.textContent = compactJson({ shape: g.shape, chunk_grid: G.chunkGridJson(g) });
@@ -501,6 +524,7 @@ const PRESETS = [
   ["The last chunk", { case: "edge", grid: "reg", c: 30, a: 90, w: 10, where: "map" }],
   ["Days in months", { case: "months", grid: "rect", c: 30, a: G.dayOf(2023, 2024, 1), w: 29, where: "map" }],
   ["Years of daily files", { case: "years", grid: "reg", c: 365, a: G.dayOf(2019, 2020), w: 366, where: "map" }],
+  ["Files with their own chunks", { case: "native", grid: "rect", c: 100, a: G.dayOf(2022, 2022, 11, 1), w: 62, where: "map" }],
   ["A time series", { case: "months", grid: "rect", c: 30, a: 0, w: 731, where: "pixel" }],
   ["Uneven tiles", { case: "uneven", grid: "rect" }],
   ["Staggered tiles", { case: "brick", grid: "rect" }],
@@ -565,7 +589,7 @@ function useMeta(meta, where) {
     space: sp, spaceAxes: spAxes
   };
   state.case = "custom"; state.grid = p.kind === "rectilinear" ? "rect" : "reg";
-  state.c = G.regularSize(first) || CASES.custom.regular; state.a = 0; state.w = Math.min(g.shape[0], first[0]);
+  state.c = G.regularSize(first, g.shape[0]) || CASES.custom.regular; state.a = 0; state.w = Math.min(g.shape[0], first[0]);
   clampSel();
   $("custom-note").textContent = `${where}: ${p.kind}, shape ${g.shape.join(" x ")}, ${fmt(G.chunkCount(g))} chunks` +
     (g.shape.length > 3 ? ` (the first three axes are drawn)` : "") + ". The regular grid beside it cuts the first axis by the slider.";
@@ -597,6 +621,7 @@ function sync() {
   $("grid-rect").textContent = time ? "Rectilinear" : "Rectilinear grid";
   $("time-ctl").hidden = !time;
   if (time) {
+    $("c-label").textContent = k.native ? "Chunk inside each file" : "Regular chunk";
     $("c").max = k.n; $("c").value = state.c; $("c-out").textContent = `${state.c} ${k.unit}s`;
     $("a").max = k.n - 1; $("a").value = state.a; $("a-out").textContent = k.y0 ? dateOf(state.a) : state.a;
     $("w").max = k.n; $("w").value = state.w; $("w-out").textContent = `${state.w} ${k.unit}s`;
@@ -605,7 +630,7 @@ function sync() {
   $("ex").value = state.ex; $("ex-out").textContent = state.ex.toFixed(2);
   $("case-label").textContent = k.label;
   $("axis-label").textContent = time ? "Cuts along the first axis; drag to choose what to read" : "The tiles, and the grid every edge makes";
-  for (const [name, el] of [["edge", "about-edge"], ["months", "about-cal"], ["years", "about-cal"], ["uneven", "about-mosaic"], ["brick", "about-mosaic"], ["overlap", "about-mosaic"]]) {
+  for (const [name, el] of [["edge", "about-edge"], ["months", "about-cal"], ["years", "about-cal"], ["native", "about-native"], ["uneven", "about-mosaic"], ["brick", "about-mosaic"], ["overlap", "about-mosaic"]]) {
     if (name === state.case) for (const d of document.querySelectorAll(".about details")) if (d.id === el) d.open = true;
   }
 }
