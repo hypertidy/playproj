@@ -286,3 +286,5 @@ table.gcps input { width: 72px; font: inherit; color: var(--text); background: #
   #stage.split.affine { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
   #stage.split.affine > .half + .half { border-left: 0; border-top: 1px solid var(--line); }
 }
+/* ortho.html: the four images take the whole lower half on a phone */
+@media (max-width: 820px) { #map-label { display: none; } }

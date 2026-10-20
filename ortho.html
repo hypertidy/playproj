@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Orthorectification</title>
+<meta name="description" content="A camera or a pushbroom scanner over terrain, the image it records, and how a sensor model and a DEM put each pixel back where it belongs on the ground: relief displacement and orthorectification in 3D.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/ortho.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split stacked geoid">
+    <div class="half">
+      <div id="three"></div>
+      <span class="half-label" id="scene-label"></span>
+    </div>
+    <div class="half">
+      <canvas id="map" aria-label="Four images of the area: the map itself, the raw image, the image rectified onto a flat datum and the image orthorectified with a DEM"></canvas>
+      <span class="half-label" id="map-label">The white cross is the nadir (a dotted line, the ground track); click any of the four to pick a point on the ground</span>
+    </div>
+    <a id="open-full" class="open-full" href="./ortho.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html" aria-current="page">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="sensor"><span>Sensor</span></label>
+      <select id="sensor" class="wide">
+        <option value="frame">Frame camera (an aerial photo)</option>
+        <option value="push">Pushbroom scanner (a satellite line)</option>
+      </select>
+      <label class="row" for="alt"><span>Height above the datum</span><output id="alt-out"></output></label>
+      <input id="alt" type="range" min="2" max="15" step="0.1" aria-label="Sensor height above the datum, km">
+      <label class="row" for="tilt"><span id="tilt-name">Tilt from the vertical</span><output id="tilt-out"></output></label>
+      <input id="tilt" type="range" min="0" max="50" step="0.5" aria-label="Tilt from the vertical, degrees">
+      <label class="row" for="az"><span id="az-name">Looking towards</span><output id="az-out"></output></label>
+      <input id="az" type="range" min="0" max="359" step="1" aria-label="Azimuth, degrees clockwise from north">
+      <label class="row" for="fov"><span>Field of view</span><output id="fov-out"></output></label>
+      <input id="fov" type="range" min="20" max="100" step="1" aria-label="Field of view, degrees">
+    </section>
+
+    <section class="embed-keep">
+      <label class="row" for="terr"><span>Terrain</span></label>
+      <select id="terr" class="wide"></select>
+      <label class="row" for="rel"><span>Relief</span><output id="rel-out"></output></label>
+      <input id="rel" type="range" min="0" max="2" step="0.05" aria-label="Relief, a multiple of the terrain's heights">
+      <label class="row" for="dem"><span>DEM for the orthorectification</span></label>
+      <select id="dem" class="wide">
+        <option value="true">The true DEM</option>
+        <option value="smooth">A smoothed DEM (about 500 m)</option>
+        <option value="mean">A level plane at the mean height</option>
+      </select>
+      <div class="toggles">
+        <label><input id="occ" type="checkbox"> True ortho (mask hidden ground)</label>
+        <label><input id="arr" type="checkbox"> Displacement arrows</label>
+        <label><input id="ov" type="checkbox"> Roads from the map</label>
+        <label><input id="img" type="checkbox"> Image in the scene</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section>
+      <div id="presets" class="presets" role="group" aria-label="Setups"></div>
+      <p class="hint">Click the terrain, or any of the four images, to follow one point on the ground from the map into the image and back.</p>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A map projection takes the ground to a plane by a rule. A <b>picture</b> of the ground does it by
+          a ray: every pixel is a line from the sensor's perspective centre out through the lens, and the
+          pixel shows whatever that line meets first. On flat ground that is a projective transformation
+          (a plane to a plane, which is why four control points can georeference an aerial photo of a
+          flat place). On terrain it is not, because where a ray meets the ground depends on how high the
+          ground is.</p>
+        <p>That dependence is <b>relief displacement</b>. Follow a ray from the sensor through a point P
+          at height h and carry it on down to a reference surface at height z: it arrives a distance
+          <b>(h - z) tan(theta)</b> beyond P, where theta is the ray's angle from the vertical. So a
+          picture rectified onto a flat datum puts every hill top too far from the nadir (the point
+          straight below the sensor), the higher the further. For a vertical photo from height H that is
+          the textbook <b>D h / (H - h)</b>, D the ground distance from the nadir: tall things lean out
+          from the centre of the photo. Straight roads over the hills come out bent.</p>
+        <p><b>Orthorectification</b> undoes it with two things: a <b>sensor model</b> (where the sensor was,
+          how it was pointed, how its pixels map to directions) and a <b>DEM</b>. For each cell of the
+          output map, take (x, y), read z from the DEM, and run (x, y, z) forward through the sensor model
+          to an image position, then read the image there. For a frame camera that model is the
+          <b>collinearity equations</b>: with the perspective centre C, the camera's right, down and
+          forward axes r, d, f and the principal distance c (in pixels),
+          <code>u = cx + c (P - C).r / (P - C).f</code> and <code>v = cy + c (P - C).d / (P - C).f</code>.
+          Nothing is traced backwards; the DEM supplies the height the ray could not.</p>
+        <p>A <b>pushbroom</b> scanner (most Earth observation satellites) has one line of detectors and
+          builds the image a row at a time as it moves along its track. Each row has its own perspective
+          centre, so the model is a line camera per row. With a fixed attitude the scan plane is always
+          square to the track, so relief moves points across the track only: in the raw image the hills
+          lean sideways, never up or down the strip. Real satellite products often ship the model as
+          rational polynomial coefficients (RPCs) fitted to this physical model; GDAL's
+          <code>gdalwarp -rpc -to RPC_DEM=dem.tif</code> is the same loop over output cells as here.</p>
+        <p>The DEM has to be right. A <b>smoothed</b> DEM leaves the peaks displaced by their height above
+          the smoothing; a <b>level plane</b> at the mean height fixes the average and leaves the rest. And
+          ground the sensor never saw (the back of a ridge, the ground behind a spire) has no pixel of its
+          own: an ordinary orthorectification fills it from whatever was in front, a doubled image of the
+          slope. A <b>true ortho</b> tests each cell against the DEM, marching from the ground towards
+          the sensor, and masks it (magenta) instead. Buildings in city orthophotos are the same story
+          at a smaller scale.</p>
+        <p>Everything here is in a local frame in metres, x east, y north, z up, on a synthetic terrain
+          over a 10 km square (a DEM on a 50 m grid, read bilinear). The raw image is traced: one ray per
+          pixel, marched to the ground and bisected, coloured by the map (height tint, hill shading, a
+          kilometre grid and four straight roads). The two rectified panels use the same image and the
+          same sensor model, onto the datum (z = 0) and onto the chosen DEM. The code is
+          <code>src/core/ortho.js</code>, checked in <code>test/check-ortho.mjs</code> (the sensor models
+          invert their own rays, displacement is (h - z) tan(theta), and the true DEM reproduces the map).</p>
+        <p>Hash keys: <code>s</code> (frame, push), <code>alt</code> (km), <code>tilt</code>, <code>az</code>,
+          <code>fov</code>, <code>terr</code>, <code>rel</code>, <code>dem</code>, <code>occ</code>,
+          <code>arr</code>, <code>ov</code>, <code>img</code>, <code>px</code>, <code>py</code> (the picked
+          point, metres), <code>cam</code>.</p>
+        <ul class="credits">
+          <li>Collinearity and relief displacement as in any photogrammetry text, for example
+            Wolf, P. R., Dewitt, B. A. and Wilkinson, B. E. (2014) Elements of Photogrammetry with
+            Applications in GIS, 4th edition, McGraw-Hill.</li>
+          <li>Pushbroom models: Gupta, R. and Hartley, R. I. (1997) Linear pushbroom cameras, IEEE
+            Transactions on Pattern Analysis and Machine Intelligence 19(9), 963-975. RPC orthorectification as in
+            <a href="https://gdal.org/programs/gdalwarp.html">GDAL's gdalwarp</a>.</li>
+          <li>Drawn with <a href="https://threejs.org/">three.js</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
