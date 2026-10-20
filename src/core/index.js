@@ -41,6 +41,7 @@ export * as homageGeo from "./homage-geo.js";
 export * as eratosthenes from "./eratosthenes.js";
 export * as rasterize from "./rasterize.js";
 export * as texmap from "./texmap.js";
+export * as sphull from "./sphull.js";
 
 export * as structure from "./structure.js";
 export * as basemap from "./basemap.js";
