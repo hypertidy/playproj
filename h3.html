@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: H3 hexagons</title>
+<meta name="description" content="H3 hexagons: the globe projected onto an icosahedron, unfolded, and cut into hexagons of aperture seven.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "earcut": "https://cdn.jsdelivr.net/npm/earcut@3.0.2/src/earcut.js",
+    "h3-js": "https://cdn.jsdelivr.net/npm/h3-js@4.4.0/dist/browser/h3-js.es.js",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/h3.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./h3.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html" aria-current="page">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="res"><span>Resolution</span><output id="res-out"></output></label>
+      <input id="res" type="range" min="0" max="3" step="1" aria-label="Grid resolution">
+      <p id="res-hint" class="hint"></p>
+      <label class="row" for="t"><span>Unfold</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Sphere to icosahedron to net">
+      <div class="buttons">
+        <button id="play" type="button">Unfold</button>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="cell"><span>Cell</span><output id="cell-res"></output></label>
+      <div class="projline">
+        <input id="cell" class="token" type="text" spellcheck="false" autocomplete="off" placeholder="click the globe or paste an H3 index" aria-label="H3 cell index">
+        <button id="copy-geojson" type="button" class="small" disabled>GeoJSON</button>
+      </div>
+      <p id="cell-info" class="badge"></p>
+      <div class="buttons">
+        <button id="cell-up" type="button" class="small" disabled>Parent</button>
+        <button id="cell-down" type="button" class="small" disabled>Child</button>
+      </div>
+      <canvas id="family" class="inset" width="560" height="400" hidden></canvas>
+      <p id="family-cap" class="hint" hidden></p>
+    </section>
+
+    <section>
+      <div class="toggles">
+        <label><input id="grid" type="checkbox"> Cell grid</label>
+        <label><input id="kids" type="checkbox"> Children</label>
+        <label><input id="coast" type="checkbox"> Coastline</label>
+      </div>
+      <label class="row" for="col"><span>Colour cells by</span></label>
+      <select id="col" class="wide">
+        <option value="base">Base cell (122 of them)</option>
+        <option value="digit">Last digit (which of seven children)</option>
+        <option value="none">Nothing</option>
+      </select>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="basemap"><span>Basemap</span></label>
+      <select id="basemap" class="wide"></select>
+      <p id="bm-status" class="status" role="status"></p>
+      <div class="buttons">
+        <label class="inline" for="tif-size">Size
+          <select id="tif-size">
+            <option value="512">512 px</option>
+            <option value="1024" selected>1024 px</option>
+            <option value="2048">2048 px</option>
+          </select>
+        </label>
+        <button id="download-tif" type="button" disabled>Download GeoTIFF</button>
+      </div>
+      <p id="tif-hint" class="hint">The picked cell with its basemap, in a gnomonic projection about its centre (its edges are great circles, so they stay straight), readable by GDAL.</p>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>Put a light at the centre of the globe and an icosahedron round it: each point casts onto one of
+          twenty triangles, the gnomonic projection twenty times over. <a href="https://h3geo.org/">H3</a>,
+          Uber's hexagonal grid, starts there. Its icosahedron sits where Buckminster Fuller put his for the
+          Dymaxion map, with all twelve corners in the ocean. Unfold swells the globe to the icosahedron, then
+          opens it into a strip: five faces round the top corner, a band of ten, five round the bottom.</p>
+        <p>On each face's gnomonic plane the hexagons are exactly regular, which is why they look so tidy in
+          the net and stretch a little on the globe towards the corners. Twelve cells can't be hexagons: at
+          each corner of the icosahedron five faces meet, so every resolution has exactly twelve
+          pentagons (outlined in orange).</p>
+        <p>Each resolution splits a hexagon into seven: a centre child and six round it, so cells are about a
+          seventh the area of their parents (aperture 7). Seven small hexagons can't tile one big one, so
+          children spill over their parent's edge (tick Children), and the grid turns by about 19.1
+          degrees at every step: even resolutions are Class II, odd ones Class III. An H3 index is its
+          resolution, one of 122 base cells, and one digit 0 to 6 per resolution saying which child to
+          take. Colour by "Last digit" to see the sevens.</p>
+        <p>The cells, their indexes and areas come from <a href="https://github.com/uber/h3-js">h3-js</a>.
+          The icosahedron is built from H3's own twelve pentagons and numbered as H3 numbers its faces;
+          a test checks the faces against h3-js and that the hexagons are regular on each plane.</p>
+        <ul class="credits">
+          <li>H3: Isaac Brodsky and others at Uber, <a href="https://github.com/uber/h3">github.com/uber/h3</a> (Apache 2.0).</li>
+          <li>Hexagonal aperture 7 grids, Class II and III: Sahr, White and Kimerling (2003), Geodesic discrete global grid systems, Cartography and Geographic Information Science 30(2).</li>
+          <li>The icosahedron's placement: R. Buckminster Fuller's Dymaxion map.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
