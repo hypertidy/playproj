@@ -784,6 +784,28 @@ index.html#v=0.75&lat=-42&lon=147&w=2&rays=200&cam=4.6,2.6,6.2,0,0.5,0
 Add `?embed=1` for a compact view to put in an iframe; the "Copy embed code"
 button writes the snippet for the current view.
 
+## Affine
+
+`affine.html` is the six-number geotransform that puts an image's columns and
+rows on the map, `x = gt0 + col gt1 + row gt2`, `y = gt3 + col gt4 + row gt5`,
+with the image in its own pixels on the left and placed on a longitude and
+latitude map on the right. Set it by hand (top-left corner, pixel width and
+height, rotation, shear, or six pasted numbers in GDAL or world file order) and
+see corners and centres, north up and its extent, the inverse, and the world
+file, whose last two lines are the centre of the top-left pixel, half a pixel in
+from the geotransform's corner. Or register the image: click a place on it and
+the same place on the map, twice, and the geotransform is fitted north up (four
+unknowns, two points), rotate and scale (also four) or full affine (six, three
+points), by least squares with residuals when there are more points. The samples
+are an atlas page drawn here and a crooked scan of it (turned and sheared), whose
+true geotransforms are known; your own PNG or JPEG stays in the browser. The
+result downloads as a GeoTIFF (EPSG:4326, a ModelTransformation tag when not
+north up) or a world file, with the equivalent GDAL command.
+`src/core/affine.js` holds the maths, checked in `test/check-affine.mjs`. Hash
+keys: `pic` (`atlas`, `crooked`), `fit` (`hand`, `northup`, `similarity`,
+`affine`), `x0`, `y0`, `w`, `h`, `rot`, `shear`, `gcp` (col,row,x,y;...),
+`op`, `grat`, `pix`.
+
 ## Layout
 
 ```
@@ -800,6 +822,7 @@ indexspace.html, js/indexspace.js      index space page
 structure.html, js/structure-page.js   tiles and overviews page
 regular.html, js/regular-page.js       regular in what? storyline: geostationary, lon/lat arrays
 rasterize.html, js/rasterize-page.js   rasterize page
+affine.html, js/affine.js              Affine: the geotransform, world file, registering an image by two points
 example.html, js/example.js            For example storyboard
 homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977, Eratosthenes
 vicgrid.html, js/vicgrid.js            VicGrid: Victoria's one-zone grid against MGA, NSW/SA Lambert, Albers
@@ -860,6 +883,7 @@ src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N,
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
+src/core/affine.js                geotransform: apply, invert, parts, extent, world file, fit to control points
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
 
 data/countries-110m.json   Natural Earth 110m country parts as flat [lon, lat] rings
