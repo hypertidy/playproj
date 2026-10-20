@@ -23,6 +23,7 @@ export * as grids from "./grids.js";
 export * as roms from "./roms.js";
 export * as regular from "./regular.js";
 export * as s2 from "./s2.js";
+export * as icosa from "./icosa.js";
 export * as l3bin from "./l3bin.js";
 export * as mgrs from "./mgrs.js";
 export * as aatgrid from "./aatgrid.js";

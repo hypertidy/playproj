@@ -4,12 +4,13 @@
   "description": "Map projections traced as rays from a point of light, through a sphere, onto a plane",
   "type": "module",
   "scripts": {
-    "test": "node test/check-pure.mjs && node test/check-scene.mjs && node test/check-interfaces.mjs && node test/check-proj.mjs && node test/check-inverse.mjs && node test/check-conic.mjs && node test/check-azimuthal.mjs && node test/check-spilhaus.mjs && node test/check-globals.mjs && node test/check-mishaps.mjs && node test/check-landmesh.mjs && node test/check-secant.mjs && node test/check-s2.mjs && node test/check-oblique.mjs && node test/check-l3bin.mjs && node test/check-grids.mjs && node test/check-mgrs.mjs && node test/check-aatgrid.mjs && node test/check-homage.mjs && node test/check-tissot.mjs && node test/check-distortion.mjs && node test/check-structure.mjs && node test/check-roms.mjs && node test/check-regular.mjs && node test/check-rasterize.mjs && node test/check-cellexport.mjs && node test/check-nuyina.mjs && node test/check-rhumb.mjs && node test/check-aspects.mjs && node test/check-ellipsoid.mjs && node test/check-geoid.mjs && node test/check-vicgrid.mjs && node test/check-texmap.mjs && node test/check-ortho.mjs && node test/check-affine.mjs && node test/check-sphull.mjs",
+    "test": "node test/check-pure.mjs && node test/check-scene.mjs && node test/check-interfaces.mjs && node test/check-proj.mjs && node test/check-inverse.mjs && node test/check-conic.mjs && node test/check-azimuthal.mjs && node test/check-spilhaus.mjs && node test/check-globals.mjs && node test/check-mishaps.mjs && node test/check-landmesh.mjs && node test/check-secant.mjs && node test/check-s2.mjs && node test/check-icosa.mjs && node test/check-oblique.mjs && node test/check-l3bin.mjs && node test/check-grids.mjs && node test/check-mgrs.mjs && node test/check-aatgrid.mjs && node test/check-homage.mjs && node test/check-tissot.mjs && node test/check-distortion.mjs && node test/check-structure.mjs && node test/check-roms.mjs && node test/check-regular.mjs && node test/check-rasterize.mjs && node test/check-cellexport.mjs && node test/check-nuyina.mjs && node test/check-rhumb.mjs && node test/check-aspects.mjs && node test/check-ellipsoid.mjs && node test/check-geoid.mjs && node test/check-vicgrid.mjs && node test/check-texmap.mjs && node test/check-ortho.mjs && node test/check-affine.mjs && node test/check-sphull.mjs",
     "serve": "python3 -m http.server 8000"
   },
   "devDependencies": {
     "d3-geo": "3.1.1",
     "earcut": "3.0.2",
+    "h3-js": "4.4.0",
     "proj4": "2.12.1",
     "three": "0.160.0"
   },
