@@ -288,3 +288,8 @@ table.gcps input { width: 72px; font: inherit; color: var(--text); background: #
 }
 /* ortho.html: the four images take the whole lower half on a phone */
 @media (max-width: 820px) { #map-label { display: none; } }
+/* rectilinear.html: the cuts along an axis, and the chunk_grid */
+canvas.axis { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: col-resize; touch-action: none; }
+.warn { color: var(--orange); }
+#url { display: block; width: 100%; margin-top: 4px; }
+#note3d:empty, #custom-note:empty { display: none; }

@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: rectilinear chunks</title>
+<meta name="description" content="Regular and rectilinear chunk grids in Zarr: the last chunk of a regular grid, days in months and years, uneven, staggered and overlapping tiles in a mosaic, and which chunks a read touches.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/rectilinear.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split">
+    <div class="half">
+      <div id="three"></div>
+      <span class="half-label"><span id="case-label"></span> <span id="note3d"></span></span>
+    </div>
+    <div class="half">
+      <canvas id="axis" class="axis" aria-label="The chunk boundaries along the first axis, or across a mosaic"></canvas>
+      <span class="half-label" id="axis-label"></span>
+    </div>
+    <a id="open-full" class="open-full" href="./rectilinear.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html" aria-current="page">Rectilinear chunks</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a></span></nav>
+    </header>
+
+    <section>
+      <div id="presets" class="presets" role="group" aria-label="Examples"></div>
+    </section>
+
+    <section class="embed-keep">
+      <div class="buttons">
+        <button id="grid-reg" type="button">Regular</button>
+        <button id="grid-rect" type="button">Rectilinear</button>
+      </div>
+      <div id="time-ctl">
+        <label class="row" for="c"><span id="c-label">Regular chunk</span><output id="c-out"></output></label>
+        <input id="c" type="range" min="1" max="400" step="1" aria-label="Regular chunk size along the first axis">
+        <label class="row" for="a"><span>Read from</span><output id="a-out"></output></label>
+        <input id="a" type="range" min="0" max="100" step="1" aria-label="Start of the read">
+        <label class="row" for="w"><span>Read how many</span><output id="w-out"></output></label>
+        <input id="w" type="range" min="1" max="100" step="1" aria-label="Length of the read">
+        <label class="row" for="where"><span>Across the map</span></label>
+        <select id="where" class="wide" aria-label="What part of the map to read">
+          <option value="map">All of it</option>
+          <option value="pixel">One pixel</option>
+        </select>
+      </div>
+      <label class="row" for="ex"><span>Pull the chunks apart</span><output id="ex-out"></output></label>
+      <input id="ex" type="range" min="0" max="1" step="0.01" aria-label="Gap between chunks">
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+      <p id="pick-info" class="badge"></p>
+      <pre id="json" class="projdef" aria-label="The chunk_grid in zarr.json"></pre>
+    </section>
+
+    <section>
+      <details>
+        <summary>Your own chunk grid</summary>
+        <p class="hint">Paste a zarr.json (or a chunk_grid with a shape), or give the URL of one array in a store.</p>
+        <textarea id="paste" rows="5" spellcheck="false">{"shape": [365, 180, 360], "chunk_grid": {"name": "rectilinear", "configuration": {"kind": "inline", "chunk_shapes": [[31, 28, 31, 30, 31, 30, [31, 2], 30, 31, 30, 31], 90, 90]}}}</textarea>
+        <div class="buttons"><button id="draw-json" type="button" class="small">Draw it</button></div>
+        <input id="url" class="token" type="text" spellcheck="false" placeholder="https://.../store.zarr/var" aria-label="URL of a Zarr array">
+        <div class="buttons"><button id="read-url" type="button" class="small">Read zarr.json</button></div>
+        <p id="custom-note" class="hint"></p>
+      </details>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A Zarr array is stored in <b>chunks</b>, and its <code>chunk_grid</code> says where the cuts are. A
+          <b>regular</b> grid has one chunk length per axis. A <b>rectilinear</b> grid has a list of lengths per
+          axis, so the cuts along an axis can fall anywhere, but every cut still runs the whole way across the
+          array: the grid is the cross product of one list per axis, the same tuple of tuples dask has always
+          used for its own chunks. Finding the chunk that holds an index is a division on a regular axis and a
+          search of the running sums on a rectilinear one (point at the bands on the right to see both).</p>
+        <p>In zarr.json the rectilinear grid is <code>{"name": "rectilinear", "configuration": {"kind":
+          "inline", "chunk_shapes": [...]}}</code>, one entry per axis: an integer (a regular axis), a list of
+          lengths, or <code>[length, count]</code> runs, which can be mixed. The panel shows the
+          <code>chunk_grid</code> of what is drawn. Left, the array in 3D with the chunks pulled apart, the ones a
+          read touches in yellow and the part it wants in orange; right, the cuts along the first axis for
+          both grids, or a mosaic's tiles and the grid their edges make.</p>
+      </details>
+      <details id="about-edge">
+        <summary>The last chunk</summary>
+        <p>When the chunk length does not divide the array's length, a regular grid <b>overhangs</b> the end:
+          there are ceil(n / c) chunks and the last one reaches past the array. Zarr v2 says the contents of
+          that overhang are undefined; Zarr v3 says border chunks always have the full chunk size, and
+          recommends writing the fill value there. A reader decodes the whole chunk, fill and all.</p>
+        <p>This is the general case of the rectilinear grid: a regular grid is exactly a rectilinear grid with
+          an integer for every axis. The rectilinear grid can also say what is left, <code>[[30, 3], 10]</code>
+          for 100 steps in 30s, and then the last chunk is stored at 10, not padded to 30. Its lengths must add
+          up to at least the array's length, so the last chunk may still overhang (and even whole chunks past
+          the end are allowed, which is what a shrunken array keeps). Only the last chunk on an axis can
+          overhang: every chunk before it holds exactly its listed length.</p>
+      </details>
+      <details id="about-cal">
+        <summary>Days in months, days in years</summary>
+        <p>Months have 28, 29, 30 or 31 days and years have 365 or 366, so daily data chunked one month or
+          one year at a time cannot be a regular grid. With a regular 30-day chunk, February 2024 takes two
+          chunks and half the values read are not wanted; with monthly chunks it is one. A leap year is
+          <code>[31, 29, 31, 30, 31, 30, [31, 2], 30, 31, 30, 31]</code>, and years of daily data from 2000 are
+          <code>[366, [365, 3], 366, [365, 3], ...]</code>. This was the leading example in ZEP0003.</p>
+        <p>The same grid is what you get by appending: each day (or batch) added becomes a new chunk of its
+          own length, where a regular grid would have to rewrite its part-filled last chunk. A time series at
+          one pixel reads every chunk along time either way: what matters there is how the chunks are cut
+          across the map.</p>
+      </details>
+      <details id="about-native">
+        <summary>Files, and the chunks inside them</summary>
+        <p>The strongest reason for rectilinear grids is <b>virtual references</b>: kerchunk, VirtualiZarr and
+          Icechunk describe a pile of netCDF, HDF5 or TIFF files as one Zarr array whose chunks are byte ranges
+          in the original files. The files' own blocks cannot be changed, so the grid has to fit them. With a
+          regular grid, a file whose length is not a multiple of the chunk leaves a short chunk in the middle
+          of the array; kerchunk refuses it ("irregular chunking at its boundary. This is only allowed for the
+          final array") and VirtualiZarr allows it only on the last file. A rectilinear grid can list each
+          file's chunks, short ones included (orange in the bands).</p>
+        <p>The catch is padding. HDF5 (so netCDF-4) and tiled TIFF store a file's last chunk at the full chunk
+          size, padded, and a rectilinear chunk is stored at its listed length, so a padded 65-day remainder
+          stored as 100 cannot be referenced as a chunk of 65. Proposals to let a chunk's stored size differ
+          from its length were raised in the rectilinear extension's review and the ZEP meetings, but are not
+          in the spec. Sources that do not pad (TIFF strips, netCDF classic records, files whose length is a
+          multiple of their chunk, or one chunk per file) fit cleanly.</p>
+      </details>
+      <details id="about-mosaic">
+        <summary>Mosaics: uneven, staggered and overlapping tiles</summary>
+        <p><b>Uneven tiles.</b> Because there is one list of lengths per axis, every chunk in a column has the
+          same width and every chunk in a row the same height. Tiles of different sizes fit as one chunk each
+          only if they line up in rows and columns. A tile can be several chunks (its own internal blocks, as
+          runs of lengths), so long as those blocks are exact.</p>
+        <p><b>Staggered tiles.</b> When rows of tiles are offset, like bricks, every edge cuts the whole
+          array, so the grid that holds them is cut at every tile's edge and most tiles become two or more
+          chunks. For virtual references that only works where those cuts fall on the files' own block
+          boundaries; otherwise the bytes have to be rewritten.</p>
+        <p><b>Overlap.</b> A chunk grid is a partition: every index is in exactly one chunk, regular or
+          rectilinear. Two scenes that cover the same pixels cannot both be chunks of one array, so overlap
+          (red) has to be settled before Zarr sees it, by a rule such as GDAL VRT's "values will be taken from
+          the last overlapping input", by warping to a new grid, or by cropping each tile so the footprints
+          meet without overlap. Overlapping or haloed chunks have come up in Zarr discussions (they would need
+          an order, such as timestamps), but nothing has been proposed. HDF5 virtual datasets and GDAL VRT,
+          which place sources at any offset, are the nearest things.</p>
+      </details>
+      <details id="about-files">
+        <summary>Inside one TIFF or netCDF file</summary>
+        <p>Within one file, every array is a <b>regular</b> grid with an overhanging last block. Neither format
+          has variable block sizes within one array: they appear across files, or across a COG's overviews,
+          each a regular grid of its own.</p>
+        <table>
+          <tr><th>In one file</th><th>Blocks</th><th>Last block</th></tr>
+          <tr><td>TIFF tiles</td><td>one TileWidth x TileLength per image</td><td>full size, padded</td></tr>
+          <tr><td>TIFF strips</td><td>one RowsPerStrip, full width</td><td>short, not padded</td></tr>
+          <tr><td>COG overviews</td><td>a tiled image per level</td><td>padded, per level</td></tr>
+          <tr><td>netCDF classic</td><td>record variables: 1 along the record dimension</td><td>none</td></tr>
+          <tr><td>netCDF-4, HDF5</td><td>one chunk shape per variable</td><td>full size, padded</td></tr>
+        </table>
+        <p>The exceptions are rare: TIFF-FX's StripRowCounts gives strips of different heights, and an HDF5
+          virtual dataset stitches other datasets of any shape. So both formats have the same style of chunks
+          as a regular Zarr grid, and a rectilinear grid helps only when files are put together.</p>
+      </details>
+      <details id="about-status">
+        <summary>Where it stands, October 2026</summary>
+        <p><b>ZEP0003</b> (Martin Durant and Isaac Virshup, 2022) proposed variable chunking for Zarr and is
+          still a draft. The <b>rectilinear chunk grid</b> extension, by Davis Bennett, building on ZEP0003 and
+          prototyped with Lachlan Deakin at the 2025 Zarr summit, was merged into zarr-extensions in March
+          2026. Support:</p>
+        <table>
+          <tr><th>Library</th><th>Rectilinear</th></tr>
+          <tr><td>zarr-python</td><td>3.2.0 on, behind <code>array.rectilinear_chunks</code></td></tr>
+          <tr><td>zarrs (Rust)</td><td>0.23.8 on</td></tr>
+          <tr><td>Icechunk</td><td>2.0.0 on</td></tr>
+          <tr><td>xarray</td><td>reading, 2026.09.0 on</td></tr>
+          <tr><td>VirtualiZarr, Zarr.jl</td><td>open pull requests</td></tr>
+          <tr><td>GDAL, tensorstore, zarrita.js, netCDF-C</td><td>regular only</td></tr>
+        </table>
+        <p>Zarr arrays read from a URL here are drawn from their zarr.json alone; no chunk is read. Core in
+          <code>src/core/chunkgrid.js</code>, checked in <code>test/check-chunkgrid.mjs</code> (including the
+          extension's own example).</p>
+        <p>Hash keys: <code>case</code>, <code>grid</code> (reg, rect), <code>c</code> (regular chunk, or the
+          chunk inside each file), <code>a</code> and <code>w</code> (the read), <code>where</code> (map,
+          pixel), <code>ex</code>, <code>cam</code>.</p>
+        <ul class="credits">
+          <li>Durant, M. and Virshup, I. (2022) <a href="https://zarr.dev/zeps/draft/ZEP0003.html">ZEP0003:
+            Variable chunking</a>, draft.</li>
+          <li>Bennett, D. (2026) <a href="https://github.com/zarr-developers/zarr-extensions/tree/main/chunk-grids/rectilinear">Rectilinear
+            chunk grid</a>, zarr-extensions.</li>
+          <li>Zarr v3 core specification, <a href="https://zarr-specs.readthedocs.io/en/latest/v3/chunk-grids/regular-grid/">regular
+            chunk grid</a>; Zarr v2 specification.</li>
+          <li>Hamman, J., Jones, M. and Bennett, D. (2026) <a href="https://www.earthmover.io/blog/zarr-variable-length-chunks">Variable
+            length chunks in Zarr</a>, Earthmover blog.</li>
+          <li>zarr-python <a href="https://github.com/zarr-developers/zarr-python/pull/3802">#3802</a> (Max Jones),
+            zarrs <a href="https://github.com/zarrs/zarrs/pull/284">#284</a> (Lachlan Deakin), Icechunk
+            <a href="https://github.com/earth-mover/icechunk/pull/1806">#1806</a> (Deepak Cherian), VirtualiZarr
+            <a href="https://github.com/zarr-developers/VirtualiZarr/pull/954">#954</a> (Max Jones, Tom Nicholas),
+            kerchunk <a href="https://github.com/fsspec/kerchunk/pull/374">#374</a> (Isaac Virshup).</li>
+          <li>Discussion: <a href="https://github.com/orgs/zarr-developers/discussions/52">ZEP0003 discussion</a>,
+            <a href="https://github.com/zarr-developers/zarr-specs/issues/138">zarr-specs #138</a>,
+            <a href="https://github.com/zarr-developers/zarr-extensions/pull/25">zarr-extensions #25</a>.</li>
+          <li>Adobe (1992) TIFF Revision 6.0; OGC <a href="https://docs.ogc.org/is/21-026/21-026.html">Cloud
+            Optimized GeoTIFF</a> standard; Unidata, <a href="https://docs.unidata.ucar.edu/netcdf-c/current/file_format_specifications.html">netCDF
+            file format specifications</a>; The HDF Group, HDF5 chunking and virtual datasets.</li>
+          <li>GDAL <a href="https://gdal.org/en/stable/programs/gdalbuildvrt.html">gdalbuildvrt</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

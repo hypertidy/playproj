@@ -47,6 +47,7 @@ export * as sphull from "./sphull.js";
 export * as affine from "./affine.js";
 
 export * as structure from "./structure.js";
+export * as chunkgrid from "./chunkgrid.js";
 export * as basemap from "./basemap.js";
 export * as geotiff from "./geotiff-write.js";
 export * as cellexport from "./cellexport.js";
