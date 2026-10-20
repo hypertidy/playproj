@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: rectilinear chunks</title>
+<meta name="description" content="Regular and rectilinear chunk grids in Zarr: the last chunk of a regular grid, days in months and years, uneven, staggered and overlapping tiles in a mosaic, and which chunks a read touches.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/rectilinear.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split">
+    <div class="half">
+      <div id="three"></div>
+      <span class="half-label"><span id="case-label"></span> <span id="note3d"></span></span>
+    </div>
+    <div class="half">
+      <canvas id="axis" class="axis" aria-label="The chunk boundaries along the first axis, or across a mosaic"></canvas>
+      <span class="half-label" id="axis-label"></span>
+    </div>
+    <a id="open-full" class="open-full" href="./rectilinear.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html" aria-current="page">Rectilinear chunks</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a></span></nav>
+    </header>
+
+    <section>
+      <div id="presets" class="presets" role="group" aria-label="Examples"></div>
+    </section>
+
+    <section class="embed-keep">
+      <div class="buttons">
+        <button id="grid-reg" type="button">Regular</button>
+        <button id="grid-rect" type="button">Rectilinear</button>
+      </div>
+      <div id="time-ctl">
+        <label class="row" for="c"><span>Regular chunk</span><output id="c-out"></output></label>
+        <input id="c" type="range" min="1" max="400" step="1" aria-label="Regular chunk size along the first axis">
+        <label class="row" for="a"><span>Read from</span><output id="a-out"></output></label>
+        <input id="a" type="range" min="0" max="100" step="1" aria-label="Start of the read">
+        <label class="row" for="w"><span>Read how many</span><output id="w-out"></output></label>
+        <input id="w" type="range" min="1" max="100" step="1" aria-label="Length of the read">
+        <label class="row" for="where"><span>Across the map</span></label>
+        <select id="where" class="wide" aria-label="What part of the map to read">
+          <option value="map">All of it</option>
+          <option value="pixel">One pixel</option>
+        </select>
+      </div>
+      <label class="row" for="ex"><span>Pull the chunks apart</span><output id="ex-out"></output></label>
+      <input id="ex" type="range" min="0" max="1" step="0.01" aria-label="Gap between chunks">
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+      <p id="pick-info" class="badge"></p>
+      <pre id="json" class="projdef" aria-label="The chunk_grid in zarr.json"></pre>
+    </section>
+
+    <section>
+      <details>
+        <summary>Your own chunk grid</summary>
+        <p class="hint">Paste a zarr.json (or a chunk_grid with a shape), or give the URL of one array in a store.</p>
+        <textarea id="paste" rows="5" spellcheck="false">{"shape": [365, 180, 360], "chunk_grid": {"name": "rectilinear", "configuration": {"kind": "inline", "chunk_shapes": [[31, 28, 31, 30, 31, 30, [31, 2], 30, 31, 30, 31], 90, 90]}}}</textarea>
+        <div class="buttons"><button id="draw-json" type="button" class="small">Draw it</button></div>
+        <input id="url" class="token" type="text" spellcheck="false" placeholder="https://.../store.zarr/var" aria-label="URL of a Zarr array">
+        <div class="buttons"><button id="read-url" type="button" class="small">Read zarr.json</button></div>
+        <p id="custom-note" class="hint"></p>
+      </details>
+    </section>
+
+    <section class="about">
+<!-- ABOUT -->
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
