@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Affine</title>
+<meta name="description" content="The six-number affine geotransform that puts an image's pixels on the map: pixel corners and centres, north up, rotation and shear, its inverse and the world file, then register a world image of your own by clicking two points.">
+<link rel="stylesheet" href="css/app.css">
+<script type="module" src="js/affine.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split affine">
+    <div class="half">
+      <canvas id="img" aria-label="The image in its own columns and rows, with the ground control points"></canvas>
+      <span class="half-label" id="img-label">The image: column and row</span>
+    </div>
+    <div class="half">
+      <canvas id="map" aria-label="The image placed on a longitude and latitude map by the geotransform"></canvas>
+      <span class="half-label" id="map-label">The map: longitude and latitude</span>
+    </div>
+    <a id="open-full" class="open-full" href="./affine.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html" aria-current="page">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a></span></nav>
+    </header>
+
+    <section>
+      <div id="presets" class="presets" role="group" aria-label="Steps"></div>
+    </section>
+
+    <section class="embed-keep">
+      <label class="row" for="pic"><span>Image</span></label>
+      <select id="pic" class="wide">
+        <option value="atlas">Atlas page, north up</option>
+        <option value="crooked">Crooked scan of it</option>
+        <option value="own">Your own PNG or JPEG ...</option>
+      </select>
+      <input id="own-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+      <p id="pic-status" class="status" role="status"></p>
+      <label class="row" for="fit"><span>Geotransform</span></label>
+      <select id="fit" class="wide">
+        <option value="hand">Set by hand</option>
+        <option value="northup">Fit to points: north up</option>
+        <option value="similarity">Fit to points: rotate and scale</option>
+        <option value="affine">Fit to points: full affine</option>
+      </select>
+      <div id="hand-box">
+        <label class="row" for="x0"><span>Top-left x (gt0)</span><output id="x0-out"></output></label>
+        <input id="x0" type="range" min="-400" max="400" step="0.1">
+        <label class="row" for="y0"><span>Top-left y (gt3)</span><output id="y0-out"></output></label>
+        <input id="y0" type="range" min="-200" max="200" step="0.1">
+        <label class="row" for="w"><span>Pixel width</span><output id="w-out"></output></label>
+        <input id="w" type="range" min="0.05" max="1.5" step="0.001">
+        <label class="row" for="h"><span>Pixel height</span><output id="h-out"></output></label>
+        <input id="h" type="range" min="-1.5" max="1.5" step="0.001">
+        <label class="row" for="rot"><span>Rotation</span><output id="rot-out"></output></label>
+        <input id="rot" type="range" min="-45" max="45" step="0.1">
+        <label class="row" for="shear"><span>Shear</span><output id="shear-out"></output></label>
+        <input id="shear" type="range" min="-45" max="45" step="0.1">
+        <label class="row" for="gt-text"><span>Or paste six numbers (GDAL order, or a world file)</span></label>
+        <textarea id="gt-text" class="gt-text" rows="2" spellcheck="false" aria-label="Geotransform as six numbers"></textarea>
+      </div>
+      <div id="fit-box">
+        <p class="hint" id="fit-hint"></p>
+        <table id="gcps" class="gcps"></table>
+        <div class="buttons">
+          <button id="clear" type="button">Clear points</button>
+          <button id="undo" type="button">Remove last</button>
+        </div>
+      </div>
+      <label class="row" for="op"><span>Image on the map</span><output id="op-out"></output></label>
+      <input id="op" type="range" min="0" max="1" step="0.05" aria-label="Opacity of the image on the map">
+      <div class="toggles">
+        <label><input id="grat" type="checkbox"> Graticule on the image</label>
+        <label><input id="pix" type="checkbox"> Pixel grid</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset views</button>
+      </div>
+      <p class="hint">Drag to pan, scroll to zoom. Click to place a point; drag a point to move it.</p>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+      <div class="buttons">
+        <button id="dl-tif" type="button">Download GeoTIFF</button>
+        <button id="dl-wld" type="button">Download world file</button>
+        <button id="copy-gdal" type="button">Copy GDAL command</button>
+      </div>
+      <pre id="gdal" class="gdal"></pre>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>An image is a grid of pixels counted by <b>column</b>, left to right, and <b>row</b>, top to
+          bottom, from 0 at the top-left. Column and row here are positions, not just counts: pixel
+          (0, 0) covers columns 0 to 1 and rows 0 to 1, its <b>corner</b> is at (0, 0) and its
+          <b>centre</b> at (0.5, 0.5). Zoom in on the image and turn on the pixel grid to see them.</p>
+        <p>The <b>geotransform</b> is six numbers that put every one of those positions on the map:</p>
+        <p><code>x = gt0 + col * gt1 + row * gt2</code><br><code>y = gt3 + col * gt4 + row * gt5</code></p>
+        <p>(gt0, gt3) is the top-left corner of the image, gt1 is the pixel width and gt5 the pixel
+          height, negative because rows run down and y runs up. gt2 and gt4 are 0 for a <b>north-up</b>
+          image. An image with no geotransform gets (0, 1, 0, 0, 0, 1) from GDAL: x is the column and y
+          the row, so it lands upside down, a degree a pixel, north-east of 0, 0 (<b>No coordinates</b>).</p>
+        <p>North up, the geotransform and the <b>extent</b> say the same thing: xmin = gt0,
+          xmax = gt0 + ncol * gt1, ymax = gt3, ymin = gt3 + nrow * gt5. An extent and the number of
+          columns and rows are all a regular grid needs (see <a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a>).</p>
+        <p>gt2 and gt4 tilt the rows and the columns, so the image becomes a parallelogram on the map:
+          <b>rotation</b> turns both, <b>shear</b> leans the columns. Any geotransform is some mix of an
+          offset, two pixel sizes, a rotation and a shear: six numbers, six ways to move. Whatever the mix,
+          straight lines stay straight and parallel ones stay parallel, so an affine cannot put a
+          Mercator or a polar map on longitude and latitude; that needs a warp, pixel by pixel through a
+          projection. The readout gives the <b>inverse</b> too, the six numbers that take x, y back to
+          column and row, which is how a reader finds the pixel under a point.</p>
+        <p>A <b>world file</b> (.pgw beside a .png, .jgw beside a .jpg, or .wld) holds the same numbers in
+          the order gt1, gt4, gt2, gt5, then C and F, which are the <b>centre</b> of the top-left pixel,
+          half a pixel in from gt0 and gt3. Mixing the two up moves the image half a pixel, one of the
+          commonest slips there is. Neither form says what x and y are: the CRS comes from somewhere else
+          (a .prj file, or <code>-a_srs</code>).</p>
+        <p><b>Registration</b> works the geotransform out from <b>ground control points</b>: a place on
+          the image and the same place on the map. Each point gives two equations, one for x and one for
+          y. <b>North up</b> has four unknowns (gt0, gt1, gt3, gt5), so two points fix it as long as they
+          are in different rows and columns. <b>Rotate and scale</b> also has four (the offset, the size
+          of a square pixel and the angle), and also needs two. A <b>full affine</b> has all six and needs
+          three, not in a line. With more points than that, the fit is least squares and the
+          <b>residuals</b> say how far each point is from where the fit puts it: the size of your clicks'
+          error, or a sign the kind of fit is wrong. Fit the crooked scan north up and the residuals are
+          large; rotate and scale does better, and only the full affine fits it, because the scan is
+          sheared as well. For the two samples the readout also gives how far the fit puts the image's
+          corners from where they truly are.</p>
+        <p>To register your own world image, pick <b>Your own PNG or JPEG</b> (or drop a file on the
+          views), click a place you can find on it, then the same place on the map, and again for a
+          second point. Type a point's longitude and latitude in its row for an exact place. The map here
+          is longitude and latitude, so this suits a plate carree world image; the same fit works for any
+          CRS's x and y.</p>
+        <p>The <b>GeoTIFF</b> is the image's own pixels with the geotransform (a ModelTransformation tag
+          when it is not north up) in EPSG:4326, and the <b>world file</b> is the six lines above. The
+          <b>GDAL command</b> does the same from the command line: <code>-a_ullr</code> for north up,
+          or the points as <code>-gcp</code> and <code>gdalwarp -order 1</code>, GDAL's own least-squares
+          affine. The maths is in <code>src/core/affine.js</code>, checked in
+          <code>test/check-affine.mjs</code>.</p>
+        <p>Hash keys: <code>pic</code> (<code>atlas</code>, <code>crooked</code>), <code>fit</code>,
+          <code>x0</code>, <code>y0</code>, <code>w</code>, <code>h</code>, <code>rot</code>,
+          <code>shear</code> (by hand), <code>gcp</code> (col,row,x,y;...), <code>op</code>,
+          <code>grat</code>, <code>pix</code>. Your own image stays in your browser and is not in the link.</p>
+        <ul class="credits">
+          <li>The geotransform as <a href="https://gdal.org/en/stable/tutorials/geotransforms_tut.html">GDAL</a>
+            defines it, and the <a href="https://en.wikipedia.org/wiki/World_file">world file</a> from ESRI.</li>
+          <li>Countries from <a href="https://www.naturalearthdata.com/">Natural Earth</a> 1:110m (public
+            domain).</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

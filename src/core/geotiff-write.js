@@ -38,7 +38,9 @@ function geoKeyTags(geoKeys) {
 
 // rgba: Uint8ClampedArray of width * height * 4, rows from the top (north).
 // origin: [x, y] of the top-left corner; pixelSize: [dx, dy] (both positive).
-export async function writeGeoTIFF({ width, height, rgba, origin, pixelSize, geoKeys }) {
+// Or, for an image that is not north up, gt: a GDAL geotransform, written
+// as a ModelTransformation in place of the origin and pixel size.
+export async function writeGeoTIFF({ width, height, rgba, origin, pixelSize, gt, geoKeys }) {
   const rowsPerStrip = Math.max(1, Math.floor(65536 / (width * 4)));
   const jobs = [];
   for (let r = 0; r < height; r += rowsPerStrip) {
@@ -60,7 +62,7 @@ export async function writeGeoTIFF({ width, height, rgba, origin, pixelSize, geo
     [284, SHORT, [1]],             // interleaved
     [338, SHORT, [2]],             // unassociated alpha
     [339, SHORT, [1, 1, 1, 1]],    // unsigned
-    ...georef(origin, pixelSize, geoKeys)
+    ...(gt ? transformRef(gt, geoKeys) : georef(origin, pixelSize, geoKeys))
   ];
   return assemble(tags, strips);
 }
@@ -106,6 +108,13 @@ export async function writeFloatGeoTIFF({ width, height, bands, names = [], orig
 const georef = (origin, pixelSize, geoKeys) => [
   [33550, DOUBLE, [pixelSize[0], pixelSize[1], 0]],
   [33922, DOUBLE, [0, 0, 0, origin[0], origin[1], 0]],
+  ...geoKeyTags(geoKeys)
+];
+
+// ModelTransformationTag: the 4 x 4 matrix taking raster (col, row, 0, 1),
+// corners counted from the top-left of the top-left pixel, to model x, y.
+const transformRef = (gt, geoKeys) => [
+  [34264, DOUBLE, [gt[1], gt[2], 0, gt[0], gt[4], gt[5], 0, gt[3], 0, 0, 0, 0, 0, 0, 0, 1]],
   ...geoKeyTags(geoKeys)
 ];
 
