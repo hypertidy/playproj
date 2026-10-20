@@ -272,3 +272,19 @@ pre.projdef { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; bac
 .readout table.vtable th { color: var(--muted); font-weight: normal; text-align: right; padding: 1px 4px; }
 .readout table.vtable td { text-align: right; padding: 1px 4px; border-bottom: 0; color: var(--text); }
 .readout table.vtable tr.on td { color: var(--accent); }
+/* affine.html: the image beside the map, the point table and the GDAL command */
+#stage.split.affine canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.gt-text, pre.gdal { width: 100%; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); background: #070b16; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0 0; }
+.gt-text { resize: vertical; }
+pre.gdal { white-space: pre-wrap; word-break: break-all; }
+pre.gdal:empty { display: none; }
+table.gcps { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+table.gcps th { color: var(--muted); font-weight: normal; text-align: right; padding: 1px 3px; }
+table.gcps td { text-align: right; padding: 1px 3px; border-bottom: 1px solid var(--line); }
+table.gcps input { width: 72px; font: inherit; color: var(--text); background: #070b16; border: 1px solid var(--line); border-radius: 4px; padding: 1px 3px; text-align: right; }
+@media (max-width: 820px) {
+  #stage.split.affine { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+  #stage.split.affine > .half + .half { border-left: 0; border-top: 1px solid var(--line); }
+}
+/* ortho.html: the four images take the whole lower half on a phone */
+@media (max-width: 820px) { #map-label { display: none; } }

@@ -169,6 +169,23 @@ within about 5 m of the full 2.5 minute model. Hash keys: `alon`, `alat`,
 `blon`, `blat`, `nx` (exaggeration as a power of ten), `fx`, `ell`, `coast`,
 `grat`, `wall`, `bm`, `fit`.
 
+## Orthorectification
+
+`ortho.html` puts a frame camera (an aerial photo) or a pushbroom scanner (a
+satellite line) over a synthetic terrain and shows four images of a 10 km
+square: the map itself, the raw image the sensor records (one ray traced per
+pixel), that image rectified onto a flat datum, and the same image
+orthorectified with a DEM (true, smoothed, or a level plane at the mean
+height). Relief displacement, (h - z) tan(theta) away from the nadir (across
+the track for a pushbroom), shows as arrows and as bent roads; a true ortho
+masks the ground the sensor could not see. One picked point is followed from
+the ground through the lens to the image and on down to the datum, in the
+scene and in all four images. The sensor models (collinearity equations for
+the frame camera, a line camera per row for the pushbroom), ray tracing,
+visibility and the rectification loop are `src/core/ortho.js`, checked in
+`test/check-ortho.mjs`. Hash keys: `s`, `alt`, `tilt`, `az`, `fov`, `terr`,
+`rel`, `dem`, `occ`, `arr`, `ov`, `img`, `px`, `py`, `cam`.
+
 ## Globals and interrupteds
 
 `globals.html` takes the whole-world formulas: Mollweide, Goode homolosine,
@@ -767,6 +784,28 @@ index.html#v=0.75&lat=-42&lon=147&w=2&rays=200&cam=4.6,2.6,6.2,0,0.5,0
 Add `?embed=1` for a compact view to put in an iframe; the "Copy embed code"
 button writes the snippet for the current view.
 
+## Affine
+
+`affine.html` is the six-number geotransform that puts an image's columns and
+rows on the map, `x = gt0 + col gt1 + row gt2`, `y = gt3 + col gt4 + row gt5`,
+with the image in its own pixels on the left and placed on a longitude and
+latitude map on the right. Set it by hand (top-left corner, pixel width and
+height, rotation, shear, or six pasted numbers in GDAL or world file order) and
+see corners and centres, north up and its extent, the inverse, and the world
+file, whose last two lines are the centre of the top-left pixel, half a pixel in
+from the geotransform's corner. Or register the image: click a place on it and
+the same place on the map, twice, and the geotransform is fitted north up (four
+unknowns, two points), rotate and scale (also four) or full affine (six, three
+points), by least squares with residuals when there are more points. The samples
+are an atlas page drawn here and a crooked scan of it (turned and sheared), whose
+true geotransforms are known; your own PNG or JPEG stays in the browser. The
+result downloads as a GeoTIFF (EPSG:4326, a ModelTransformation tag when not
+north up) or a world file, with the equivalent GDAL command.
+`src/core/affine.js` holds the maths, checked in `test/check-affine.mjs`. Hash
+keys: `pic` (`atlas`, `crooked`), `fit` (`hand`, `northup`, `similarity`,
+`affine`), `x0`, `y0`, `w`, `h`, `rot`, `shear`, `gcp` (col,row,x,y;...),
+`op`, `grat`, `pix`.
+
 ## Layout
 
 ```
@@ -783,6 +822,7 @@ indexspace.html, js/indexspace.js      index space page
 structure.html, js/structure-page.js   tiles and overviews page
 regular.html, js/regular-page.js       regular in what? storyline: geostationary, lon/lat arrays
 rasterize.html, js/rasterize-page.js   rasterize page
+affine.html, js/affine.js              Affine: the geotransform, world file, registering an image by two points
 example.html, js/example.js            For example storyboard
 homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977, Eratosthenes
 vicgrid.html, js/vicgrid.js            VicGrid: Victoria's one-zone grid against MGA, NSW/SA Lambert, Albers
@@ -792,6 +832,7 @@ bins.html, js/bins.js                  L3 bins page
 tissot.html, js/tissot-page.js         Distortion page (Tissot's indicatrix and factor fields)
 ellipsoid.html, js/ellipsoid-page.js   Ellipsoid: exaggerated flattening, the three latitudes, M and N
 geoid.html, js/geoid.js                Geoid: EGM2008 exaggerated over the ellipsoid, h = H + N profile
+ortho.html, js/ortho.js                Orthorectification: frame camera or pushbroom over terrain, raw image, datum and DEM rectification
 nuyina.html, js/nuyina.js              Nuyina: voyage track, sea ice, two bathymetry mosaics, near-ship maps
 rhumb.html, js/rhumb.js                Rhumb lines: rhumb line and great circle on four maps, composite sailing
 
@@ -840,7 +881,9 @@ src/core/track.js                 ship tracks from underway CSV or parquet rows;
 src/core/rhumb.js                 rhumb lines, geodesics and great circles, the whole loxodrome, composite sailing
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
+src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
+src/core/affine.js                geotransform: apply, invert, parts, extent, world file, fit to control points
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
 
 data/countries-110m.json   Natural Earth 110m country parts as flat [lon, lat] rings
@@ -853,6 +896,7 @@ test/check-interfaces.mjs  every family and grid has the shared Family and Grid 
 test/check-proj.mjs        ray construction vs proj4js
 test/check-secant.mjs      secant planes vs PROJ (fixture made with PROJ 9.8)
 test/check-oblique.mjs     tilted cones and cylinders (omerc, ob_tran) vs PROJ 9.8
+test/check-ortho.mjs       orthorectification: sensor models invert their rays, h tan(theta), true DEM reproduces the map
 legacy/pproj/              the original R package and experiments
 ```
 

@@ -32,6 +32,7 @@ export * as track from "./track.js";
 export * as rhumb from "./rhumb.js";
 export * as ellipsoid from "./ellipsoid.js";
 export * as geoid from "./geoid.js";
+export * as ortho from "./ortho.js";
 export * as vicgrid from "./vicgrid.js";
 
 export * as geo from "./geo.js";
@@ -42,6 +43,7 @@ export * as eratosthenes from "./eratosthenes.js";
 export * as rasterize from "./rasterize.js";
 export * as texmap from "./texmap.js";
 export * as sphull from "./sphull.js";
+export * as affine from "./affine.js";
 
 export * as structure from "./structure.js";
 export * as basemap from "./basemap.js";
