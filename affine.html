@@ -109,7 +109,7 @@
           the row, so it lands upside down, a degree a pixel, north-east of 0, 0 (<b>No coordinates</b>).</p>
         <p>North up, the geotransform and the <b>extent</b> say the same thing: xmin = gt0,
           xmax = gt0 + ncol * gt1, ymax = gt3, ymin = gt3 + nrow * gt5. An extent and the number of
-          columns and rows are all a regular grid needs (see <a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a>).</p>
+          columns and rows are all a regular grid needs (see <a href="./regular.html">Regular in what?</a>).</p>
         <p>gt2 and gt4 tilt the rows and the columns, so the image becomes a parallelogram on the map:
           <b>rotation</b> turns both, <b>shear</b> leans the columns. Any geotransform is some mix of an
           offset, two pixel sizes, a rotation and a shear: six numbers, six ways to move. Whatever the mix,
