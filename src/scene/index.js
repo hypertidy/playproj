@@ -6,4 +6,6 @@ export { readParams, paramString, hashWriter, parseCam, oneOf } from "./hash.js"
 export { shareLinks, copyText, isEmbed, pageUrl } from "./share.js";
 export { placeHomes } from "./homes.js";
 export { displace, hasElevation, EARTH_R } from "./relief.js";
+export { makeMeshLayer } from "./meshlayer.js";
+export { drawLocator, ortho, cssRamp } from "./locator.js";
 export { sceneFrame } from "../core/geo.js";

@@ -52,3 +52,6 @@ export * as basemap from "./basemap.js";
 export * as geotiff from "./geotiff-write.js";
 export * as cellexport from "./cellexport.js";
 export * as mosaic from "./mosaic.js";
+
+export * as palette from "./palette.js";
+export * as meshframe from "./meshframe.js";

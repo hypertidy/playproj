@@ -791,6 +791,56 @@ has no single PROJ string unless PROJ names it (`igh`, `igh_o`, `imoll`,
 likewise. The Dymaxion net on the Homage page and the Index space grid
 (curvilinear ROMS cells with no CRS) have no export.
 
+## Frame
+
+`frame.html` draws any [scenespec](https://github.com/allboa/scenespec)
+scene (0.7 or later) with a mesh layer, and puts a map's frame round it.
+The page knows nothing about the data: it reads the view CRS, extent and
+local origin from the scene, the tables from Arrow IPC, and adds what a
+reader needs to place it: a locator globe, the graticule, a CRS readout,
+and the distortion of the CRS at every vertex from PROJ's factors (as on
+the Distortion page).
+
+Every vertex has two homes. On the map it is where the CRS puts it, east
+and north of the local origin. On the Earth it is at its own longitude,
+latitude and height on the WGS84 ellipsoid, Earth-centred (ECEF) and then
+turned into east, up and north at the origin, so the two agree there.
+Unfold moves each vertex between them. Over the 212 m Juneau window they
+differ by up to 1.28 m, nearly all of it the 0.49 degree turn between UTM
+grid north and true north (the scale factor adds 4 cm, the curve of the
+Earth 2 mm), and the page says so; "Exaggerate the difference" multiplies
+it so its shape shows. Over the 3000 km polar mesh they part by kilometres.
+
+A click picks the triangle under the pointer: its row in the face table,
+its vertices, its centre in the CRS and in longitude and latitude, and the
+face columns the scene's popup names. That is the way back from the
+picture to the data.
+
+The default scene is a 212 m window of USGS 3DEP lidar near Juneau, Alaska
+(`AK_Juneau_2012`, public domain, EPSG:32608), meshed and summarised per
+triangle in R and written with meshcore `write_scene()`:
+
+```r
+m <- meshcore::read_mesh_arrow("juneau/mesh")   # triangle form + face_stats
+mesh <- structure(m[c("vertices", "triangles")], meshspec = attr(m, "meshspec"),
+                  class = "meshcore_tri")
+fs <- m$face_stats                                 # pointcore::face_stats(), one row per face
+meshcore::write_scene(mesh, "data/frame/juneau",
+  faces = fs[c("face", "n", "z", "slope", "dz_max", "intensity")],
+  fill_by = "n", label = "3DEP Juneau window")
+```
+
+Open another scene by URL (`#scene=` in the hash, scene-relative table
+URLs), or choose a `scene.json` and its `.arrows` files together; files
+stay in the browser. `src/load` reads the scene and tables (apache-arrow,
+passed in), `src/core/meshframe.js` holds the homes and graticule, and
+`src/scene/meshlayer.js` draws the layer; `test/check-load.mjs` reads the
+scenespec conformance mesh and checks the Earth home against proj4js and
+the ellipsoid. Hash keys: `scene`, `t` (unfold), `gx` (the difference
+exaggerated by 10^gx), `dz` (height by 10^dz on top of the scene's
+`z_scale`), `col` (`scene`, `k`, `h`, `s`, `omega`, `conv`), `grat`,
+`globe`, `pick` (triangle), `cam`.
+
 ## Share and embed
 
 The view state lives in the URL hash, so a link reproduces what you see:
@@ -872,6 +922,7 @@ geoid.html, js/geoid.js                Geoid: EGM2008 exaggerated over the ellip
 ortho.html, js/ortho.js                Orthorectification: frame camera or pushbroom over terrain, raw image, datum and DEM rectification
 nuyina.html, js/nuyina.js              Nuyina: voyage track, sea ice, two bathymetry mosaics, near-ship maps
 rhumb.html, js/rhumb.js                Rhumb lines: rhumb line and great circle on four maps, composite sailing
+frame.html, js/frame.js                Frame: any scenespec mesh in its CRS, distortion, graticule, unfolded onto the ellipsoid
 
 js/data.js          loads the coastlines in data/
 js/basemap-load.js  fetches the basemaps in the browser and makes their canvases
@@ -885,6 +936,11 @@ src/scene/hash.js    page state in the URL hash, written only where it differs f
 src/scene/share.js   copy link, copy embed and open full buttons; embedded mode
 src/scene/homes.js   two homes for every vertex (index space and the world) and the warp between them
 src/scene/relief.js  relief on any surface, pushed along its normals by elevation
+src/scene/meshlayer.js  a scenespec mesh layer as a three.js mesh, flat face colours, face-index picking
+src/scene/locator.js    locator globe on a 2D canvas; CSS ramps for legends
+
+src/load/index.js    the loading layer: like the core no DOM or three.js, but it fetches (fetch and Arrow are passed in)
+src/load/scene.js    a scenespec scene and the Arrow tables of its mesh layers, as typed arrays, colours and popups
 
 src/core/index.js                 the whole core in one import; src/core/ needs no browser
 src/core/families/index.js        the families, and the interface each one has
@@ -924,13 +980,17 @@ src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor mod
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
 src/core/affine.js                geotransform: apply, invert, parts, extent, world file, fit to control points
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
+src/core/palette.js               named palettes for scene layers (scenespec palette names)
+src/core/meshframe.js             a mesh's two homes, the map and the ellipsoid (ECEF turned to east, up, north); graticule lines
 
 data/countries-110m.json   Natural Earth 110m country parts as flat [lon, lat] rings
+data/frame/                scenes for the Frame page: a USGS 3DEP lidar window (juneau/) and the scenespec polar mesh
 data/s2-tiles.json         which MGRS squares are Sentinel-2 tiles (ESA tiling grid)
 test/fixtures/             reference points projected by PROJ
 data/                      Natural Earth coastlines as [lon, lat, ...] polylines
 test/check-pure.mjs        the core modules load in Node with no DOM, canvas or three.js
 test/check-scene.mjs       the scene modules import only three.js and the core, and load in Node
+test/check-load.mjs        a scenespec mesh scene reads, colours, pops up and unfolds onto the ellipsoid
 test/check-interfaces.mjs  every family and grid has the shared Family and Grid shape
 test/check-proj.mjs        ray construction vs proj4js
 test/check-secant.mjs      secant planes vs PROJ (fixture made with PROJ 9.8)
