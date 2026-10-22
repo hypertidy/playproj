@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Frame</title>
+<meta name="description" content="Any scenespec mesh in its own CRS, framed: where it is on the Earth, what its projection does to it, and the map unfolded onto the ellipsoid.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "earcut": "https://cdn.jsdelivr.net/npm/earcut@3.0.2/src/earcut.js",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "apache-arrow": "https://cdn.jsdelivr.net/npm/apache-arrow@17.0.0/+esm"
+  }
+}
+</script>
+<script type="module" src="js/frame.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <canvas id="locator" class="locator" width="168" height="168" aria-label="Where the scene is on the Earth"></canvas>
+    <a id="open-full" class="open-full" href="./frame.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html" aria-current="page">Frame</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="t"><span>Unfold</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Map to Earth">
+      <label class="row" for="gx"><span>Exaggerate the difference</span><output id="gx-out"></output></label>
+      <input id="gx" type="range" min="0" max="4" step="0.05" aria-label="Exaggerate the difference between map and Earth, as a power of ten">
+      <label class="row" for="dz"><span>Height</span><output id="dz-out"></output></label>
+      <input id="dz" type="range" min="-1" max="2" step="0.05" aria-label="Vertical exaggeration, as a power of ten">
+      <p id="gap" class="badge"></p>
+    </section>
+
+    <section>
+      <label class="row" for="colour"><span>Colour</span></label>
+      <select id="colour" class="wide">
+        <option value="scene">As the scene says</option>
+        <option value="k">Scale along the parallel (k)</option>
+        <option value="h">Scale along the meridian (h)</option>
+        <option value="s">Areal scale (s)</option>
+        <option value="omega">Angular distortion</option>
+        <option value="conv">Meridian convergence</option>
+      </select>
+      <div id="legend" class="legend"><div class="legend-ramp"></div><div class="scale"><span id="legend-lo"></span><span id="legend-title"></span><span id="legend-hi"></span></div></div>
+      <p id="dist" class="hint"></p>
+      <div class="toggles">
+        <label><input id="grat" type="checkbox"> Graticule</label>
+        <label><input id="globe" type="checkbox"> Locator globe</label>
+      </div>
+    </section>
+
+    <section>
+      <table class="readout" id="crs-table"><tbody></tbody></table>
+      <table class="readout" id="pick-table"><tbody></tbody></table>
+      <p id="pick-hint" class="hint">Click the mesh for the triangle under the pointer: its face row and where it is.</p>
+    </section>
+
+    <section>
+      <label class="row" for="scene-url"><span>Scene</span></label>
+      <div class="projline">
+        <input id="scene-url" class="token" type="text" spellcheck="false" autocomplete="off" aria-label="Scene URL">
+        <button id="load" type="button" class="small">Load</button>
+      </div>
+      <div class="buttons">
+        <label class="inline" for="files">Or open files
+          <input id="files" type="file" multiple accept=".json,.arrows,.txt">
+        </label>
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>The page draws a <a href="https://github.com/allboa/scenespec">scenespec</a> scene (version 0.7 or
+          later) whose layers include a mesh: a vertex table, an index table and an optional face table, as
+          <a href="https://github.com/hypertidy/meshcore">meshcore</a>'s <code>write_scene()</code> writes them.
+          Nothing here knows what the data is. It reads the view CRS, the extent and the local origin from the
+          scene and puts the frame round them: where the mesh is on the Earth, the graticule, and what the CRS
+          does to it.</p>
+        <p>Every vertex has two homes. On the map it sits where the CRS puts it, x east and y north of the local
+          origin. On the Earth it sits at its own longitude, latitude and height on the WGS84 ellipsoid,
+          Earth-centred and then turned so the origin is level. Unfold moves every vertex from one to the
+          other. Over a small survey they agree to a metre or so, most of it the turn between grid north and
+          true north; exaggerate the difference to see its shape (that turn, the scale factor, the fall of the
+          curved Earth below the plane). Over a continent they part by kilometres.</p>
+        <p>Colour can come from the scene (its palette over a vertex or face column) or from the distortion of
+          the CRS at every vertex, from PROJ's own factors (as on the Distortion page). A click gives the
+          triangle under the pointer and its face row, which is the way back from the picture to the data.</p>
+        <p>Open a scene by URL, or choose its <code>scene.json</code> and <code>.arrows</code> files together.
+          The default is a 212 m window of USGS 3DEP lidar near Juneau, Alaska (public domain), meshed with
+          meshcore and summarised per triangle with pointcore.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

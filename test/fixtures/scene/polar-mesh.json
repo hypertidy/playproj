@@ -1,0 +1,77 @@
+{
+  "version": "0.7",
+  "view": {
+    "type": "projected",
+    "crs": "EPSG:3031",
+    "extent": [
+      -2000000,
+      2000000,
+      -2000000,
+      2000000
+    ]
+  },
+  "data": {
+    "mesh_vertices": {
+      "format": "arrow-ipc-stream",
+      "url": "mesh-vertices.arrows"
+    },
+    "mesh_indices": {
+      "format": "arrow-ipc-stream",
+      "url": "mesh-indices.arrows"
+    },
+    "mesh_faces": {
+      "format": "arrow-ipc-stream",
+      "url": "mesh-faces.arrows"
+    }
+  },
+  "layers": [
+    {
+      "id": "dome",
+      "kind": "mesh",
+      "label": "Dome mesh",
+      "mesh": {
+        "vertices": "mesh_vertices",
+        "indices": "mesh_indices",
+        "faces": "mesh_faces"
+      },
+      "fill_by": {
+        "table": "faces",
+        "column": "count",
+        "palette": {
+          "name": "terrain",
+          "range": [
+            0,
+            10
+          ]
+        }
+      },
+      "stroke": [
+        60,
+        66,
+        72,
+        255
+      ],
+      "stroke_width_px": 1,
+      "z_scale": 100,
+      "popup": {
+        "columns": [
+          "count",
+          "cell"
+        ]
+      }
+    }
+  ],
+  "legends": [
+    {
+      "layer": "dome",
+      "title": "Points per triangle",
+      "ramp": {
+        "palette": "terrain",
+        "range": [
+          0,
+          10
+        ]
+      }
+    }
+  ]
+}

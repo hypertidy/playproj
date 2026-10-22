@@ -1,0 +1,58 @@
+{
+  "version": "0.7",
+  "view": {
+    "type": "projected",
+    "crs": "EPSG:32608",
+    "extent": [533905.527691536, 534117.441320782, 6462363.10800264, 6462574.92235074],
+    "local_origin": [534011.484506159, 6462469.01517669]
+  },
+  "data": {
+    "mesh_vertices": {
+      "format": "arrow-ipc-stream",
+      "url": "mesh_vertices.arrows",
+      "origin_subtracted": true
+    },
+    "mesh_indices": {
+      "format": "arrow-ipc-stream",
+      "url": "mesh_indices.arrows"
+    },
+    "mesh_faces": {
+      "format": "arrow-ipc-stream",
+      "url": "mesh_faces.arrows"
+    }
+  },
+  "layers": [
+    {
+      "id": "mesh",
+      "kind": "mesh",
+      "label": "3DEP Juneau window",
+      "mesh": {
+        "vertices": "mesh_vertices",
+        "indices": "mesh_indices",
+        "faces": "mesh_faces"
+      },
+      "fill_by": {
+        "table": "faces",
+        "column": "z",
+        "palette": {
+          "name": "terrain",
+          "range": [6.05999999999998, 14.5433333333333]
+        }
+      },
+      "z_scale": 1,
+      "popup": {
+        "columns": ["n", "z", "slope", "dz_max", "intensity"]
+      }
+    }
+  ],
+  "legends": [
+    {
+      "layer": "mesh",
+      "title": "z",
+      "ramp": {
+        "palette": "terrain",
+        "range": [6.05999999999998, 14.5433333333333]
+      }
+    }
+  ]
+}
