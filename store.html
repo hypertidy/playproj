@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Icechunk and Zarr</title>
+<meta name="description" content="A Zarr or Icechunk store's grid and chunks on the globe and under other projections, with the CRS it was found in and how big its cells really are.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "icechunk-js": "https://cdn.jsdelivr.net/npm/icechunk-js@0.6.0/+esm",
+    "zarrita": "https://cdn.jsdelivr.net/npm/zarrita@0.7.5/+esm",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/store-page.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./store.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html" aria-current="page">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a></span></nav>
+    </header>
+
+    <section>
+      <div id="presets" class="presets" role="group" aria-label="Examples"></div>
+      <label class="row" for="src"><span>Open dataset</span></label>
+      <div class="projline">
+        <input id="src" class="token" type="text" spellcheck="false" autocomplete="off" placeholder="Icechunk repository or Zarr store URL" aria-label="Store URL">
+        <button id="load" type="button" class="small">Open</button>
+      </div>
+      <p id="status" class="status"></p>
+      <p id="reads" class="hint"></p>
+      <label class="row" for="var"><span>Variable</span></label>
+      <select id="var" class="wide" aria-label="Variable"></select>
+      <div id="dims"></div>
+      <div class="buttons">
+        <button id="sample" type="button" class="small" disabled>Read chunks</button>
+        <a id="gridlook" href="https://gridlook.pages.dev/" target="_blank" rel="noopener" hidden>Open in gridlook</a>
+      </div>
+    </section>
+
+    <section class="embed-keep">
+      <label class="row" for="proj"><span>Projection</span></label>
+      <select id="proj" class="wide" aria-label="Projection"></select>
+      <div id="centre" class="buttons">
+        <label class="inline">Lon <input id="clon" class="token" type="number" step="1" min="-180" max="180" style="width:6em" aria-label="Centre longitude"></label>
+        <label class="inline">Lat <input id="clat" class="token" type="number" step="1" min="-90" max="90" style="width:6em" aria-label="Centre latitude"></label>
+        <button id="centre-grid" type="button" class="small">On the grid</button>
+      </div>
+      <label class="row" for="t"><span>Unfold</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Globe to the projection">
+      <div class="buttons">
+        <button id="play" type="button">Unfold</button>
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="colour"><span>Colour the cells by</span></label>
+      <select id="colour" class="wide" aria-label="Colour the cells by">
+        <option value="data">The data (chunks read so far)</option>
+        <option value="area">Cell area on the earth</option>
+        <option value="omega">Angular distortion of the store's CRS</option>
+        <option value="none">Nothing</option>
+      </select>
+      <div class="toggles">
+        <label><input id="chunks" type="checkbox"> Chunks</label>
+        <label><input id="cells" type="checkbox"> Cells</label>
+        <label><input id="coast" type="checkbox"> Coastline</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+      </div>
+      <p id="legend" class="hint"></p>
+    </section>
+
+    <section>
+      <div class="projline">
+        <code id="projstring"></code>
+        <button id="copy-proj" type="button" class="small">Copy</button>
+      </div>
+      <p id="describe" class="describe"></p>
+      <table id="facts" class="readout"></table>
+      <p id="notes" class="hint"></p>
+    </section>
+
+    <section>
+      <p id="pick-info" class="badge"></p>
+      <table id="pick" class="readout"></table>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A gridded variable is an array with a CRS: the numbers along its last two dimensions are
+          columns and rows of cells that the store places in some coordinate system, with an affine
+          transform or with 1D coordinates. This page finds that CRS, draws the grid's cells and chunks
+          on the globe, and unfolds them into another projection.</p>
+        <p>Cells that are equal in the store are rarely equal on the earth. Colour by cell area to see
+          by how much, or by angular distortion to see where the store's CRS bends shapes.</p>
+        <p>Links use gridlook's URL form, so the same address opens there too.</p>
+      </details>
+      <details>
+        <summary>Credits</summary>
+        <ul class="credits">
+          <li><a href="https://icechunk.io">Icechunk</a> by Earthmover; read here with
+            <a href="https://github.com/EarthyScience/icechunk-js">icechunk-js</a> (EarthyScience) and
+            <a href="https://github.com/manzt/zarrita.js">zarrita.js</a> (Trevor Manz).</li>
+          <li><a href="https://github.com/d70-t/gridlook">gridlook</a> (Max Planck Institute for Meteorology and
+            DKRZ): the URL form and the projection list.</li>
+          <li>CRS parameters as in the <a href="https://cfconventions.org/">CF conventions</a>, appendix F,
+            checked against <a href="https://proj.org">PROJ</a>; distortion as PROJ's proj_factors().</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
