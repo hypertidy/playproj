@@ -35,6 +35,7 @@ export * as ellipsoid from "./ellipsoid.js";
 export * as geoid from "./geoid.js";
 export * as ortho from "./ortho.js";
 export * as vicgrid from "./vicgrid.js";
+export * as sight from "./sight.js";
 
 export * as geo from "./geo.js";
 export * as landmesh from "./landmesh.js";

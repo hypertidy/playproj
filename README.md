@@ -49,6 +49,15 @@ python3 -m http.server 8000
 # open http://localhost:8000/
 ```
 
+## Guide
+
+`guide.html` is a reading path through the other pages: twelve short
+chapters (the body; a light and a plane; cones and cylinders; distortion;
+great circles and rhumbs; the central projection beyond maps; poles and the
+antimeridian; the whole world; grids of cells; the array is the map; datums;
+things that go wrong), each linking the pages that make its argument, with
+their state set in the link. It is plain HTML with no scripts.
+
 ## Cones and cylinders
 
 `cones.html` wraps a cone round the sphere, touching it along a standard
@@ -76,6 +85,25 @@ from the construction and checked against PROJ in the tests.
 
 Hash keys: `prop` (`eqd`, `conf`, `area`), `lat1`, `lon`, `tilt` (-90 to
 90), `t` (unroll, 0 to 1), `links`, plus the shared ones below.
+
+## Sight and shade
+
+`sight.html` asks what a light can see over a synthetic landscape. With the
+eye on the spot it is a viewshed: the terrain is projected through the eye
+into four gnomonic wedges (north, east, south, west), where 3D straight lines
+stay straight, and triangles are added nearest first while a horizon (the
+upper envelope of their projected edges) is kept; a vertex is visible when
+it rises above it. Drag the distance and the eye moves away from the spot
+towards an azimuth and elevation; at infinity it is the sun, the view is
+orthographic, and the visible ground is the lit ground. The lower half draws
+what the light sees, far to near, with the horizon left at the end (the
+skyline). `src/core/sight.js` has the terrain, the projections and the
+horizon method, and `test/check-sight.mjs` checks it against marching every
+line of sight (better than 99.8% of vertices agree; the rest graze), and an
+eye 100 000 km away against the sun.
+
+Hash keys: `x`, `y` (the spot, metres), `h` (eye height), `az`, `el`, `t`
+(distance, 0 on the spot to 1 at infinity), `rays`, `sky`, `cam`.
 
 ## Spilhaus
 
@@ -897,7 +925,9 @@ keys: `pic` (`atlas`, `crooked`), `fit` (`hand`, `northup`, `similarity`,
 index.html                             page
 css/app.css                            styles
 js/app.js                              scene, map and controls
+guide.html                             Guide: a reading path through the pages
 cones.html, js/cones.js                cones and cylinders page
+sight.html, js/sight.js                Sight and shade: a viewshed in gnomonic wedges, out to the sun
 spilhaus.html, js/spilhaus.js          Spilhaus page
 globals.html, js/globals.js            globals and interrupteds page
 catastrophes.html, js/catastrophes.js  map catastrophes page
@@ -978,6 +1008,7 @@ src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N,
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
+src/core/sight.js                 terrain visibility: gnomonic wedges or the sun, a horizon kept front to back
 src/core/affine.js                geotransform: apply, invert, parts, extent, world file, fit to control points
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
 src/core/palette.js               named palettes for scene layers (scenespec palette names)
@@ -1021,6 +1052,7 @@ s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js
 `test/check-roms.mjs` checks the s-coordinate against ROMS and the Zarr grid reader against zarr-python.
 `test/check-nuyina.mjs` checks polar stereographic and the ship-centred maps against PROJ, the sea ice
 grid, the overlap plan and level choice, and reading tracks from GeoServer CSV and parquet rows.
+`test/check-sight.mjs` checks the viewshed and the cast shadow against marching every line of sight.
 `test/check-rhumb.mjs` checks rhumb line and geodesic lengths and courses against PROJ, and composite sailing.
 `test/check-structure.mjs` checks the tile and overview readers against
 GDAL, tifffile and zarr-python. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
