@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Guide</title>
+<meta name="description" content="A modern guide to map projections: a reading path through the playproj pages, for people who meet projections as coordinate transforms on arrays.">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body class="guide-body">
+<header class="guide-top">
+  <h1>playproj</h1>
+  <nav class="pages"><span class="group"><a href="./guide.html" aria-current="page">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a></span></nav>
+</header>
+
+<main class="guide">
+  <h1>A guide to map projections</h1>
+  <p class="lede">For people who meet projections as coordinate transforms on arrays (ocean models,
+    satellite swaths, tiles, cells, cameras) rather than as maps on a wall. Each chapter is short;
+    the pages it links are the argument. Drag them.</p>
+
+  <nav class="toc" aria-label="Chapters">
+    <ol>
+      <li><a href="#body">The body</a></li>
+      <li><a href="#light">A light and a plane</a></li>
+      <li><a href="#cones">Cones and cylinders</a></li>
+      <li><a href="#distortion">Measuring distortion</a></li>
+      <li><a href="#lines">Lines: great circles and rhumbs</a></li>
+      <li><a href="#central">The central projection beyond maps</a></li>
+      <li><a href="#poles">Poles and the antimeridian</a></li>
+      <li><a href="#world">The whole world</a></li>
+      <li><a href="#cells">Grids of cells</a></li>
+      <li><a href="#arrays">The array is the map</a></li>
+      <li><a href="#datums">Datums and local grids</a></li>
+      <li><a href="#wrong">Things that go wrong</a></li>
+    </ol>
+  </nav>
+
+  <section id="body">
+    <h2>1. The body</h2>
+    <p>Before any projection there is a shape to project from. A sphere is close enough for most
+      pictures; real coordinates live on an ellipsoid, about 21 km shorter through the poles than across
+      the equator, and heights above sea level are measured from the geoid, a lumpy surface the ellipsoid
+      only approximates. Eratosthenes had the size of the sphere from a well, a stick and a shadow.</p>
+    <ul class="try">
+      <li><a href="./homage.html">Homage</a>: Eratosthenes' well and stick, in three steps.</li>
+      <li><a href="./ellipsoid.html">Ellipsoid</a>: the flattening, exaggerated until you can see it.</li>
+      <li><a href="./geoid.html">Geoid</a>: h = H + N along a profile.</li>
+    </ul>
+  </section>
+
+  <section id="light">
+    <h2>2. A light and a plane</h2>
+    <p>The oldest projections are literal: put a point of light somewhere on the axis through a sphere,
+      touch a plane to the far side, and follow each ray. With the light at the centre you get the
+      <b>gnomonic</b>, at the antipode the <b>stereographic</b>, at infinity the <b>orthographic</b>, and
+      anywhere else a general perspective. Two azimuthal projections need no light at all: the equal-area
+      (a compass from the tangent point) and the equidistant (a string).</p>
+    <ul class="try">
+      <li><a href="./#v=0">Light at the centre: gnomonic</a></li>
+      <li><a href="./">Light at the antipode: stereographic</a></li>
+      <li><a href="./#v=1">Light at infinity: orthographic</a></li>
+    </ul>
+  </section>
+
+  <section id="cones">
+    <h2>3. Cones and cylinders: one family per property</h2>
+    <p>Wrap a cone round the sphere, touching along one parallel, and unroll it. Slide that standard
+      parallel to the equator and the cone opens into a cylinder; slide it to a pole and it flattens into
+      a plane. So the cylinder, the cone and the plane are one surface, and each property (equal distance
+      along meridians, conformal, equal-area) is one family across all three:</p>
+    <table class="fam">
+      <tr><th>Property</th><th>Cylinder</th><th>Cone</th><th>Plane</th></tr>
+      <tr><td>Equidistant</td><td>eqc</td><td>eqdc</td><td>aeqd</td></tr>
+      <tr><td>Conformal</td><td>merc</td><td>lcc</td><td>stere</td></tr>
+      <tr><td>Equal-area</td><td>cea</td><td>aea</td><td>laea</td></tr>
+    </table>
+    <p>The conformal row is Lambert's own framing. He presented the conformal conic (1772) as the family
+      that contains the polar stereographic and Mercator's chart (Snyder 1987, section 15). On the sphere,
+      with one standard parallel and cone constant n = sin(lat_1), and t = tan(pi/4 - lat/2):</p>
+    <pre class="eq">polar stereographic   rho = 2R t
+conformal conic       rho = F t^n,   theta = n lon
+Mercator              y   = -R ln t</pre>
+    <p>The cone raises the stereographic radius to the power n. At n = 1 nothing changes. As n goes to 0,
+      t^n is about 1 + n ln t, so the radius becomes a constant minus a logarithm: the apex runs off to
+      infinity and the circles straighten into Mercator's parallels. Mercator is the logarithm of the
+      polar stereographic, and the conic is a power of it. (PROJ's <code>lcc</code> stops short of either
+      end, lat_1 = 0 or 90; GeographicLib's conic treats both as exact special cases.)</p>
+    <ul class="try">
+      <li><a href="./cones.html#lat1=0">Standard parallel at the equator: Mercator</a></li>
+      <li><a href="./cones.html">At 40 degrees: Lambert conformal conic</a></li>
+      <li><a href="./cones.html#lat1=90">At the pole: polar stereographic</a></li>
+      <li><a href="./cones.html#prop=area">The equal-area row</a>, and <a href="./cones.html#tilt=90">tilt the axis</a> for the transverse aspect.</li>
+    </ul>
+  </section>
+
+  <section id="distortion">
+    <h2>4. Measuring distortion</h2>
+    <p>Every flat map stretches the sphere somewhere; the question is where and how, and it has numbers.
+      Tissot's indicatrix is the image of a small circle: its axes are the greatest and least scale at a
+      point, so a conformal map keeps it round and an equal-area map keeps its area. PROJ computes the same
+      quantities (h, k, angular deformation, areal scale) as <code>proj_factors</code>. Projections are
+      chosen to solve a measurement problem: area, angle, or distance (along a line or from one point).</p>
+    <ul class="try">
+      <li><a href="./tissot.html">Distortion</a>: the indicatrix and the factor fields for any PROJ string.</li>
+      <li><a href="./tissot.html#proj=stere">Stereographic</a> against <a href="./tissot.html#proj=laea">equal-area</a> over a pole: nearly the same picture, different numbers.</li>
+      <li><a href="./frame.html">Frame</a>: distortion carried on a mesh in its own CRS.</li>
+    </ul>
+  </section>
+
+  <section id="lines">
+    <h2>5. Lines: great circles and rhumbs</h2>
+    <p>"Straight" depends on the map. The gnomonic draws every great circle (the shortest way) as a
+      straight line; Mercator draws every rhumb line (a constant compass course) as a straight line. In the
+      Southern Ocean they part company fast: the great circle from Hobart to the western stations bends
+      south towards the ice while the rhumb line keeps north. Transverse and oblique aspects move a
+      projection's good line to where you need it, which is all UTM is.</p>
+    <ul class="try">
+      <li><a href="./rhumb.html">Rhumb lines</a> and <a href="./nuyina.html">Nuyina</a>'s real track.</li>
+      <li><a href="./sentinel.html">MGRS and Sentinel-2</a>: sixty transverse Mercators.</li>
+    </ul>
+  </section>
+
+  <section id="central">
+    <h2>6. The central projection beyond maps</h2>
+    <p>The gnomonic is the pinhole camera: projection through a point onto a plane. A straight line in
+      3D stays straight, so a triangle stays a triangle. That one property puts it everywhere outside
+      cartography. A frame camera on a satellite or a drone is a central projection, which is what
+      orthorectification undoes. A cube map is six gnomonic faces, and so are the equiangular cubed sphere
+      of climate models and the faces of S2 cells; H3 starts from an icosahedron with gnomonic faces.</p>
+    <p>Terrain analysis uses it for the same reason. To find what an eye can see, project the terrain
+      through the eye into a few gnomonic wedges and add triangles nearest first, keeping a horizon: what
+      rises above it is visible. A cast shadow is the same question asked of the sun, an eye at infinity,
+      where the projection becomes orthographic. Point viewshed and sun shadow are the two ends of the light
+      in chapter 2.</p>
+    <ul class="try">
+      <li><a href="./sight.html">Sight and shade</a>: <a href="./sight.html">a viewshed</a>, then drag the eye <a href="./sight.html#t=0.667">away</a> and <a href="./sight.html#t=1&amp;el=12">out to the sun</a>.</li>
+      <li><a href="./ortho.html">Orthorectification</a>: the frame and pushbroom cameras.</li>
+      <li><a href="./grids.html#g=cube">Cubed sphere</a>, <a href="./cells.html">s2 cells</a>, <a href="./h3.html">H3 hexagons</a>.</li>
+      <li><a href="./texture.html">Texture mapping</a>: what the GPU does with a projected image.</li>
+    </ul>
+  </section>
+
+  <section id="poles">
+    <h2>7. Poles and the antimeridian</h2>
+    <p>Data for the high latitudes is where the habits of global data break. Polygons are stored with a
+      seam at 180 degrees and a fake edge along the bottom of the map; rasters come in 0 to 360 or -180
+      to 180 longitude and lose half the world when reprojected the wrong way; Mercator has no pole at all.
+      Polar work wants a polar projection, usually the stereographic or the Lambert azimuthal equal-area,
+      and they look so alike over a hemisphere that knowing which one is in use really matters.</p>
+    <p>The other lesson is not to reproject at all when you can avoid it. To summarise a daily raster
+      over a set of polar regions, rasterize the regions once onto the raster's native grid, so every
+      cell knows its region, and the rest is a table lookup for every day of data, with no resampling.</p>
+    <ul class="try">
+      <li><a href="./catastrophes.html">Catastrophes</a>: the seam, the pole and polygons turned inside out.</li>
+      <li><a href="./rasterize.html">Rasterize</a>: polygons onto a grid, cell by cell.</li>
+      <li><a href="./bins.html">L3 bins</a> and <a href="./aatgrid.html">AAT grid</a>: grids built for the high latitudes.</li>
+    </ul>
+    <p class="src">After M. Sumner (2019), <a href="https://mdsumner.github.io/polar-mapping-oghub/">Challenges working with data in polar regions</a>, an R workshop.</p>
+  </section>
+
+  <section id="world">
+    <h2>8. The whole world</h2>
+    <p>A world map has to compromise or cut. Compromise projections (Robinson, Winkel tripel, Equal Earth)
+      spread the error; interrupted ones cut the sphere where it hurts least, along the oceans for land or
+      the land for oceans. The arguments about which one to use are older and louder than the maths.</p>
+    <ul class="try">
+      <li><a href="./globals.html">Globals and interrupteds</a>, <a href="./spilhaus.html">Spilhaus</a>.</li>
+      <li><a href="./homage.html">Homage</a>: the UN emblem, Greenland and Africa, true size.</li>
+    </ul>
+  </section>
+
+  <section id="cells">
+    <h2>9. Grids of cells</h2>
+    <p>Discrete global grids divide the sphere into cells with names: squares from a cube, hexagons from
+      an icosahedron, equal-area rows for ocean colour, UTM squares for imagery. Each one is a projection
+      plus a rule for cutting it up, and each makes a choice about equal area against equal shape.</p>
+    <ul class="try">
+      <li><a href="./cells.html">s2 cells</a>, <a href="./h3.html">H3 hexagons</a>, <a href="./bins.html">L3 bins</a>, <a href="./sentinel.html">MGRS and Sentinel-2</a>, <a href="./aatgrid.html">AAT grid</a>.</li>
+    </ul>
+  </section>
+
+  <section id="arrays">
+    <h2>10. The array is the map</h2>
+    <p>A raster is a CRS plus six numbers: the affine from column and row to x and y. "Regular" means
+      regular in some CRS, and a grid shipped as two arrays of longitude and latitude is often regular
+      in a projection nobody wrote down. Model grids go further: rotated poles, tripolar oceans, cubed
+      spheres and curvilinear index space. Chunks, tiles and overviews are how those arrays reach you.</p>
+    <ul class="try">
+      <li><a href="./affine.html">Affine</a>, <a href="./regular.html">Regular in what?</a></li>
+      <li><a href="./grids.html">Model grids</a>, <a href="./indexspace.html">Index space</a>.</li>
+      <li><a href="./structure.html">Tiles and overviews</a>, <a href="./rectilinear.html">Rectilinear chunks</a>.</li>
+    </ul>
+  </section>
+
+  <section id="datums">
+    <h2>11. Datums and local grids</h2>
+    <p>The same latitude and longitude can name places metres apart on different datums, and the
+      continents move under all of them. A state grid is a projection fitted to a jurisdiction on a datum
+      of its time; moving between them is a Helmert transform or a grid of shifts.</p>
+    <ul class="try">
+      <li><a href="./vicgrid.html">VicGrid</a>: AGD66, GDA94 and GDA2020 in one state.</li>
+    </ul>
+  </section>
+
+  <section id="wrong">
+    <h2>12. Things that go wrong</h2>
+    <p>Most projection bugs are not in the projection. They are in the edges: the antimeridian, the
+      poles, the seam of a texture, a polygon that wraps the wrong way, a straight line that should have
+      been densified. Each has a picture.</p>
+    <ul class="try">
+      <li><a href="./catastrophes.html">Catastrophes</a>, <a href="./texture.html">Texture mapping</a>, <a href="./example.html">For example</a>.</li>
+    </ul>
+  </section>
+
+  <section class="sources">
+    <h2>Sources</h2>
+    <ul>
+      <li>J.P. Snyder (1987), <a href="https://pubs.usgs.gov/publication/pp1395">Map Projections: A Working Manual</a>, USGS Professional Paper 1395.</li>
+      <li>G.I. Evenden, F. Warmerdam and the PROJ contributors, <a href="https://proj.org">PROJ</a>.</li>
+      <li>C.F.F. Karney, <a href="https://geographiclib.sourceforge.io">GeographicLib</a>.</li>
+      <li>N. Greene (1986), Environment mapping and other applications of world projections, IEEE CG&amp;A 6(11).</li>
+      <li>L. De Floriani and P. Magillo (1994), Visibility algorithms on triangulated digital terrain models, IJGIS 8(1).</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

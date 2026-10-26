@@ -29,7 +29,7 @@
   <aside id="panel">
     <header>
       <h1>playproj</h1>
-      <nav class="pages"><span class="group"><a href="./">Perspective</a><a href="./cones.html" aria-current="page">Cones and cylinders</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a></span></nav>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html" aria-current="page">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a></span></nav>
     </header>
 
     <section class="embed-keep">
@@ -129,6 +129,14 @@
         <p>Unlike the perspective projections there is no point of light: the property decides how far
           along the surface each parallel lands. The links join points on the globe to where they land
           on the surface. Unroll opens the cone with its apex fixed, the way a paper cone opens.</p>
+        <p>The conformal row is Lambert's own framing: he gave the conformal conic (1772) as the family
+          containing the polar stereographic and Mercator (Snyder 1987, section 15). On the sphere, with
+          t = tan(pi/4 - lat/2) and n = sin(lat_1), the polar stereographic radius is 2R t, the conic's is
+          F t^n, and Mercator's y is -R ln t. The cone raises the stereographic radius to the power n; as n
+          goes to 0, t^n is about 1 + n ln t, the apex runs off to infinity and the parallels straighten
+          into Mercator's. So Mercator is the logarithm of the polar stereographic. PROJ's <code>lcc</code>
+          stops short of either end, so this page switches to <code>merc</code> and <code>stere</code>
+          there. The <a href="./guide.html#cones">guide</a> has more.</p>
         <p>The flat map is drawn by <a href="https://github.com/proj4js/proj4js">proj4js</a> from the PROJ
           string, so it checks the construction.</p>
       </details>

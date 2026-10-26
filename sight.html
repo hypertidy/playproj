@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Sight and shade</title>
+<meta name="description" content="A viewshed is decided in the eye's gnomonic projection; move the eye away towards the sun and it becomes a cast shadow, decided in the orthographic.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/sight.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split stacked sight">
+    <div class="half">
+      <div id="three"></div>
+      <span class="half-label" id="scene-label"></span>
+    </div>
+    <div class="half">
+      <canvas id="map" aria-label="What the light sees: the terrain in the eye's gnomonic wedges, or the sun's orthographic view, with the horizon"></canvas>
+      <span class="half-label" id="view-label"></span>
+    </div>
+    <a id="open-full" class="open-full" href="./sight.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html" aria-current="page">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <div id="presets" class="presets" role="group" aria-label="Where the light is"></div>
+      <label class="row" for="dist"><span>Distance towards the light</span><output id="dist-out"></output></label>
+      <input id="dist" type="range" min="0" max="1" step="0.002" aria-label="Distance of the eye from the spot, towards the light; the far end is infinity">
+      <label class="row" for="h"><span>Eye above the spot</span><output id="h-out"></output></label>
+      <input id="h" type="range" min="0.5" max="100" step="0.5" aria-label="Eye height above the ground at the spot, metres">
+      <label class="row" for="az"><span>Azimuth of the light</span><output id="az-out"></output></label>
+      <input id="az" type="range" min="0" max="359" step="1" aria-label="Azimuth of the light, degrees clockwise from north">
+      <label class="row" for="el"><span>Elevation of the light</span><output id="el-out"></output></label>
+      <input id="el" type="range" min="1" max="89" step="1" aria-label="Elevation of the light above the horizon, degrees">
+      <div class="toggles">
+        <label><input id="rays" type="checkbox"> Sight lines</label>
+        <label><input id="sky" type="checkbox"> Horizon</label>
+      </div>
+      <p class="hint">Click the terrain to move the spot. Distance 0 puts the eye on the spot; the far end of the slider is infinity, the sun.</p>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A <b>viewshed</b> is the ground an eye can see. Project the terrain through the eye onto a plane:
+          that is the <a href="./#v=0">gnomonic</a>, the pinhole camera. Straight lines in 3D stay straight, so
+          each terrain triangle lands as a triangle. Split the view round the eye into four 90 degree wedges
+          (north, east, south and west), each its own gnomonic image, and in each one height in the image
+          grows with elevation angle: higher in the image is higher in the view.</p>
+        <p>Now add the triangles nearest first. Everything drawn so far covers the image from the bottom up
+          to a <b>horizon</b> line, the upper envelope of the triangles' projected edges. A piece of ground is
+          visible exactly where it rises above that horizon, and then it raises it. On a grid no sort is
+          needed: anything that can hide a square lies in a square fewer rows plus columns from the eye. The
+          horizon left at the end is the skyline at the spot (the orange line).</p>
+        <p>A <b>cast shadow</b> is the same question asked of the sun. Drag the distance out: the eye moves
+          away from the spot towards the light, the wedges narrow onto the terrain and the sight lines turn
+          parallel. At infinity the eye is the sun and the projection is
+          <a href="./#v=1">orthographic</a>: the lit ground is the sun's viewshed. These are the two ends of
+          the point of light on the <a href="./">perspective</a> page, pointed at a landscape instead of a
+          globe.</p>
+        <p>The terrain is synthetic, 160 x 160 squares of 30 m, each split into two triangles. Visibility here
+          is decided for every vertex and checked against marching every line of sight (in
+          <code>test/check-sight.mjs</code>, better than 99.8% agreement; the rest are grazing). Earth
+          curvature and refraction are left out: at 5 km they lower the far ground by about 2 m.</p>
+        <ul class="credits">
+          <li>Object-space visibility on triangulated terrain: L. De Floriani and P. Magillo (1994),
+            Visibility algorithms on triangulated digital terrain models, IJGIS 8(1).</li>
+          <li>Six gnomonic faces as a cube map: N. Greene (1986), Environment mapping and other applications
+            of world projections, IEEE CG&amp;A 6(11).</li>
+          <li>Horizon and sky view factor by ray tracing: Steger, Steger and Sch&auml;r (2022),
+            <a href="https://gmd.copernicus.org/articles/15/6817/2022/">HORAYZON v1.2</a>, GMD 15.</li>
+          <li>A wedge-and-horizon viewshed with exact visible polygons:
+            <a href="https://github.com/mdsumner/lunashade/blob/main/docs/viewshed.md">lunashade, docs/viewshed.md</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
