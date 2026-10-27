@@ -61,6 +61,8 @@ export const DISPLAY = [
   { key: "cylindrical_equal_area", label: "Cylindrical equal area", def: "+proj=cea +lat_ts=38.58" },
   { key: "azimuthal_equidistant", label: "Azimuthal equidistant", def: "+proj=aeqd", centred: true },
   { key: "lambert_azimuthal_equal_area", label: "Lambert azimuthal equal area", def: "+proj=laea", centred: true },
+  // not in PROJ's proj4js set: drawn by src/core/families/spilhaus.js
+  { key: "spilhaus", label: "Spilhaus (the world ocean)", def: null },
   { key: "native", label: "The store's own CRS", def: null }
 ];
 export const DISPLAY_KEYS = DISPLAY.map((d) => d.key);
