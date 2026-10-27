@@ -229,6 +229,13 @@ stores.append({"name": "goes.zarr", "variable": "CMI", "nx": n, "ny": n, "chunks
                "x0": float((ang[0] - step / 2) * h), "dx": step * h, "y0": float((ang[-1] + step / 2) * h), "dy": -step * h,
                "corner": list(pyproj.Transformer.from_crs(gcrs, gcrs.geodetic_crs, always_xy=True).transform(ang[0] * h, ang[-1] * h))})
 
+# another world: lon/lat with no CRS, and only the attributes say Mars
+mlat = np.arange(87.5, -90, -5.0); mlon = np.arange(-180, 180, 5.0)
+ds = xr.Dataset({"tsurf": (("time", "lat", "lon"), field(len(mlat), len(mlon)), {"units": "K", "CATDESC": "Atmospheric temperature at the surface of Mars"})},
+                coords={"time": time, "lat": ("lat", mlat, {"units": "degrees_north"}), "lon": ("lon", mlon, {"units": "degrees_east"})})
+ds.to_zarr(os.path.join(OUT, "mars.zarr"), mode="w", encoding={"tsurf": {"chunks": (1, 36, 72)}}, consolidated=True, zarr_format=3)
+stores.append({"name": "mars.zarr", "variable": "tsurf", "nx": 72, "ny": 36, "chunks": [1, 36, 72], "x0": -182.5, "dx": 5.0, "y0": 90.0, "dy": -5.0, "body": "Mars"})
+
 # the real GLAD store's shape, metadata only: every chunk reads as the fill value
 g = zarr.open_group(os.path.join(OUT, "huge.zarr"), mode="w", zarr_format=3)
 g.create_array("lclu", shape=(5, 560000, 1440000), chunks=(1, 1000, 1000), dtype="uint8", fill_value=255,

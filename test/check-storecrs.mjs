@@ -145,6 +145,7 @@ for (const t of man.stores) {
   }
   const near = (p, q) => Math.abs(p - q) <= 1e-6 * Math.max(1, Math.abs(q));
   check(near(g.x0, t.x0) && near(g.dx, t.dx) && near(g.y0, t.y0) && near(g.dy, t.dy), `${t.name}: transform ${[g.x0, g.dx, g.y0, g.dy]} vs ${[t.x0, t.dx, t.y0, t.dy]}`);
+  if (t.body) check(v.crs && v.crs.body === t.body && /\+R=3396190/.test(v.crs.longlat), `${t.name}: body ${JSON.stringify(v.crs)}`);
   const F = C.crsFunctions(v.crs, proj4);
   check(F, `${t.name}: no CRS functions for ${JSON.stringify(v.crs)}`);
   if (F && t.corner) {

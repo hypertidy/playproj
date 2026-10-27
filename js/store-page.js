@@ -328,7 +328,8 @@ function lineGeometry(lines, mesh) {
 
 function buildLines() {
   if (!cur.earth) { coastLines.visible = gratLines.visible = false; return; }
-  lineGeometry(coast, coastLines);
+  // Earth's coastline only on Earth
+  lineGeometry(cur.v.crs && cur.v.crs.body ? null : coast, coastLines);
   lineGeometry(grat, gratLines);
 }
 

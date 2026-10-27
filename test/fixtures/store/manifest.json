@@ -166,6 +166,22 @@
    ]
   },
   {
+   "name": "mars.zarr",
+   "variable": "tsurf",
+   "nx": 72,
+   "ny": 36,
+   "chunks": [
+    1,
+    36,
+    72
+   ],
+   "x0": -182.5,
+   "dx": 5.0,
+   "y0": 90.0,
+   "dy": -5.0,
+   "body": "Mars"
+  },
+  {
    "name": "huge.zarr",
    "variable": "lclu",
    "nx": 1440000,
