@@ -199,8 +199,17 @@ export async function describeVariable(s, path) {
   const nx = meta.shape[ix], ny = meta.shape[iy];
 
   // the grid mapping, if the variable names one
-  const gmName = typeof meta.attrs.grid_mapping === "string" ? meta.attrs.grid_mapping.split(/[\s:]+/)[0] : null;
-  const gm = gmName ? await nodeMeta(s, join(dir, gmName)).catch(() => null) : null;
+  let gmName = typeof meta.attrs.grid_mapping === "string" ? meta.attrs.grid_mapping.split(/[\s:]+/)[0] : null;
+  let gm = gmName ? await nodeMeta(s, join(dir, gmName)).catch(() => null) : null;
+  // no grid_mapping attribute: a CRS variable listed in "coordinates" (as
+  // rioxarray writes it) or a sibling named spatial_ref or crs
+  if (!gmName) {
+    const cands = [...(typeof meta.attrs.coordinates === "string" ? meta.attrs.coordinates.split(/\s+/) : []), "spatial_ref", "crs"];
+    for (const c of new Set(cands)) {
+      const m = await nodeMeta(s, join(dir, c)).catch(() => null);
+      if (m && m.attrs && (m.attrs.grid_mapping_name || m.attrs.crs_wkt || m.attrs.spatial_ref)) { gmName = c; gm = m; break; }
+    }
+  }
   const gma = gm ? gm.attrs : null;
 
   // an affine transform, where the store has one (structure.js reads them all)

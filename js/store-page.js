@@ -584,18 +584,37 @@ function chunkValue(c, cj, ci, col, row) {
   return typeof x === "bigint" ? Number(x) : x;
 }
 
-function ensureScale(c, cj, ci) {
-  if (cur.scale) return;
+function chunkSample(c, cj, ci, target) {
   const vals = [], fills = cur.fills;
   const n = Math.min(cur.cys, cur.g.ny - cj * cur.cys), m = Math.min(cur.cxs, cur.g.nx - ci * cur.cxs);
-  const step = Math.max(1, Math.floor(Math.sqrt((n * m) / 20000)));
+  const step = Math.max(1, Math.floor(Math.sqrt((n * m) / target)));
   for (let r = 0; r < n; r += step) for (let q = 0; q < m; q += step) {
     const x = chunkValue(c, cj, ci, ci * cur.cxs + q, cj * cur.cys + r);
     if (Number.isFinite(x) && !fills.has(x)) vals.push(x);
   }
-  if (!vals.length) return;
+  return vals;
+}
+function scaleOf(vals, from) {
   const lo = quantile(vals, 0.02), hi = quantile(vals, 0.98);
-  cur.scale = { lo, hi: hi > lo ? hi : lo + 1 };
+  return { lo, hi: hi > lo ? hi : lo + 1, from };
+}
+function ensureScale(c, cj, ci) {
+  if (cur.scale) return;
+  const vals = chunkSample(c, cj, ci, 20000);
+  if (vals.length) cur.scale = scaleOf(vals, 1);
+}
+// once several chunks are in, set the scale from all of them and repaint
+async function widenScale() {
+  if (!cur.scale || cur.scale.from > 1 || cur.painted.size < 2) return;
+  const keys = [...cur.painted], vals = [];
+  for (const k of keys) {
+    const [cj, ci] = k.split(",").map(Number);
+    vals.push(...chunkSample(await loadChunk(cj, ci), cj, ci, 20000 / keys.length));
+  }
+  if (!vals.length) return;
+  cur.scale = scaleOf(vals, keys.length);
+  for (const k of keys) { const [cj, ci] = k.split(",").map(Number); paintChunk(await loadChunk(cj, ci), cj, ci); }
+  if (state.colour === "data") drawTexture();
 }
 
 // paint a loaded chunk into the data image
@@ -638,7 +657,7 @@ async function readChunks(list) {
     }
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
-  if (serial === readSerial) { showLegend(); showPick(); }
+  if (serial === readSerial) { await widenScale(); showLegend(); showPick(); }
 }
 
 function resetData() {
@@ -802,6 +821,15 @@ function showFacts() {
     ["Chunk", `${v.meta.chunks.join(" x ")}${v.meta.inner ? ` (inner ${v.meta.inner.join(" x ")})` : ""}, ${fmtBytes(cur.cost.chunkBytes)} decoded`],
     ["Chunks per slice", `${cur.cx} x ${cur.cy} = ${cur.cost.chunks.toLocaleString("en")}`]
   ];
+  // a harvested copy (harvest_store.py) records the source's own chunking
+  const hs = v.meta.attrs.harvest_source_shape, hc = v.meta.attrs.harvest_source_chunks;
+  if (Array.isArray(hs) && Array.isArray(hc) && hs.length === v.meta.shape.length && hc.length === hs.length) {
+    const el = cur.cost.chunkBytes / v.meta.chunks.reduce((a, b) => a * b, 1);
+    const one = hc.reduce((a, b) => a * b, 1) * el;
+    const n = hs.reduce((a, len, i) => a * (v.meta.shape[i] > 1 ? Math.ceil(len / hc[i]) : 1), 1);
+    rows.push(["Source array", hs.map((len, i) => `${v.dims[i]} ${len}`).join(", ")],
+      ["Source chunk", `${hc.join(" x ")}, ${fmtBytes(one)} decoded; one slice reads ${n.toLocaleString("en")} of them (${fmtBytes(n * one)})`]);
+  }
   if (cur.earth) {
     const e = C.gridExtent(g);
     if (F) rows.push(["Extent", `${fmtNum(e[0])} to ${fmtNum(e[2])}, ${fmtNum(e[1])} to ${fmtNum(e[3])}`]);
@@ -832,7 +860,7 @@ function showLegend() {
   let t = "";
   if (state.colour === "data") {
     const u = cur.v.meta.attrs.units ? ` ${cur.v.meta.attrs.units}` : "";
-    t = cur.scale ? `viridis from ${fmtNum(cur.scale.lo)} to ${fmtNum(cur.scale.hi)}${u} (2% and 98% of the first chunk read)` :
+    t = cur.scale ? `viridis from ${fmtNum(cur.scale.lo)} to ${fmtNum(cur.scale.hi)}${u} (2% and 98% of ${cur.scale.from > 1 ? `the ${cur.scale.from} chunks first read` : "the first chunk read"})` :
       cur.cost.chunks <= AUTO_CHUNKS ? "" : "Read chunks to see the data, or click the grid to read the chunk there.";
   } else if (state.colour === "area" && cur.dist) {
     const sc = distortionImage("area").scale;
