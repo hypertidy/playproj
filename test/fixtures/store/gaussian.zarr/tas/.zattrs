@@ -1,0 +1,8 @@
+{
+  "units": "K",
+  "_ARRAY_DIMENSIONS": [
+    "time",
+    "lat",
+    "lon"
+  ]
+}

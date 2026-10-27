@@ -377,7 +377,8 @@ of ESA's tiling grid: the tile's top left corner is its square's, moved onto a
 the square's centre. Which squares are tiles (ESA leaves out edge squares
 that are mostly outside their zone) is in `data/s2-tiles.json`, a bitmask per
 grid zone. `test/check-structure.mjs` checks the tile and overview readers against
-GDAL, tifffile and zarr-python. `test/check-mgrs.mjs` checks UTM against PROJ, references against
+GDAL, tifffile and zarr-python. `test/check-storecrs.mjs` checks CF grid mappings against PROJ, cell areas
+against pyproj's Geod, and reading Icechunk and Zarr stores written by xarray and icechunk. `test/check-mgrs.mjs` checks UTM against PROJ, references against
 GeoTrans and tile lookups against the footprints in ESA's grid, using
 `test/fixtures/mgrs-points.json` from `test/make-mgrs-fixtures.py`, and UPS
 against PROJ and GeoTrans with `test/fixtures/ups-points.json` from
@@ -520,6 +521,33 @@ and the values decoded against those wanted, for both grids. Paste a zarr.json
 or read one from a URL to draw its grid. `src/core/chunkgrid.js`, checked in
 `test/check-chunkgrid.mjs`. Hash keys: `case`, `grid` (`reg`, `rect`), `c`,
 `a`, `w`, `where` (`map`, `pixel`), `ex`, `cam`.
+
+## Icechunk and Zarr
+
+`store.html` opens an Icechunk repository (with
+[icechunk-js](https://github.com/EarthyScience/icechunk-js)) or a Zarr store
+(with [zarrita.js](https://github.com/manzt/zarrita.js)), finds where a
+variable's cells are and in which CRS, and draws its cells and chunks on the
+globe, unfolding into a chosen projection or the store's own CRS. The CRS comes
+from a CF `grid_mapping` (its parameters, as CF appendix F names them, or the
+EPSG code in its `crs_wkt`), GeoZarr attributes, or 1D latitude and longitude
+coordinates; the cells from a GeoTransform, `spatial:transform` or 1D
+coordinates (in km where their units say so; uneven 1D coordinates, as on a
+Gaussian grid, keep their spacing). A curvilinear grid (2D latitude and longitude
+per cell, as CMIP6 ocean grids ship) is drawn from those, with no CRS. Colour the cells by the data
+(chunks read on demand: the whole slice when it is small, a spread of chunks or
+the one clicked when it is not), by each cell's area on the earth, or by the
+angular distortion of the store's CRS. The hash is
+[gridlook](https://github.com/d70-t/gridlook)'s,
+`#<store>::varname=..::projection=..::lat=..::lon=..::dimIndices_<dim>=..`,
+plus `t`, `colour` (`data`, `area`, `omega`, `none`), `chunks`, `cells`,
+`coast`, `grat`, `pick` (column,row) and `cam`, so a link opens in gridlook
+too. `src/core/storecrs.js` and `js/store-read.js`, checked in
+`test/check-storecrs.mjs` against PROJ (pyproj's `CRS.from_cf`) and small
+stores written by xarray, zarr-python and icechunk
+(`test/make-store-fixtures.py`). A store on another site must allow
+cross-origin reads (CORS); "Local folder" opens a Zarr store on the viewer's
+computer without uploading it.
 
 ## Rasterize
 
@@ -937,6 +965,8 @@ grids.html, js/grids-page.js           model grids page
 indexspace.html, js/indexspace.js      index space page
 structure.html, js/structure-page.js   tiles and overviews page
 rectilinear.html, js/rectilinear.js    rectilinear chunks: regular and rectilinear Zarr chunk grids, calendars, files, mosaics
+store.html, js/store-page.js           Icechunk and Zarr: a store's grid and chunks on the globe and in other projections
+js/store-read.js                       opening Icechunk and Zarr stores, describing a variable's grid and CRS
 regular.html, js/regular-page.js       regular in what? storyline: geostationary, lon/lat arrays
 rasterize.html, js/rasterize-page.js   rasterize page
 affine.html, js/affine.js              Affine: the geotransform, world file, registering an image by two points
@@ -991,6 +1021,7 @@ src/core/roms.js                  ROMS s-coordinate, synthetic grids and data, Z
 src/core/regular.js               which CRS makes a lon/lat array regular; example grids; geos scan angles
 src/core/structure.js             grid, tile and file structure of COG, Zarr, WMTS, ArcGIS, XYZ and specs
 src/core/chunkgrid.js             regular and rectilinear chunk grids: lookup, read cost, zarr.json chunk_grid, calendars, mosaics
+src/core/storecrs.js              CF grid mappings to PROJ, coordinate axes, cell areas, gridlook's URL hash
 src/core/rasterize.js             centre-in scanline fill, exact coverage fractions, runs, tiles and bytes
 src/core/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 src/core/homage-geo.js            Robinson, Winkel tripel, Van der Grinten, cea; Dymaxion icosahedron and net
@@ -1055,7 +1086,8 @@ grid, the overlap plan and level choice, and reading tracks from GeoServer CSV a
 `test/check-sight.mjs` checks the viewshed and the cast shadow against marching every line of sight.
 `test/check-rhumb.mjs` checks rhumb line and geodesic lengths and courses against PROJ, and composite sailing.
 `test/check-structure.mjs` checks the tile and overview readers against
-GDAL, tifffile and zarr-python. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
+GDAL, tifffile and zarr-python. `test/check-storecrs.mjs` checks CF grid mappings against PROJ, cell areas
+against pyproj's Geod, and reading Icechunk and Zarr stores written by xarray and icechunk. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
 GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid.
 `test/check-aatgrid.mjs` checks the AAT grid lattice against the aatgrid R package's own tests
 (the Heard Island anchors and the Atlas Cove seam), ids, nesting and the Sentinel-2 pixel shift.

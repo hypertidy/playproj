@@ -22,6 +22,7 @@ export * as distortion from "./distortion.js";
 export * as grids from "./grids.js";
 export * as roms from "./roms.js";
 export * as regular from "./regular.js";
+export * as storecrs from "./storecrs.js";
 export * as s2 from "./s2.js";
 export * as icosa from "./icosa.js";
 export * as l3bin from "./l3bin.js";
