@@ -85,6 +85,46 @@ export async function openStore(raw) {
   return { kind: zj ? "zarr3" : "zarr2", url, group: "", store: fs, getJson, arrays, open: (p) => zarr.open(zarr.root(fs).resolve(p), { kind: "array" }) };
 }
 
+// A local Zarr store: the files of a folder the viewer picked (an
+// <input webkitdirectory> FileList), keyed by their path inside it.
+// Nothing leaves the browser.
+export function openFiles(files) {
+  const map = new Map();
+  let top = "";
+  for (const f of files) {
+    const rel = f.webkitRelativePath || f.name;
+    top = top || rel.split("/")[0];
+    map.set(rel.split("/").slice(1).join("/"), f);
+  }
+  const bytes = async (k) => { const f = map.get(k.replace(/^\/+/, "")); return f ? new Uint8Array(await f.arrayBuffer()) : undefined; };
+  const store = { get: bytes };
+  const getJson = async (p) => { const b = await bytes(p); if (!b) return null; try { return JSON.parse(dec.decode(b)); } catch (e) { return null; } };
+  const arrays = () => {
+    const out = [];
+    for (const [k] of map) {
+      const m = /^(.*?)\/?(zarr\.json|\.zarray)$/.exec(k);
+      if (!m || !m[1]) continue;
+      out.push({ path: m[1], file: k });
+    }
+    return out;
+  };
+  const open = (p) => zarr.open(zarr.root(store).resolve(p), { kind: "array" });
+  return {
+    kind: map.has("zarr.json") ? "zarr3" : "zarr2", url: "local:" + top, group: "", store, getJson, open, local: true,
+    // shapes come from each array's metadata, read when listed
+    async listArrays() {
+      const out = [];
+      for (const a of arrays()) {
+        const j = await getJson(a.file);
+        if (!j || (j.node_type && j.node_type !== "array")) continue;
+        const za = j.node_type ? null : await getJson(a.path + "/.zattrs");
+        out.push({ path: a.path, shape: j.shape || [], dims: j.dimension_names || (za && za._ARRAY_DIMENSIONS) || null });
+      }
+      return out;
+    }
+  };
+}
+
 async function fetchJson(url) {
   let r;
   try { r = await fetch(url); } catch (e) { return null; }
@@ -119,6 +159,13 @@ async function nodeMeta(s, path) {
     dtype: za.dtype, codecs: za.compressor ? [za.compressor.id] : [], fill: za.fill_value, separator: za.dimension_separator || "."
   };
 }
+
+const MAX_CURV = 16e6;
+const unwrapped = (vals, lon) => {
+  const v = Array.from(vals, Number);
+  if (lon) for (let i = 1; i < v.length; i++) { while (v[i] - v[i - 1] > 180) v[i] -= 360; while (v[i] - v[i - 1] < -180) v[i] += 360; }
+  return v;
+};
 
 // read a small 1D array whole
 async function read1d(s, path, max = 1e6) {
@@ -177,9 +224,33 @@ export async function describeVariable(s, path) {
   }
   if (!crs && crsRef) { crs = crsRef; crsFrom = "the store's attributes"; }
 
+  // 2D latitude and longitude along the grid: a curvilinear grid, unless a
+  // grid mapping already says what x and y mean
+  let curv = null;
+  if (!t && !(crs && !crs.longlat)) {
+    const names = new Set([...(typeof meta.attrs.coordinates === "string" ? meta.attrs.coordinates.split(/\s+/) : []), "lat", "lon", "latitude", "longitude", "nav_lat", "nav_lon"]);
+    const two = {};
+    for (const n of names) {
+      if (!n) continue;
+      const m = await nodeMeta(s, join(dir, n)).catch(() => null);
+      if (!m || m.group || !m.shape || m.shape.length !== 2) continue;
+      const md = m.dims || [];
+      if (m.shape[0] !== ny || m.shape[1] !== nx || (md.length && (md[0] !== dims[iy] || md[1] !== dims[ix]))) continue;
+      const r = axisRole(n, m.attrs);
+      if ((r === "lat" || r === "lon") && !two[r]) two[r] = n;
+    }
+    if (two.lat && two.lon) {
+      if (nx * ny > MAX_CURV) notes.push(`its 2D latitude and longitude (${nx} x ${ny}) are too big to read here: drawn in index space`);
+      else {
+        const [la, lo] = await Promise.all([s.open(join(dir, two.lat)), s.open(join(dir, two.lon))].map(async (p) => zarr.get(await p)));
+        curv = { lat: la.data, lon: lo.data, names: [two.lat, two.lon] };
+      }
+    }
+  }
+
   // without a transform, the coordinate arrays
-  let x = null, y = null, xs = 1, ys = 1;
-  if (!t) {
+  let x = null, y = null, xs = 1, ys = 1, xc = null, yc = null;
+  if (!t && !curv) {
     const cx = coords[ix] ? await read1d(s, join(dir, dims[ix])) : null;
     const cy = coords[iy] ? await read1d(s, join(dir, dims[iy])) : null;
     if (cx && cy) {
@@ -188,16 +259,25 @@ export async function describeVariable(s, path) {
       y = axisOf(cy.values);
       if (!lonlat && role[ix] !== "rlon") { xs = unitScale(cx.attrs.units); ys = unitScale(cy.attrs.units); }
       if (xs !== 1) notes.push(`x and y are in ${cx.attrs.units}: multiplied by ${xs} for the CRS, which is in metres`);
-      if (!x.regular || !y.regular) notes.push(`the coordinates are not evenly spaced (worst ${Math.max(x.dev, y.dev).toFixed(3)} of a step): drawn as if they were`);
+      // uneven but 1D (a Gaussian grid's latitudes, say): kept as they are
+      if (!x.regular) xc = unwrapped(cx.values, lonlat || role[ix] === "rlon").map((v) => v * xs);
+      if (!y.regular) yc = Array.from(cy.values, (v) => v * ys);
+      if (xc || yc) notes.push(`the ${[xc && dims[ix], yc && dims[iy]].filter(Boolean).join(" and ")} coordinates are not evenly spaced (worst ${Math.max(x.dev, y.dev).toFixed(3)} of a step): cells drawn between the midpoints`);
       if (!crs && lonlat) { crs = { longlat: "+proj=longlat +datum=WGS84 +no_defs", name: "longitude, latitude" }; crsFrom = "latitude and longitude coordinates (WGS 84 assumed: the store names no datum)"; }
       if (!crs && role[ix] === "rlon") notes.push("rotated coordinates, but no grid_mapping says where the pole is");
     } else if (typeof meta.attrs.coordinates === "string") {
-      notes.push(`its coordinates (${meta.attrs.coordinates}) are not 1D along the grid: curvilinear grids are not drawn yet`);
+      notes.push(`its coordinates (${meta.attrs.coordinates}) are not along the grid's two dimensions: drawn in index space`);
     }
   }
-  const grid = gridOf({ t, x, y, nx, ny, crs, xScale: xs, yScale: ys });
+  let grid = gridOf({ t, x, y, nx, ny, crs, xScale: xs, yScale: ys });
+  if (grid && (xc || yc)) grid = { ...grid, kind: "rectilinear", xc, yc };
+  if (curv) {
+    grid = { x0: 0, dx: 1, y0: 0, dy: 1, nx, ny, kind: "curvilinear", geo: `2D ${curv.names.join(" and ")}`, lat: curv.lat, lon: curv.lon };
+    crs = null; crsFrom = "";
+    notes.push(`a curvilinear grid: each cell centre has its own latitude and longitude (${curv.names.join(", ")}), and no CRS makes the grid regular`);
+  }
   if (!grid) notes.push("nothing in the store says where the cells are: drawn in index space");
-  if (!crs) notes.push("no CRS found");
+  if (!crs && !curv) notes.push("no CRS found");
   return { path, meta, dims, ix, iy, role, grid, crs, crsFrom, gm: gma, notes };
 }
 

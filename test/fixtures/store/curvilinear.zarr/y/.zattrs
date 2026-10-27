@@ -1,0 +1,7 @@
+{
+  "standard_name": "projection_y_coordinate",
+  "units": "degrees",
+  "_ARRAY_DIMENSIONS": [
+    "y"
+  ]
+}

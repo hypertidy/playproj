@@ -78,6 +78,21 @@ check(C.chunkKey([0, 3, 5]) === "c/0/3/5" && C.chunkKey([0, 3, 5], { version: 2 
 const sc = C.sliceCost([10, 721, 1440], [1, 721, 1440], 1, 2, 4);
 check(sc.chunks === 1 && sc.bytes === 721 * 1440 * 4, "sliceCost");
 
+// ---------------------------------------------------------------- curvilinear helpers
+
+// a 1 degree cell at the equator: its sphere area and squareness
+const q = C.sphereQuadArea([[0, 0], [1, 0], [1, 1], [0, 1]]);
+const band = C.lonLatCellArea(1, 0, 1, 0);
+check(Math.abs(q - band) / band < 1e-4, `sphereQuadArea ${q} vs band ${band}`);
+const sq = C.cellShape([1, 0], [0, 1]), sk = C.cellShape([2, 0], [0, 1]), sh = C.cellShape([1, 0], [1, 1]);
+check(sq.omega < 1e-9 && Math.abs(sq.area - 1) < 1e-12, "cellShape of a square");
+check(Math.abs(sk.omega - 2 * Math.asin(1 / 3) * 180 / Math.PI) < 1e-9 && sk.area === 2, `cellShape of a 2 by 1 rectangle ${sk.omega}`);
+check(Math.abs(sh.area - 1) < 1e-12 && sh.omega > 0, "cellShape of a sheared cell keeps its area");
+// across the antimeridian and over the pole, bilinear on unit vectors
+const ring = { nx: 2, ny: 2, lon: [179, -179, 179, -179], lat: [10, 10, 12, 12] };
+const mid = C.curvAt(ring, 1, 1);
+check(Math.abs(Math.abs(mid[0]) - 180) < 1e-9 && Math.abs(mid[1] - 11) < 0.01, `curvAt across the seam ${mid}`);
+
 // ---------------------------------------------------------------- stores
 
 const root = path.join(path.dirname(new URL(import.meta.url).pathname), "fixtures", "store");
@@ -104,11 +119,29 @@ for (const t of man.stores) {
     v = await R.describeVariable(s, t.variable);
   } catch (e) { check(false, `${t.name}: ${e.message}`); continue; }
   const g = v.grid;
-  check(s.kind === (t.name.endsWith(".icechunk") ? "icechunk" : "zarr3"), `${t.name}: opened as ${s.kind}`);
+  check(s.kind === (t.name.endsWith(".icechunk") ? "icechunk" : t.kind ? "zarr2" : "zarr3"), `${t.name}: opened as ${s.kind}`);
   check(R.dataArrays(s.arrays()).some((x) => x.path === t.variable), `${t.name}: ${t.variable} not listed`);
   check(g && g.nx === t.nx && g.ny === t.ny, `${t.name}: grid ${g && g.nx} x ${g && g.ny}`);
   check(String(v.meta.chunks) === String(t.chunks), `${t.name}: chunks ${v.meta.chunks}`);
   if (!g) continue;
+  if (t.kind === "rectilinear") {
+    check(g.kind === "rectilinear" && g.yc && !g.xc, `${t.name}: kind ${g.kind}, uneven ${!!g.xc} ${!!g.yc}`);
+    check(g.yc && t.lat.every((v, i) => Math.abs(g.yc[i] - v) < 1e-9), `${t.name}: latitudes ${g.yc && g.yc.slice(0, 3)}`);
+    // the edge between the first two rows is their midpoint
+    check(g.yc && Math.abs(C.axisAt(g.yc, 1) - (t.lat[0] + t.lat[1]) / 2) < 1e-12, `${t.name}: axisAt`);
+    await R.readChunk(s, v, 0, 0);
+    continue;
+  }
+  if (t.kind === "curvilinear") {
+    check(g.kind === "curvilinear" && v.crs === null, `${t.name}: kind ${g.kind}, crs ${JSON.stringify(v.crs)}`);
+    const c = C.curvAt(g, 3.5, 2.5), k = C.curvAt(g, 1, 1);
+    check(c && Math.abs(c[0] - t.centre32[0]) < 1e-9 && Math.abs(c[1] - t.centre32[1]) < 1e-9, `${t.name}: centre ${c} vs ${t.centre32}`);
+    // a corner is interpolated between four centres: close (here 1.5 degree
+    // cells, within 0.01 degree), not exact
+    check(k && Math.abs(k[0] - t.corner11[0]) < 0.01 && Math.abs(k[1] - t.corner11[1]) < 0.01, `${t.name}: corner ${k} vs ${t.corner11}`);
+    await R.readChunk(s, v, 0, 0);
+    continue;
+  }
   const near = (p, q) => Math.abs(p - q) <= 1e-6 * Math.max(1, Math.abs(q));
   check(near(g.x0, t.x0) && near(g.dx, t.dx) && near(g.y0, t.y0) && near(g.dy, t.dy), `${t.name}: transform ${[g.x0, g.dx, g.y0, g.dy]} vs ${[t.x0, t.dx, t.y0, t.dy]}`);
   const F = C.crsFunctions(v.crs, proj4);

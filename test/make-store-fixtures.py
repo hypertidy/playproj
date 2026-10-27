@@ -169,6 +169,33 @@ s = g.create_array("spatial_ref", shape=(), dtype="int64", attributes={
 zarr.consolidate_metadata(os.path.join(OUT, "glad.zarr"))
 stores.append({"name": "glad.zarr", "variable": "lclu", "nx": nx, "ny": ny, "chunks": [1, 50, 60], "x0": -180.0, "dx": 1.5, "y0": 80.0, "dy": -1.5})
 
+# a Gaussian grid: 1D latitudes, not evenly spaced (CMIP6 T63-like, 96 x 192)
+glat = np.degrees(np.arcsin(np.polynomial.legendre.leggauss(96)[0]))[::-1]
+glon = np.arange(192) * 1.875
+ds = xr.Dataset({"tas": (("time", "lat", "lon"), field(96, 192), {"units": "K"})},
+                coords={"time": time, "lat": ("lat", glat, {"standard_name": "latitude", "units": "degrees_north"}),
+                        "lon": ("lon", glon, {"standard_name": "longitude", "units": "degrees_east"})})
+ds.to_zarr(os.path.join(OUT, "gaussian.zarr"), mode="w", encoding={"tas": {"chunks": (1, 48, 96)}}, consolidated=True, zarr_format=2)
+stores.append({"name": "gaussian.zarr", "variable": "tas", "nx": 192, "ny": 96, "chunks": [1, 48, 96], "kind": "rectilinear", "lat": list(glat[:3]), "lon": list(glon[:3])})
+
+# a curvilinear ocean grid as CMIP6 ships them: 1D x, y "projection"
+# coordinates in degrees with no grid mapping, and 2D lat, lon per cell (here
+# a rotated grid, so the true positions are known)
+rot = pyproj.CRS.from_cf({"grid_mapping_name": "rotated_latitude_longitude", "grid_north_pole_longitude": 120.0, "grid_north_pole_latitude": 20.0})
+cx = np.arange(-60, 60, 1.5) + 0.75; cy = np.arange(-40, 40, 1.5) + 0.75
+RX, RY = np.meshgrid(cx, cy)
+LON, LAT = pyproj.Transformer.from_crs(rot, "EPSG:4326", always_xy=True).transform(RX, RY)
+ds = xr.Dataset({"tos": (("time", "y", "x"), field(len(cy), len(cx)), {"units": "degC", "coordinates": "lat lon"}),
+                 "lat": (("y", "x"), LAT, {"standard_name": "latitude", "units": "degrees_north"}),
+                 "lon": (("y", "x"), LON, {"standard_name": "longitude", "units": "degrees_east"})},
+                coords={"time": time, "x": ("x", np.arange(len(cx)) * 1.0, {"standard_name": "projection_x_coordinate", "units": "degrees"}),
+                        "y": ("y", np.arange(len(cy)) * 1.0, {"standard_name": "projection_y_coordinate", "units": "degrees"})})
+ds.to_zarr(os.path.join(OUT, "curvilinear.zarr"), mode="w", encoding={"tos": {"chunks": (1, 27, 40)}}, consolidated=True, zarr_format=2)
+# a cell corner, between four centres, and the centre of cell (3, 2)
+corner = pyproj.Transformer.from_crs(rot, "EPSG:4326", always_xy=True).transform(cx[0] + 0.75, cy[0] + 0.75)
+stores.append({"name": "curvilinear.zarr", "variable": "tos", "nx": len(cx), "ny": len(cy), "chunks": [1, 27, 40], "kind": "curvilinear",
+               "centre32": [float(LON[2, 3]), float(LAT[2, 3])], "corner11": list(corner)})
+
 # the real GLAD store's shape, metadata only: every chunk reads as the fill value
 g = zarr.open_group(os.path.join(OUT, "huge.zarr"), mode="w", zarr_format=3)
 g.create_array("lclu", shape=(5, 560000, 1440000), chunks=(1, 1000, 1000), dtype="uint8", fill_value=255,

@@ -40,6 +40,11 @@
         <input id="src" class="token" type="text" spellcheck="false" autocomplete="off" placeholder="Icechunk repository or Zarr store URL" aria-label="Store URL">
         <button id="load" type="button" class="small">Open</button>
       </div>
+      <div class="buttons">
+        <input id="folder" type="file" webkitdirectory multiple hidden>
+        <button id="folder-btn" type="button" class="small">Local folder</button>
+        <span class="hint">a Zarr store on this computer; nothing is uploaded</span>
+      </div>
       <p id="status" class="status"></p>
       <p id="reads" class="hint"></p>
       <label class="row" for="var"><span>Variable</span></label>

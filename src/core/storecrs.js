@@ -206,6 +206,63 @@ export function gridOf({ t = null, x = null, y = null, nx, ny, crs = null, xScal
   return null;
 }
 
+// A coordinate at fractional edge index f (0 at the outer edge of the first
+// cell, n at the far edge of the last) from n cell-centre values that need
+// not be evenly spaced: linear between centres, so cell edges fall at the
+// midpoints, and carried on past the end centres.
+export function axisAt(c, f) {
+  const n = c.length;
+  if (n === 1) return c[0];
+  const u = Math.max(-0.5, Math.min(n - 0.5, f - 0.5));
+  const k = Math.max(0, Math.min(n - 2, Math.floor(u)));
+  return c[k] + (u - k) * (c[k + 1] - c[k]);
+}
+
+// lon/lat at fractional edge index (fi, fj) of a curvilinear grid whose cell
+// centres are lat[j * nx + i], lon[j * nx + i]: bilinear on unit vectors
+// (so the seam and the poles do no harm), carried half a cell past the
+// outermost centres. null where a corner is missing.
+export function curvAt(g, fi, fj) {
+  const { nx, ny, lat, lon } = g;
+  const u = Math.max(-0.5, Math.min(nx - 0.5, fi - 0.5)), v = Math.max(-0.5, Math.min(ny - 0.5, fj - 0.5));
+  const i0 = Math.max(0, Math.min(nx - 2, Math.floor(u))), j0 = Math.max(0, Math.min(ny - 2, Math.floor(v)));
+  const a = nx > 1 ? u - i0 : 0, b = ny > 1 ? v - j0 : 0;
+  const p = [0, 0, 0];
+  const w = [[i0, j0, (1 - a) * (1 - b)], [i0 + 1, j0, a * (1 - b)], [i0, j0 + 1, (1 - a) * b], [i0 + 1, j0 + 1, a * b]];
+  for (const [i, j, wt] of w) {
+    if (!wt) continue;
+    const m = Math.min(ny - 1, j) * nx + Math.min(nx - 1, i), la = lat[m] * D2R, lo = lon[m] * D2R;
+    if (!Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(lat[m]) > 90) return null;
+    p[0] += wt * Math.cos(la) * Math.cos(lo); p[1] += wt * Math.cos(la) * Math.sin(lo); p[2] += wt * Math.sin(la);
+  }
+  const r = Math.hypot(p[0], p[1], p[2]);
+  if (r < 1e-9) return null;
+  return [Math.atan2(p[1], p[0]) / D2R, Math.asin(p[2] / r) / D2R];
+}
+
+// The area of a quadrilateral on the unit sphere with corners [lon, lat]
+// in order: two spherical triangles (Van Oosterom and Strackee).
+export function sphereQuadArea(q) {
+  const v = q.map(([lo, la]) => [Math.cos(la * D2R) * Math.cos(lo * D2R), Math.cos(la * D2R) * Math.sin(lo * D2R), Math.sin(la * D2R)]);
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const tri = (a, b, c) => {
+    const x = [b[1] * c[2] - b[2] * c[1], b[2] * c[0] - b[0] * c[2], b[0] * c[1] - b[1] * c[0]];
+    return Math.abs(2 * Math.atan2(dot(a, x), 1 + dot(a, b) + dot(b, c) + dot(c, a)));
+  };
+  return tri(v[0], v[1], v[2]) + tri(v[0], v[2], v[3]);
+}
+
+// How far a cell is from square on the ground: the angular distortion
+// (degrees) of the map from index space to the earth at a point, given
+// the ground steps of one column (ei) and one row (ej) as [east, north].
+export function cellShape(ei, ej) {
+  const [p, q] = ei, [r, s] = ej;
+  const A = p * p + q * q, B = p * r + q * s, C2 = r * r + s * s;
+  const tr = A + C2, det = Math.abs(p * s - q * r), disc = Math.sqrt(Math.max(0, tr * tr / 4 - det * det));
+  const a = Math.sqrt(tr / 2 + disc), b = Math.sqrt(Math.max(0, tr / 2 - disc));
+  return { a, b, area: det, omega: (2 * Math.asin((a - b) / (a + b))) / D2R };
+}
+
 // the extent [xmin, ymin, xmax, ymax] of a grid's cell edges
 export function gridExtent(g) {
   const xa = g.x0, xb = g.x0 + g.nx * g.dx, ya = g.y0, yb = g.y0 + g.ny * g.dy;

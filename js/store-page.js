@@ -25,7 +25,7 @@ const DEG = "\u00b0";
 const D2R = Math.PI / 180;
 const TEX = 2048;
 const VIRIDIS = PALETTES.viridis;
-const AUTO_CHUNKS = 64, AUTO_BYTES = 128 * 2 ** 20, PICK_BYTES = 64 * 2 ** 20, SAMPLE = 24;
+const AUTO_CHUNKS = 64, AUTO_BYTES = 32 * 2 ** 20, PICK_BYTES = 160 * 2 ** 20, SAMPLE = 24;
 
 const COLORS = {
   bg: 0x05070d,
@@ -46,8 +46,8 @@ const PRESETS = [
   { label: "Global 2 degree (synthetic)", url: fixture("era.icechunk"), varname: "1x91x180/2m_temperature", projection: "equirectangular" },
   { label: "Rotated pole (synthetic)", url: fixture("rotated.icechunk"), varname: "tas", projection: "robinson" },
   { label: "GeoTransform, plain Zarr (synthetic)", url: fixture("glad.zarr"), varname: "lclu", projection: "mercator" },
-  { label: "Earthmover ERA5 (WeatherBench2)", url: "https://icechunk-public-data.s3.amazonaws.com/v1/era5_weatherbench2", varname: "1x721x1440/2m_temperature", projection: "mollweide" },
-  { label: "Earthmover GLAD land cover", url: "https://icechunk-public-data.s3.amazonaws.com/v1/glad", varname: "lclu", projection: "robinson" }
+  { label: "CMIP6 MPI-ESM1-2-HR tas (Gaussian)", url: "https://storage.googleapis.com/cmip6/CMIP6/CMIP/MPI-M/MPI-ESM1-2-HR/historical/r1i1p1f1/Amon/tas/gn/v20190710", varname: "tas", projection: "mollweide" },
+  { label: "CMIP6 GFDL-ESM4 tos (tripolar)", url: "https://storage.googleapis.com/cmip6/CMIP6/CMIP/NOAA-GFDL/GFDL-ESM4/historical/r2i1p1f1/Omon/tos/gn/v20180701", varname: "tos", projection: "native" }
 ];
 
 // ---------------------------------------------------------------- state
@@ -183,20 +183,37 @@ let cur = null;   // the open store, variable and everything drawn from it
 // ---------------------------------------------------------------- geometry
 
 // lon/lat of every vertex of a lattice over index space
-function buildLattice() {
+// Where a fractional edge index (fi from 0 to nx, fj from 0 to ny) is in the
+// store's own coordinates, and on the earth, for each kind of grid.
+function nativeXY(fi, fj) {
+  const { g } = cur;
+  if (g.kind === "curvilinear") return [fi, fj];
+  if (g.kind === "rectilinear") return [g.xc ? C.axisAt(g.xc, fi) : g.x0 + fi * g.dx, g.yc ? C.axisAt(g.yc, fj) : g.y0 + fj * g.dy];
+  return C.cellXY(g, fi, fj);
+}
+function makeAt() {
   const { g, F } = cur;
+  if (g.kind === "curvilinear") return (fi, fj) => C.curvAt(g, fi, fj);
+  if (!F) return () => null;
+  return (fi, fj) => {
+    let [x, y] = nativeXY(fi, fj);
+    // cells centred on a pole reach past it
+    if (F.angular) y = Math.max(-90, Math.min(90, y));
+    return F.inv(x, y);
+  };
+}
+
+function buildLattice() {
+  const { g } = cur;
   const a = g.nx / g.ny;
   const MU = Math.max(2, Math.min(g.nx, Math.round(a >= 1 ? 240 : 240 * a)));
   const MV = Math.max(2, Math.min(g.ny, Math.round(a >= 1 ? 240 / a : 240)));
   const n = (MU + 1) * (MV + 1), ll = new Array(n);
   for (let j = 0, m = 0; j <= MV; j++)
     for (let i = 0; i <= MU; i++, m++) {
-      let [x, y] = C.cellXY(g, (i / MU) * g.nx, (j / MV) * g.ny);
-      // cells centred on a pole reach past it
-      if (F && F.angular) y = Math.max(-90, Math.min(90, y));
-      ll[m] = F ? F.inv(x, y) : null;
+      ll[m] = cur.at((i / MU) * g.nx, (j / MV) * g.ny);
     }
-  const mid = F ? F.inv(...C.cellXY(g, g.nx / 2, g.ny / 2)) || ll.find(Boolean) : null;
+  const mid = cur.earth ? cur.at(g.nx / 2, g.ny / 2) || ll.find(Boolean) : null;
   // the lon/lat box of the grid, for the readout
   let la0 = 90, la1 = -90;
   for (const q of ll) if (q) { la0 = Math.min(la0, q[1]); la1 = Math.max(la1, q[1]); }
@@ -221,11 +238,14 @@ function buildFlat() {
   const { g, F, ll } = cur;
   const lon0 = state.lon ?? cur.mid[0], lat0 = state.lat ?? cur.mid[1];
   cur.frame = frameAt(lon0, lat0);
-  const native = state.projection === "native" && F;
-  const D = native ? { fwd: (lon, lat) => F.fwd(lon, lat) } : displayFns(state.projection, lon0, lat0);
+  const native = state.projection === "native" && cur.earth;
+  const D = native ? (F ? { fwd: (lon, lat) => F.fwd(lon, lat) } : { fwd: () => null }) : displayFns(state.projection, lon0, lat0);
   cur.D = D;
   let box;
-  if (native || !F) box = C.gridExtent(g);
+  if (native) {
+    const c = [nativeXY(0, 0), nativeXY(g.nx, 0), nativeXY(0, g.ny), nativeXY(g.nx, g.ny)];
+    box = [Math.min(...c.map((q) => q[0])), Math.min(...c.map((q) => q[1])), Math.max(...c.map((q) => q[0])), Math.max(...c.map((q) => q[1]))];
+  } else if (!cur.earth) box = C.gridExtent(g);
   else if (D) box = worldBox(D);
   const n = ll.length;
   const sphere = new Float32Array(n * 3), flat = new Float32Array(n * 3), uv = new Float32Array(n * 2), valid = new Uint8Array(n);
@@ -237,8 +257,8 @@ function buildFlat() {
     for (let i = 0; i <= cur.MU; i++, m++) {
       uv[2 * m] = i / cur.MU; uv[2 * m + 1] = 1 - j / cur.MV;
       const q = ll[m];
-      if (!F) {
-        // no CRS: the grid flat in index space, columns right and rows down
+      if (!cur.earth) {
+        // nowhere on the earth: the grid flat in index space, columns right and rows down
         const p = [(i / cur.MU - 0.5) * 3.8, (0.5 - j / cur.MV) * 3.8 * (g.ny / g.nx), 1];
         sphere.set(p, 3 * m); flat.set(p, 3 * m); valid[m] = 1;
         continue;
@@ -246,7 +266,7 @@ function buildFlat() {
       if (!q) continue;
       sphere.set(cur.frame(q[0], q[1]), 3 * m);
       if (D) {
-        const xy = native ? C.cellXY(g, (i / cur.MU) * g.nx, (j / cur.MV) * g.ny) : D.fwd(q[0], q[1]);
+        const xy = native ? nativeXY((i / cur.MU) * g.nx, (j / cur.MV) * g.ny) : D.fwd(q[0], q[1]);
         if (!xy) continue;
         flat.set(cur.place(xy), 3 * m);
       } else flat.set(sphere.subarray(3 * m, 3 * m + 3), 3 * m);
@@ -307,7 +327,7 @@ function lineGeometry(lines, mesh) {
 }
 
 function buildLines() {
-  if (!cur.F) { coastLines.visible = gratLines.visible = false; return; }
+  if (!cur.earth) { coastLines.visible = gratLines.visible = false; return; }
   lineGeometry(coast, coastLines);
   lineGeometry(grat, gratLines);
 }
@@ -318,20 +338,20 @@ function morph(arr, sphere, flat, e) {
 }
 function place() {
   if (!cur || !cur.mesh) return;
-  const e = cur.F && cur.D ? ease(state.t) : cur.F ? 0 : 1;
+  const e = cur.earth && cur.D ? ease(state.t) : cur.earth ? 0 : 1;
   const pos = gridMesh.geometry.attributes.position;
   morph(pos.array, cur.mesh.sphere, cur.mesh.flat, e);
   pos.needsUpdate = true;
   gridMesh.geometry.computeBoundingSphere();
   for (const [L, on] of [[coastLines, state.coast], [gratLines, state.grat]]) {
-    L.visible = !!(cur.F && on);
+    L.visible = !!(cur.earth && on);
     if (!L.visible || !L.geometry.attributes.position) continue;
     const u = L.userData, p = L.geometry.attributes.position;
     morph(p.array, u.sphere, u.flat, e);
     p.needsUpdate = true;
     L.geometry.computeBoundingSphere();
   }
-  const fade = cur.F ? Math.max(0, 1 - 3 * e) : 0;
+  const fade = cur.earth ? Math.max(0, 1 - 3 * e) : 0;
   under.visible = fade > 0;
   under.material.opacity = fade;
 }
@@ -435,37 +455,50 @@ function drawTexture() {
 // area and angular distortion at the centres of a lattice of cells
 function distortionField() {
   if (cur.dist) return cur.dist;
-  const { g, F } = cur;
-  if (!F) return null;
+  const { g } = cur;
+  if (!cur.earth) return null;
   const FW = Math.min(g.nx, 200), FH = Math.min(g.ny, 200);
   const area = new Float32Array(FW * FH).fill(NaN), omega = new Float32Array(FW * FH).fill(NaN);
   const h = new Float32Array(FW * FH).fill(NaN), kk = new Float32Array(FW * FH).fill(NaN);
-  const plain = F.angular && !/ob_tran/.test(F.def);
   for (let j = 0; j < FH; j++)
     for (let i = 0; i < FW; i++) {
       const col = Math.floor(((i + 0.5) / FW) * g.nx), row = Math.floor(((j + 0.5) / FH) * g.ny);
-      const m = j * FW + i, c = cellFacts(col, row, plain);
+      const m = j * FW + i, c = cellFacts(col, row);
       if (!c) continue;
-      area[m] = c.area; if (c.f) { omega[m] = c.f.omega; h[m] = c.f.h; kk[m] = c.f.k; }
+      area[m] = c.area;
+      if (c.f) { omega[m] = c.f.omega; h[m] = c.f.h; kk[m] = c.f.k; } else if (c.shape) omega[m] = c.shape.omega;
     }
   cur.dist = { FW, FH, area, omega, h, k: kk, med: quantile(area, 0.5) };
   return cur.dist;
 }
 
-// a cell's ground area (km2) and PROJ's factors at its centre
-function cellFacts(col, row, plain = cur.F.angular && !/ob_tran/.test(cur.F.def)) {
+// a cell's ground area (km2) and PROJ's factors at its centre; without a
+// CRS (curvilinear), the area of the cell's corners on the sphere and how
+// far the cell is from square
+const EARTH_KM = 6371.0088;
+function cellFacts(col, row) {
   const { g, F } = cur;
-  let [x, y] = C.cellXY(g, col + 0.5, row + 0.5);
-  if (F.angular) y = Math.max(-90, Math.min(90, y));
-  const ll = F.inv(x, y);
+  const ll = cur.at(col + 0.5, row + 0.5);
   if (!ll) return null;
+  if (!F) {
+    const q = [cur.at(col, row), cur.at(col + 1, row), cur.at(col + 1, row + 1), cur.at(col, row + 1)];
+    if (q.some((v) => !v)) return { ll, area: NaN };
+    // ground steps of a column and a row, east and north in km
+    const step = (a, b) => {
+      let dl = b[0] - a[0]; dl -= 360 * Math.round(dl / 360);
+      return [dl * D2R * Math.cos(((a[1] + b[1]) / 2) * D2R) * EARTH_KM, (b[1] - a[1]) * D2R * EARTH_KM];
+    };
+    const shape = C.cellShape(step(cur.at(col, row + 0.5), cur.at(col + 1, row + 0.5)), step(cur.at(col + 0.5, row), cur.at(col + 0.5, row + 1)));
+    return { ll, shape, area: C.sphereQuadArea(q) * EARTH_KM * EARTH_KM };
+  }
   const f = factors(F.unit, ll[0], ll[1], { es: F.es });
   let area;
-  if (plain) {
-    const ya = g.y0 + row * g.dy, yb = ya + g.dy;
-    area = C.lonLatCellArea(g.dx, ya, yb, F.es) * F.a * F.a;
+  const [xa, ya] = nativeXY(col, row), [xb, yb] = nativeXY(col + 1, row + 1);
+  if (F.angular && !/ob_tran/.test(F.def)) {
+    area = C.lonLatCellArea(xb - xa, ya, yb, F.es) * F.a * F.a;
   } else if (f) {
-    const mapArea = F.angular ? Math.abs(g.dx * g.dy) * D2R * D2R : Math.abs(g.dx * g.dy) / (F.a * F.a);
+    const w = Math.abs((xb - xa) * (yb - ya));
+    const mapArea = F.angular ? w * D2R * D2R : w / (F.a * F.a);
     area = C.projectedCellArea(mapArea, f.s) * F.a * F.a;
   }
   return area === undefined ? null : { ll, f, area: area / 1e6 };
@@ -654,11 +687,12 @@ async function open() {
   status("opening ...");
   try {
     if (!opened || openedUrl !== state.url) {
+      if (state.url.startsWith("local:")) throw new Error("a local folder is not in the link: choose it again with Local folder");
       opened = await R.openStore(state.url);
       openedUrl = state.url;
     }
     if (serial !== openSerial) return;
-    const s = opened, list = R.dataArrays(s.arrays());
+    const s = opened, list = R.dataArrays(s.listArrays ? await s.listArrays() : s.arrays());
     const sel = $("var");
     sel.innerHTML = "";
     for (const a of list) {
@@ -680,6 +714,8 @@ async function open() {
       cxs: chunks[v.ix], cys: chunks[v.iy], cx: Math.ceil(g.nx / chunks[v.ix]), cy: Math.ceil(g.ny / chunks[v.iy]),
       cost: C.sliceCost(v.meta.shape, chunks, v.iy, v.ix, C.dtypeBytes(v.meta.dtype))
     };
+    cur.earth = !!(cur.F || g.kind === "curvilinear");
+    cur.at = makeAt();
     status(v.grid && !F && v.crs ? "proj4js could not read this CRS: drawn in index space" : "");
     buildDims();
     buildLattice();
@@ -762,13 +798,13 @@ function showFacts() {
     ["Store", cur.s.kind === "icechunk" ? "Icechunk" : cur.s.kind === "zarr3" ? "Zarr v3" : "Zarr v2"],
     ["Array", `${v.meta.shape.map((n, i) => `${v.dims[i]} ${n}`).join(", ")}`],
     ["Type", `${v.meta.dtype}${v.meta.codecs.length ? ", " + v.meta.codecs.join(", ") : ""}`],
-    ["Grid", `${g.nx} x ${g.ny} cells of ${v.grid ? sz() : "?"}`],
+    ["Grid", g.kind === "curvilinear" ? `${g.nx} x ${g.ny} curvilinear cells` : `${g.nx} x ${g.ny} cells of ${v.grid ? sz() : "?"}${g.kind === "rectilinear" ? " on average (uneven)" : ""}`],
     ["Chunk", `${v.meta.chunks.join(" x ")}${v.meta.inner ? ` (inner ${v.meta.inner.join(" x ")})` : ""}, ${fmtBytes(cur.cost.chunkBytes)} decoded`],
     ["Chunks per slice", `${cur.cx} x ${cur.cy} = ${cur.cost.chunks.toLocaleString("en")}`]
   ];
-  if (F) {
+  if (cur.earth) {
     const e = C.gridExtent(g);
-    rows.push(["Extent", `${fmtNum(e[0])} to ${fmtNum(e[2])}, ${fmtNum(e[1])} to ${fmtNum(e[3])}`]);
+    if (F) rows.push(["Extent", `${fmtNum(e[0])} to ${fmtNum(e[2])}, ${fmtNum(e[1])} to ${fmtNum(e[3])}`]);
     rows.push(["Latitudes", `${cur.lat.lo.toFixed(2)}${DEG} to ${cur.lat.hi.toFixed(2)}${DEG}`]);
     const d = distortionField();
     const fin = Array.from(d.area).filter(Number.isFinite);
@@ -777,14 +813,14 @@ function showFacts() {
       rows.push(["Cell area", `${fmtArea(lo)} to ${fmtArea(hi)}` + (lo > 0 ? ` (x${(hi / lo).toPrecision(3)})` : "")]);
     }
     const om = Array.from(d.omega).filter(Number.isFinite);
-    if (om.length) rows.push(["Angular distortion", `up to ${Math.max(...om).toPrecision(3)}${DEG}`]);
+    if (om.length) rows.push([F ? "Angular distortion" : "Cell shape", `up to ${Math.max(...om).toPrecision(3)}${DEG}` + (F ? "" : " from square")]);
   }
   tbl.innerHTML = "";
   for (const [k, val] of rows) {
     const tr = tbl.insertRow();
     tr.insertCell().textContent = k; tr.insertCell().textContent = val;
   }
-  $("projstring").textContent = F ? (F.def.length > 300 ? F.def.slice(0, 300) + " ..." : F.def) : "no CRS";
+  $("projstring").textContent = F ? (F.def.length > 300 ? F.def.slice(0, 300) + " ..." : F.def) : g.kind === "curvilinear" ? "no CRS: lon/lat per cell" : "no CRS";
   $("projstring").classList.toggle("none", !F);
   $("describe").textContent = F ? `${F.label}, from ${v.crsFrom || "the store"}.` + (v.grid && v.grid.geo ? ` Cells placed by ${v.grid.geo}.` : "") : "";
   $("notes").textContent = v.notes.join(". ") + (v.notes.length ? "." : "");
@@ -803,7 +839,8 @@ function showLegend() {
     t = `cell area on the earth as a share of the largest cell (${fmtArea(sc.max)}): dark is small, yellow is the largest`;
   } else if (state.colour === "omega" && cur.dist) {
     const sc = distortionImage("omega").scale;
-    t = `angular distortion of the store's CRS, 0 to ${sc.hi.toPrecision(3)}${DEG}: none means the CRS keeps shapes (conformal) there`;
+    t = cur.F ? `angular distortion of the store's CRS, 0 to ${sc.hi.toPrecision(3)}${DEG}: none means the CRS keeps shapes (conformal) there` :
+      `how far each cell is from square on the ground, 0 to ${sc.hi.toPrecision(3)}${DEG} (the grid has no CRS, so this is the cells' own shape)`;
   }
   if (cur.drawNote) t = (t ? t.replace(/\.$/, "") + ". " : "") + cur.drawNote[0].toUpperCase() + cur.drawNote.slice(1) + ".";
   el.textContent = t;
@@ -826,14 +863,15 @@ async function showPick() {
   const idx = chunkIdx(cj, ci);
   info.textContent = `Cell ${col}, ${row}: index ${col} along ${v.dims[v.ix]}, ${row} along ${v.dims[v.iy]}.`;
   const rows = [["Chunk", `${C.chunkKey(idx, { version: v.meta.version, separator: v.meta.separator })}`]];
-  const [x, y] = C.cellXY(g, col + 0.5, row + 0.5);
-  if (v.grid) rows.push(["x, y", `${fmtNum(x)}, ${fmtNum(y)}`]);
-  if (F) {
+  const [x, y] = nativeXY(col + 0.5, row + 0.5);
+  if (v.grid && g.kind !== "curvilinear") rows.push(["x, y", `${fmtNum(x)}, ${fmtNum(y)}`]);
+  if (cur.earth) {
     const c = cellFacts(col, row);
     if (c) {
       rows.push(["Lon, lat", `${c.ll[0].toFixed(4)}${DEG}, ${c.ll[1].toFixed(4)}${DEG}`]);
       rows.push(["Cell area", `${fmtArea(c.area)}` + (cur.dist && cur.dist.med ? ` (x${(c.area / cur.dist.med).toPrecision(3)} the median)` : "")]);
       if (c.f) rows.push(["Scale h, k", `${c.f.h.toPrecision(5)}, ${c.f.k.toPrecision(5)}`], ["Angular distortion", `${c.f.omega.toPrecision(3)}${DEG}`]);
+      else if (c.shape) rows.push(["Cell sides", `${c.shape.a.toPrecision(4)} by ${c.shape.b.toPrecision(4)} km`], ["Cell shape", `${c.shape.omega.toPrecision(3)}${DEG} from square`]);
     } else rows.push(["Lon, lat", "not on the earth"]);
   }
   const key = idx.join(",");
@@ -855,7 +893,7 @@ async function showPick() {
 // the same view in gridlook, where it has the projection
 function updateGridlook() {
   const a = $("gridlook");
-  if (!cur || /^(https?:)?\/\/(localhost|127\.)/.test(state.url) || location.protocol === "file:") { a.hidden = true; return; }
+  if (!cur || /^(https?:)?\/\/(localhost|127\.)/.test(state.url) || state.url.startsWith("local:") || location.protocol === "file:") { a.hidden = true; return; }
   const path = state.varname, k = path.lastIndexOf("/");
   let url = state.url.replace(/\/+$/, "");
   if (k > 0) url += "/" + path.slice(0, k);
@@ -900,6 +938,16 @@ $("load").addEventListener("click", () => {
   const u = $("src").value.trim();
   if (!u) return;
   if (u !== state.url) { state.url = u; state.varname = ""; state.dims = {}; state.pick = ""; }
+  open();
+});
+$("folder-btn").addEventListener("click", () => $("folder").click());
+$("folder").addEventListener("change", () => {
+  const files = $("folder").files;
+  if (!files || !files.length) return;
+  opened = R.openFiles(files);
+  openedUrl = state.url = opened.url;
+  state.varname = ""; state.dims = {}; state.pick = "";
+  $("src").value = state.url;
   open();
 });
 $("src").addEventListener("keydown", (e) => { if (e.key === "Enter") $("load").click(); });

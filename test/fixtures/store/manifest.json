@@ -84,6 +84,48 @@
    "dy": -1.5
   },
   {
+   "name": "gaussian.zarr",
+   "variable": "tas",
+   "nx": 192,
+   "ny": 96,
+   "chunks": [
+    1,
+    48,
+    96
+   ],
+   "kind": "rectilinear",
+   "lat": [
+    88.57216851400727,
+    86.72253095466814,
+    84.86197029204237
+   ],
+   "lon": [
+    0.0,
+    1.875,
+    3.75
+   ]
+  },
+  {
+   "name": "curvilinear.zarr",
+   "variable": "tos",
+   "nx": 80,
+   "ny": 54,
+   "chunks": [
+    1,
+    27,
+    40
+   ],
+   "kind": "curvilinear",
+   "centre32": [
+    -102.65420673754083,
+    13.599086173997577
+   ],
+   "corner11": [
+    -102.63292991499095,
+    9.865663265395385
+   ]
+  },
+  {
    "name": "huge.zarr",
    "variable": "lclu",
    "nx": 1440000,

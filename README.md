@@ -532,7 +532,9 @@ globe, unfolding into a chosen projection or the store's own CRS. The CRS comes
 from a CF `grid_mapping` (its parameters, as CF appendix F names them, or the
 EPSG code in its `crs_wkt`), GeoZarr attributes, or 1D latitude and longitude
 coordinates; the cells from a GeoTransform, `spatial:transform` or 1D
-coordinates (in km where their units say so). Colour the cells by the data
+coordinates (in km where their units say so; uneven 1D coordinates, as on a
+Gaussian grid, keep their spacing). A curvilinear grid (2D latitude and longitude
+per cell, as CMIP6 ocean grids ship) is drawn from those, with no CRS. Colour the cells by the data
 (chunks read on demand: the whole slice when it is small, a spread of chunks or
 the one clicked when it is not), by each cell's area on the earth, or by the
 angular distortion of the store's CRS. The hash is
@@ -544,7 +546,8 @@ too. `src/core/storecrs.js` and `js/store-read.js`, checked in
 `test/check-storecrs.mjs` against PROJ (pyproj's `CRS.from_cf`) and small
 stores written by xarray, zarr-python and icechunk
 (`test/make-store-fixtures.py`). A store on another site must allow
-cross-origin reads (CORS).
+cross-origin reads (CORS); "Local folder" opens a Zarr store on the viewer's
+computer without uploading it.
 
 ## Rasterize
 
