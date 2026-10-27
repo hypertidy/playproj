@@ -15,6 +15,7 @@ import { factors } from "../src/core/tissot.js";
 import { colourScale, paint, quantile } from "../src/core/distortion.js";
 import { knownProj4 } from "../src/core/structure.js";
 import { PALETTES, rampAt } from "../src/core/palette.js";
+import * as spilhaus from "../src/core/families/spilhaus.js";
 import { graticule } from "../src/core/geo.js";
 import { loadCoastline } from "./data.js";
 import { makeStage, shareLinks, copyText, isEmbed } from "../src/scene/index.js";
@@ -127,6 +128,8 @@ async function crsOf(v) {
 
 // the display: forward (lon, lat) -> [x, y] on a unit sphere, or null
 function displayFns(key, lon0, lat0) {
+  // Spilhaus is fixed on the oceans: the centre does not move it
+  if (key === "spilhaus") return { fwd: (lon, lat) => { const q = spilhaus.project(lon, lat); return q && isFinite(q[0]) && isFinite(q[1]) ? q : null; }, def: spilhaus.projString() };
   const def = C.displayDef(key, lon0, lat0);
   if (!def) return null;
   const tr = proj4("+proj=longlat +R=1 +no_defs", def);
