@@ -20,8 +20,11 @@ import icechunk
 HERE = os.path.dirname(__file__)
 FIX = os.path.join(HERE, "fixtures")
 OUT = os.path.join(FIX, "store")
-shutil.rmtree(OUT, ignore_errors=True)
-os.makedirs(OUT)
+for f in (os.listdir(OUT) if os.path.isdir(OUT) else []):
+    if os.environ.get("FIXTURES_FORCE") or not f.endswith(".icechunk"):
+        p = os.path.join(OUT, f)
+        shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
+os.makedirs(OUT, exist_ok=True)
 
 # ---------------------------------------------------------------- CF mappings
 
@@ -98,11 +101,15 @@ def field(ny, nx, nt=2):
     j, i = np.meshgrid(np.linspace(0, 1, ny), np.linspace(0, 1, nx), indexing="ij")
     return np.stack([np.sin(6 * i + t) * np.cos(4 * j) * 10 + 280 for t in range(nt)]).astype("float32")
 
-def write_icechunk(name, ds, encoding):
+def write_icechunk(name, ds, encoding, group=None):
     path = os.path.join(OUT, name)
+    # Icechunk writes new chunk and snapshot ids each time: keep what is
+    # there unless asked (FIXTURES_FORCE=1)
+    if os.path.exists(path) and not os.environ.get("FIXTURES_FORCE"):
+        return
     repo = icechunk.Repository.create(icechunk.local_filesystem_storage(path))
     session = repo.writable_session("main")
-    ds.to_zarr(session.store, mode="w", encoding=encoding, consolidated=False, zarr_format=3)
+    ds.to_zarr(session.store, group=group, mode="w", encoding=encoding, consolidated=False, zarr_format=3)
     session.commit("fixture")
 
 time = np.array(["2026-01-01", "2026-01-02"], dtype="datetime64[ns]")
@@ -140,11 +147,7 @@ stores.append({"name": "polar.icechunk", "variable": "ice", "nx": nx, "ny": ny, 
 lat = np.linspace(90, -90, 91); lon = np.arange(0, 360, 2.0)
 ds = xr.Dataset({"2m_temperature": (("time", "latitude", "longitude"), field(91, 180), {"units": "K"})},
                 coords={"time": time, "latitude": ("latitude", lat, {"units": "degrees_north"}), "longitude": ("longitude", lon, {"units": "degrees_east"})})
-path = os.path.join(OUT, "era.icechunk")
-repo = icechunk.Repository.create(icechunk.local_filesystem_storage(path))
-session = repo.writable_session("main")
-ds.to_zarr(session.store, group="1x91x180", mode="w", encoding={"2m_temperature": {"chunks": (1, 91, 180)}}, consolidated=False, zarr_format=3)
-session.commit("fixture")
+write_icechunk("era.icechunk", ds, {"2m_temperature": {"chunks": (1, 91, 180)}}, group="1x91x180")
 stores.append({"name": "era.icechunk", "variable": "1x91x180/2m_temperature", "nx": 180, "ny": 91, "chunks": [1, 91, 180], "x0": -1.0, "dx": 2.0, "y0": 91.0, "dy": -2.0})
 
 # a EURO-CORDEX-like rotated pole grid
@@ -195,6 +198,36 @@ ds.to_zarr(os.path.join(OUT, "curvilinear.zarr"), mode="w", encoding={"tos": {"c
 corner = pyproj.Transformer.from_crs(rot, "EPSG:4326", always_xy=True).transform(cx[0] + 0.75, cy[0] + 0.75)
 stores.append({"name": "curvilinear.zarr", "variable": "tos", "nx": len(cx), "ny": len(cy), "chunks": [1, 27, 40], "kind": "curvilinear",
                "centre32": [float(LON[2, 3]), float(LAT[2, 3])], "corner11": list(corner)})
+
+# the same grid as NEMO names it: 2D gphit, glamt on (j, i), and no
+# coordinates attribute to point at them
+ds = xr.Dataset({"tos_con": (("time_counter", "j", "i"), field(len(cy), len(cx)), {"units": "degC"}),
+                 "gphit": (("j", "i"), LAT.astype("float32"), {"units": "degrees_north"}),
+                 "glamt": (("j", "i"), LON.astype("float32"), {"units": "degrees_east"})},
+                coords={"j": ("j", np.arange(len(cy))), "i": ("i", np.arange(len(cx)))})
+ds.to_zarr(os.path.join(OUT, "nemo.zarr"), mode="w", encoding={"tos_con": {"chunks": (1, 27, 40)}}, consolidated=True, zarr_format=2)
+stores.append({"name": "nemo.zarr", "variable": "tos_con", "nx": len(cx), "ny": len(cy), "chunks": [1, 27, 40], "kind": "curvilinear", "tol": 1e-4,
+               "centre32": [float(LON[2, 3]), float(LAT[2, 3])], "corner11": list(corner)})
+
+# a GOES ABI fixed grid: scan angles in radians packed as int16 with
+# scale_factor and add_offset, and a geostationary grid mapping
+goes = {"grid_mapping_name": "geostationary", "perspective_point_height": 35786023.0, "semi_major_axis": 6378137.0,
+        "semi_minor_axis": 6356752.31414, "longitude_of_projection_origin": -75.0, "latitude_of_projection_origin": 0.0,
+        "sweep_angle_axis": "x"}
+n, step = 60, 0.0025
+ang = (np.arange(n) - (n - 1) / 2) * step
+ds = xr.Dataset({"CMI": (("t", "y", "x"), field(n, n, 1), {"units": "K", "grid_mapping": "goes_imager_projection"}),
+                 "goes_imager_projection": ((), np.int32(-2147483647), goes)},
+                coords={"x": ("x", ang, {"units": "rad", "axis": "X", "standard_name": "projection_x_coordinate"}),
+                        "y": ("y", ang[::-1].copy(), {"units": "rad", "axis": "Y", "standard_name": "projection_y_coordinate"})})
+pack = lambda first, sign: {"dtype": "int16", "scale_factor": sign * step, "add_offset": first}
+ds.to_zarr(os.path.join(OUT, "goes.zarr"), mode="w", consolidated=True, zarr_format=3,
+           encoding={"CMI": {"chunks": (1, 30, 30)}, "x": pack(float(ang[0]), 1), "y": pack(float(ang[-1]), -1)})
+gcrs = pyproj.CRS.from_cf(goes)
+h = goes["perspective_point_height"]
+stores.append({"name": "goes.zarr", "variable": "CMI", "nx": n, "ny": n, "chunks": [1, 30, 30],
+               "x0": float((ang[0] - step / 2) * h), "dx": step * h, "y0": float((ang[-1] + step / 2) * h), "dy": -step * h,
+               "corner": list(pyproj.Transformer.from_crs(gcrs, gcrs.geodetic_crs, always_xy=True).transform(ang[0] * h, ang[-1] * h))})
 
 # the real GLAD store's shape, metadata only: every chunk reads as the fill value
 g = zarr.open_group(os.path.join(OUT, "huge.zarr"), mode="w", zarr_format=3)

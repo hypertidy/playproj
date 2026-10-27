@@ -135,7 +135,8 @@ for (const t of man.stores) {
   if (t.kind === "curvilinear") {
     check(g.kind === "curvilinear" && v.crs === null, `${t.name}: kind ${g.kind}, crs ${JSON.stringify(v.crs)}`);
     const c = C.curvAt(g, 3.5, 2.5), k = C.curvAt(g, 1, 1);
-    check(c && Math.abs(c[0] - t.centre32[0]) < 1e-9 && Math.abs(c[1] - t.centre32[1]) < 1e-9, `${t.name}: centre ${c} vs ${t.centre32}`);
+    const tol = t.tol || 1e-9;
+    check(c && Math.abs(c[0] - t.centre32[0]) < tol && Math.abs(c[1] - t.centre32[1]) < tol, `${t.name}: centre ${c} vs ${t.centre32}`);
     // a corner is interpolated between four centres: close (here 1.5 degree
     // cells, within 0.01 degree), not exact
     check(k && Math.abs(k[0] - t.corner11[0]) < 0.01 && Math.abs(k[1] - t.corner11[1]) < 0.01, `${t.name}: corner ${k} vs ${t.corner11}`);
