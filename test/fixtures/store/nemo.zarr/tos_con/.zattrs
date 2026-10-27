@@ -1,0 +1,8 @@
+{
+  "units": "degC",
+  "_ARRAY_DIMENSIONS": [
+    "time_counter",
+    "j",
+    "i"
+  ]
+}

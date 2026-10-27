@@ -9,7 +9,7 @@
 import { IcechunkStore } from "icechunk-js";
 import * as zarr from "zarrita";
 import { zarrStructure, parseCrsRef } from "../src/core/structure.js";
-import { cfProj, axisRole, axisOf, unitScale, gridOf } from "../src/core/storecrs.js";
+import { cfProj, axisRole, axisOf, unitScale, gridOf, LAT_NAMES, LON_NAMES } from "../src/core/storecrs.js";
 
 const ICECHUNK = "icechunk+";
 const dec = new TextDecoder();
@@ -173,6 +173,9 @@ async function read1d(s, path, max = 1e6) {
   if (!m || m.group || !m.shape || m.shape.length !== 1 || m.shape[0] > max) return null;
   const a = await s.open(path);
   const v = await zarr.get(a);
+  // CF packing (GOES stores its scan angles as scaled int16)
+  const sf = Number(m.attrs.scale_factor ?? 1), ao = Number(m.attrs.add_offset ?? 0);
+  if (sf !== 1 || ao !== 0) return { values: Float64Array.from(v.data, (x) => Number(x) * sf + ao), attrs: m.attrs };
   return { values: v.data, attrs: m.attrs };
 }
 
@@ -237,7 +240,7 @@ export async function describeVariable(s, path) {
   // grid mapping already says what x and y mean
   let curv = null;
   if (!t && !(crs && !crs.longlat)) {
-    const names = new Set([...(typeof meta.attrs.coordinates === "string" ? meta.attrs.coordinates.split(/\s+/) : []), "lat", "lon", "latitude", "longitude", "nav_lat", "nav_lon"]);
+    const names = new Set([...(typeof meta.attrs.coordinates === "string" ? meta.attrs.coordinates.split(/\s+/) : []), ...[...LAT_NAMES, ...LON_NAMES].flatMap((n) => [n, n.toUpperCase()])]);
     const two = {};
     for (const n of names) {
       if (!n) continue;
@@ -266,7 +269,10 @@ export async function describeVariable(s, path) {
       const lonlat = role[ix] === "lon" && role[iy] === "lat";
       x = axisOf(cx.values, { lon: lonlat || role[ix] === "rlon" });
       y = axisOf(cy.values);
-      if (!lonlat && role[ix] !== "rlon") { xs = unitScale(cx.attrs.units); ys = unitScale(cy.attrs.units); }
+      if (!lonlat && role[ix] !== "rlon") {
+        const h = crs && /\+proj=geos\b/.test(crs.def || crs.proj4 || "") && gma ? Number(gma.perspective_point_height) || 0 : 0;
+        xs = unitScale(cx.attrs.units, h); ys = unitScale(cy.attrs.units, h);
+      }
       if (xs !== 1) notes.push(`x and y are in ${cx.attrs.units}: multiplied by ${xs} for the CRS, which is in metres`);
       // uneven but 1D (a Gaussian grid's latitudes, say): kept as they are
       if (!x.regular) xc = unwrapped(cx.values, lonlat || role[ix] === "rlon").map((v) => v * xs);

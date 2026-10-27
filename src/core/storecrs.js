@@ -152,8 +152,9 @@ export function cfProj(a) {
 
 // Recognise coordinate variables by CF standard_name, units, axis or the
 // names everyone uses. attrs may be missing.
-const LAT_NAMES = new Set(["lat", "latitude", "nav_lat", "y_lat", "lats"]);
-const LON_NAMES = new Set(["lon", "longitude", "nav_lon", "x_lon", "lons", "long"]);
+// includes NEMO (gphi*, glam*), CESM POP (tlat, ulat) and WRF (xlat) names
+export const LAT_NAMES = new Set(["lat", "latitude", "nav_lat", "y_lat", "lats", "gphit", "gphiu", "gphiv", "gphif", "tlat", "ulat", "xlat"]);
+export const LON_NAMES = new Set(["lon", "longitude", "nav_lon", "x_lon", "lons", "long", "glamt", "glamu", "glamv", "glamf", "tlong", "ulong", "xlong"]);
 export function axisRole(name, attrs = {}) {
   const sn = String(attrs.standard_name || "").toLowerCase(), u = String(attrs.units || "").toLowerCase().replace(/\s+/g, "_");
   const base = String(name || "").split("/").pop().toLowerCase();
@@ -167,8 +168,10 @@ export function axisRole(name, attrs = {}) {
 }
 
 // metres per unit of a projected coordinate
-export function unitScale(units) {
+export function unitScale(units, h = 0) {
   const u = String(units || "m").trim().toLowerCase();
+  // geostationary scan angles: radians times the satellite height
+  if (h && (u === "rad" || u === "radian" || u === "radians")) return h;
   if (u === "km" || u === "kilometre" || u === "kilometer" || u === "kilometres" || u === "kilometers") return 1000;
   if (u === "100 km") return 1e5;
   if (u === "cm") return 0.01;
