@@ -179,6 +179,17 @@ async function read1d(s, path, max = 1e6) {
   return { values: v.data, attrs: m.attrs };
 }
 
+// Another world named in the variable's or its group's attributes (a store
+// with no CRS that says "surface of Mars"): its IAU 2015 sphere, by the
+// equatorial radius as PROJ's IAU_2015 sphere codes use.
+const BODIES = { Mars: 3396190, Venus: 6051800, Moon: 1737400 };
+async function bodyNamed(s, attrs, dir) {
+  const g = await nodeMeta(s, dir).catch(() => null);
+  const text = [attrs, g && g.attrs].map((a) => (a ? Object.values(a).filter((v) => typeof v === "string").join(" ") : "")).join(" ");
+  for (const [name, R] of Object.entries(BODIES)) if (new RegExp(`\\b(of|on) (the )?${name}\\b`).test(text)) return { name, R };
+  return null;
+}
+
 // Where the cells of the variable at path are, and in which CRS:
 // { path, meta, dims, ix, iy, grid (storecrs.gridOf), crs (a cfProj()-like
 // description or null), crsFrom, notes[] }.
@@ -241,9 +252,12 @@ export async function describeVariable(s, path) {
   let curv = null;
   if (!t && !(crs && !crs.longlat)) {
     const names = new Set([...(typeof meta.attrs.coordinates === "string" ? meta.attrs.coordinates.split(/\s+/) : []), ...[...LAT_NAMES, ...LON_NAMES].flatMap((n) => [n, n.toUpperCase()])]);
+    // where the store lists its arrays, look only at those that exist
+    let listed = null;
+    try { listed = new Set(s.arrays().map((a) => a.path)); } catch (e) { /* not listed: probe */ }
     const two = {};
     for (const n of names) {
-      if (!n) continue;
+      if (!n || (listed && listed.size && !listed.has(join(dir, n)))) continue;
       const m = await nodeMeta(s, join(dir, n)).catch(() => null);
       if (!m || m.group || !m.shape || m.shape.length !== 2) continue;
       const md = m.dims || [];
@@ -278,7 +292,13 @@ export async function describeVariable(s, path) {
       if (!x.regular) xc = unwrapped(cx.values, lonlat || role[ix] === "rlon").map((v) => v * xs);
       if (!y.regular) yc = Array.from(cy.values, (v) => v * ys);
       if (xc || yc) notes.push(`the ${[xc && dims[ix], yc && dims[iy]].filter(Boolean).join(" and ")} coordinates are not evenly spaced (worst ${Math.max(x.dev, y.dev).toFixed(3)} of a step): cells drawn between the midpoints`);
-      if (!crs && lonlat) { crs = { longlat: "+proj=longlat +datum=WGS84 +no_defs", name: "longitude, latitude" }; crsFrom = "latitude and longitude coordinates (WGS 84 assumed: the store names no datum)"; }
+      if (!crs && lonlat) {
+        const body = await bodyNamed(s, meta.attrs, dir);
+        if (body) {
+          crs = { longlat: `+proj=longlat +R=${body.R} +no_defs`, name: `longitude, latitude on ${body.name}`, body: body.name };
+          crsFrom = `latitude and longitude coordinates (the attributes name ${body.name}: IAU 2015 sphere, radius ${body.R} m)`;
+        } else { crs = { longlat: "+proj=longlat +datum=WGS84 +no_defs", name: "longitude, latitude" }; crsFrom = "latitude and longitude coordinates (WGS 84 assumed: the store names no datum)"; }
+      }
       if (!crs && role[ix] === "rlon") notes.push("rotated coordinates, but no grid_mapping says where the pole is");
     } else if (typeof meta.attrs.coordinates === "string") {
       notes.push(`its coordinates (${meta.attrs.coordinates}) are not along the grid's two dimensions: drawn in index space`);
