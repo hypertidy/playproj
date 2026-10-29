@@ -56,7 +56,7 @@ const PRESETS = [
 // gridlook's keys (url, varname, projection, lat, lon, dimIndices_<dim>) and
 // this page's own, which gridlook ignores
 const defaults = { url: PRESETS[0].url, varname: "", projection: "mollweide", lat: null, lon: null,
-  t: 0, colour: "data", chunks: 1, cells: 1, coast: 1, grat: 1, pick: "", cam: null };
+  t: 0, colour: "data", chunks: 1, cells: 1, coast: 1, grat: 1, pick: "", cam: null, assume: "" };
 const state = { ...defaults, dims: {} };
 
 function readHash() {
@@ -74,6 +74,7 @@ function readHash() {
   const c = params.get("colour");
   if (["data", "area", "omega", "none"].includes(c)) state.colour = c;
   state.pick = params.get("pick") || "";
+  state.assume = R.ASSUME[params.get("assume")] ? params.get("assume") : "";
   const cam = (params.get("cam") || "").split(",").map(Number);
   state.cam = cam.length === 6 && cam.every(isFinite) ? cam : null;
   for (const [k, v] of params) if (k.startsWith("dimIndices_") && isFinite(+v)) state.dims[k.slice(11)] = Math.max(0, Math.round(+v));
@@ -90,6 +91,7 @@ function writeHash() {
     if (state.t) p.t = +state.t.toFixed(3);
     for (const k of ["colour", "chunks", "cells", "coast", "grat"]) if (state[k] !== defaults[k]) p[k] = state[k];
     if (state.pick) p.pick = state.pick;
+    if (state.assume) p.assume = state.assume;
     if (state.cam) p.cam = state.cam.map((x) => +x.toFixed(2)).join(",");
     history.replaceState(null, "", "#" + C.hashString(state.url, p));
     $("open-full").href = location.pathname + location.hash;
@@ -727,7 +729,10 @@ async function open() {
     if (!state.varname) throw new Error("the store lists no arrays: add ::varname=<array> to the address");
     if (![...sel.options].some((o) => o.value === state.varname)) { const o = document.createElement("option"); o.value = o.textContent = state.varname; sel.appendChild(o); }
     sel.value = state.varname;
-    const v = await R.describeVariable(s, state.varname);
+    const v = await R.describeVariable(s, state.varname, { assume: state.assume });
+    // the choice of satellite, offered only where the store leaves it open
+    $("assume-row").hidden = !(v.abiLike || (v.crs && v.crs.assumed));
+    $("assume").value = state.assume;
     const F = v.grid ? await crsOf(v) : null;
     if (serial !== openSerial) return;
     const g = v.grid || { x0: 0, dx: 1, y0: 0, dy: 1, nx: v.meta.shape[v.ix], ny: v.meta.shape[v.iy] };
@@ -1010,6 +1015,7 @@ $("centre-grid").addEventListener("click", () => {
   if (cur) { buildFlat(); place(); }
   writeHash();
 });
+$("assume").addEventListener("change", (e) => { state.assume = e.target.value; writeHash(); open(); });
 ui.colour.addEventListener("change", () => { state.colour = ui.colour.value; if (cur) { drawTexture(); showLegend(); } writeHash(); });
 for (const k of ["chunks", "cells", "coast", "grat"])
   $(k).addEventListener("change", () => { state[k] = $(k).checked ? 1 : 0; if (cur) { drawTexture(); place(); showLegend(); } writeHash(); });

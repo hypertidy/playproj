@@ -193,7 +193,15 @@ async function bodyNamed(s, attrs, dir) {
 // Where the cells of the variable at path are, and in which CRS:
 // { path, meta, dims, ix, iy, grid (storecrs.gridOf), crs (a cfProj()-like
 // description or null), crsFrom, notes[] }.
-export async function describeVariable(s, path) {
+// Satellites whose fixed grid can be assumed when a store has GOES ABI scan
+// angles but names no satellite (the ABI fixed grid's own parameters).
+export const ASSUME = {
+  goes_east: { label: "GOES-East (75.0 W)", lon0: -75 },
+  goes_west: { label: "GOES-West (137.0 W)", lon0: -137 }
+};
+const ABI_H = 35786023;
+
+export async function describeVariable(s, path, opts = {}) {
   const meta = await nodeMeta(s, path);
   if (!meta || meta.group) throw new Error(`${path || "the root"} is not an array`);
   const nd = meta.shape.length;
@@ -275,7 +283,7 @@ export async function describeVariable(s, path) {
   }
 
   // without a transform, the coordinate arrays
-  let x = null, y = null, xs = 1, ys = 1, xc = null, yc = null;
+  let x = null, y = null, xs = 1, ys = 1, xc = null, yc = null, abiLike = false;
   if (!t && !curv) {
     const cx = coords[ix] ? await read1d(s, join(dir, dims[ix])) : null;
     const cy = coords[iy] ? await read1d(s, join(dir, dims[iy])) : null;
@@ -283,11 +291,22 @@ export async function describeVariable(s, path) {
       const lonlat = role[ix] === "lon" && role[iy] === "lat";
       x = axisOf(cx.values, { lon: lonlat || role[ix] === "rlon" });
       y = axisOf(cy.values);
+      // scan angles with no CRS: a GOES ABI fixed grid, if the user says whose
+      const u = String(cx.attrs.units || "").toLowerCase();
+      abiLike = !crs && !lonlat && x.regular && y.regular && (!u || u.startsWith("rad")) &&
+        Math.max(...[cx.values[0], cx.values[cx.values.length - 1], cy.values[0], cy.values[cy.values.length - 1]].map((q) => Math.abs(Number(q)))) <= 0.16;
+      if (abiLike && ASSUME[opts.assume]) {
+        const a = ASSUME[opts.assume];
+        crs = { proj4: `+proj=geos +h=${ABI_H} +lon_0=${a.lon0} +sweep=x +x_0=0 +y_0=0 +a=6378137 +b=6356752.31414 +units=m +no_defs`, name: `${a.label} fixed grid, assumed`, h: ABI_H, assumed: opts.assume };
+        crsFrom = `an assumption: the store names no CRS, and its x and y look like the GOES ABI fixed grid, here taken as ${a.label}`;
+      } else if (abiLike) notes.push("x and y look like GOES ABI scan angles (radians), but nothing names the satellite: choose one under Assume to place the grid");
       if (!lonlat && role[ix] !== "rlon") {
-        const h = crs && /\+proj=geos\b/.test(crs.def || crs.proj4 || "") && gma ? Number(gma.perspective_point_height) || 0 : 0;
+        const h = crs && crs.h ? crs.h : crs && /\+proj=geos\b/.test(crs.def || crs.proj4 || "") && gma ? Number(gma.perspective_point_height) || 0 : 0;
+        if (crs && crs.h && !cx.attrs.units) { xs = ys = h; } else {
         xs = unitScale(cx.attrs.units, h); ys = unitScale(cy.attrs.units, h);
+        }
       }
-      if (xs !== 1) notes.push(`x and y are in ${cx.attrs.units}: multiplied by ${xs} for the CRS, which is in metres`);
+      if (xs !== 1) notes.push(`x and y are in ${cx.attrs.units || "radians (assumed)"}: multiplied by ${xs} for the CRS, which is in metres`);
       // uneven but 1D (a Gaussian grid's latitudes, say): kept as they are
       if (!x.regular) xc = unwrapped(cx.values, lonlat || role[ix] === "rlon").map((v) => v * xs);
       if (!y.regular) yc = Array.from(cy.values, (v) => v * ys);
@@ -313,7 +332,7 @@ export async function describeVariable(s, path) {
   }
   if (!grid) notes.push("nothing in the store says where the cells are: drawn in index space");
   if (!crs && !curv) notes.push("no CRS found");
-  return { path, meta, dims, ix, iy, role, grid, crs, crsFrom, gm: gma, notes };
+  return { path, meta, dims, ix, iy, role, grid, crs, crsFrom, gm: gma, notes, abiLike };
 }
 
 // One chunk of the variable, as { data, shape } for the grid dimensions at

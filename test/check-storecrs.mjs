@@ -116,7 +116,12 @@ for (const t of man.stores) {
   let s, v;
   try {
     s = await R.openStore(`${base}/${t.name}`);
-    v = await R.describeVariable(s, t.variable);
+    if (t.assume) {
+      // left unplaced until a satellite is chosen
+      const v0 = await R.describeVariable(s, t.variable);
+      check(v0.abiLike && !v0.crs, `${t.name}: without an assumption, abiLike ${v0.abiLike}, crs ${JSON.stringify(v0.crs)}`);
+    }
+    v = await R.describeVariable(s, t.variable, { assume: t.assume });
   } catch (e) { check(false, `${t.name}: ${e.message}`); continue; }
   const g = v.grid;
   check(s.kind === (t.name.endsWith(".icechunk") ? "icechunk" : t.kind ? "zarr2" : "zarr3"), `${t.name}: opened as ${s.kind}`);

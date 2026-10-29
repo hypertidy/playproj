@@ -229,6 +229,16 @@ stores.append({"name": "goes.zarr", "variable": "CMI", "nx": n, "ny": n, "chunks
                "x0": float((ang[0] - step / 2) * h), "dx": step * h, "y0": float((ang[-1] + step / 2) * h), "dy": -step * h,
                "corner": list(pyproj.Transformer.from_crs(gcrs, gcrs.geodetic_crs, always_xy=True).transform(ang[0] * h, ang[-1] * h))})
 
+# the same scan angles with nothing to say whose: no units, no grid mapping
+# (as the GEO-GEO stereo wind store has them); placed only by assumption
+ds = xr.Dataset({"u_wind": (("time", "y", "x"), field(n, n, 1))},
+                coords={"x": ("x", ang), "y": ("y", ang[::-1].copy())})
+ds.to_zarr(os.path.join(OUT, "abi.zarr"), mode="w", encoding={"u_wind": {"chunks": (1, 30, 30)}}, consolidated=True, zarr_format=3)
+west = pyproj.CRS.from_cf({**goes, "longitude_of_projection_origin": -137.0})
+stores.append({"name": "abi.zarr", "variable": "u_wind", "nx": n, "ny": n, "chunks": [1, 30, 30], "assume": "goes_west",
+               "x0": float((ang[0] - step / 2) * h), "dx": step * h, "y0": float((ang[-1] + step / 2) * h), "dy": -step * h,
+               "corner": list(pyproj.Transformer.from_crs(west, west.geodetic_crs, always_xy=True).transform(ang[0] * h, ang[-1] * h))})
+
 # another world: lon/lat with no CRS, and only the attributes say Mars
 mlat = np.arange(87.5, -90, -5.0); mlon = np.arange(-180, 180, 5.0)
 ds = xr.Dataset({"tsurf": (("time", "lat", "lon"), field(len(mlat), len(mlon)), {"units": "K", "CATDESC": "Atmospheric temperature at the surface of Mars"})},
