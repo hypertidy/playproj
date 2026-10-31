@@ -322,3 +322,10 @@ body.guide-body { height: auto; }
 .guide .src { font-size: 13px; color: var(--muted); }
 .guide .sources ul { padding-left: 20px; font-size: 14px; color: #c4cedb; }
 @media (max-width: 600px) { .guide .toc ol { columns: 1; } }
+/* peel.html: the flat pieces, and the gore flattenings compared */
+.flat { position: absolute; inset: 0; }
+.flat canvas { display: block; width: 100%; height: 100%; }
+.readout.peel-cmp th { color: var(--muted); font-weight: 400; text-align: right; padding: 2px 6px; font-size: 12px; }
+.readout.peel-cmp td { text-align: right; }
+.readout.peel-cmp tr.on td { color: var(--accent); }
+#stage.peel .credit { bottom: auto; top: 6px; }

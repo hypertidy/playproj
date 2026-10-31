@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Peeling the orange</title>
+<meta name="description" content="The globe peeled like an orange: into gores from pole to pole, flattened as sinusoidal, Cassini or transverse Mercator, or into one spiral strip that lies flat as an Euler spiral. Is orange peel a sinusoidal map? Nearly, and why not quite.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "earcut": "https://cdn.jsdelivr.net/npm/earcut@3.0.2/src/earcut.js",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/peel.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split peel">
+    <div class="half">
+      <div id="three"></div>
+      <span class="half-label" id="scene-label"></span>
+    </div>
+    <div class="half">
+      <div id="flat" class="flat" aria-label="The peel laid flat"></div>
+      <span class="half-label" id="flat-label"></span>
+    </div>
+    <a id="open-full" class="open-full" href="./peel.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html" aria-current="page">Peeling the orange</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="cut"><span>Peel into</span></label>
+      <select id="cut" class="wide">
+        <option value="gores">Gores, pole to pole</option>
+        <option value="spiral">One spiral strip</option>
+      </select>
+      <div id="gore-ctl">
+        <label class="row" for="n"><span>Gores</span><output id="n-out"></output></label>
+        <input id="n" type="range" min="3" max="36" step="1" aria-label="Number of gores">
+        <label class="row" for="method"><span>Flattened as</span></label>
+        <select id="method" class="wide" aria-label="How each gore is flattened"></select>
+        <label class="row" for="lay"><span>Laid out</span></label>
+        <select id="lay" class="wide" aria-label="How the flat gores are laid out">
+          <option value="flower">Joined at the south pole, as peeled</option>
+          <option value="row">Joined at the equator, as a map</option>
+        </select>
+      </div>
+      <div id="spiral-ctl">
+        <label class="row" for="turns"><span>Turns, pole to pole</span><output id="turns-out"></output></label>
+        <input id="turns" type="range" min="2" max="30" step="1" aria-label="Turns of the spiral from pole to pole">
+        <div class="toggles"><label><input id="euler" type="checkbox"> Euler spiral</label></div>
+      </div>
+      <label class="row" for="p"><span>Peel</span><output id="p-out"></output></label>
+      <input id="p" type="range" min="0" max="1" step="0.005" aria-label="How far the peel has come off">
+      <div class="scale"><span>orange</span><span>flat</span></div>
+      <div class="buttons">
+        <button id="play" type="button">Peel</button>
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+      <table id="cmp" class="readout peel-cmp"></table>
+    </section>
+
+    <section>
+      <label class="row" for="lon0"><span>Turn the cuts</span><output id="lon0-out"></output></label>
+      <input id="lon0" type="range" min="-180" max="180" step="1" aria-label="Turn the cuts east or west">
+      <label class="row" for="skin"><span>Skin</span></label>
+      <select id="skin" class="wide">
+        <option value="earth">Earth (Natural Earth land)</option>
+        <option value="orange">Orange</option>
+        <option value="gebco">GEBCO 2026 elevation</option>
+        <option value="esri">Esri World Imagery</option>
+      </select>
+      <p id="bm-status" class="status" role="status"></p>
+      <div class="toggles">
+        <label><input id="fruit" type="checkbox"> Fruit</label>
+        <label><input id="spin" type="checkbox"> Spin</label>
+      </div>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>Is orange peel a sinusoidal map?</summary>
+        <p>Nearly, and the way it falls short is the point. Peel an orange in segments from pole to pole,
+          n of them, and lay each flat. If each parallel keeps its length on the table, a segment's half
+          width at latitude &phi; is (&pi; / n) cos &phi;: that is the <b>sinusoidal</b> projection
+          (<code>+proj=sinu</code>) on the segment's own central meridian. Lay the segments side by side,
+          touching at the equator, and they are the interrupted sinusoidal, the map of gores on
+          <a href="./globals.html#base=sinu&amp;lobes=gores">Globals and interrupteds</a>.</p>
+        <p>But peel can hardly stretch, and what it would like to keep is length in every direction at
+          once. No flat piece of a sphere can do that, however small (Gauss's <i>Theorema Egregium</i>,
+          1827: the sphere's curvature is a property of its lengths alone, and the plane's is zero), so
+          every gore is a compromise. The table compares three, each true along its central meridian.
+          The sinusoidal keeps area exactly but shears: towards the poles its edges lean in, and with 12
+          gores angles there are out by up to 15&deg;. Cassini (<code>cass</code>, true across the gore)
+          and transverse Mercator (<code>tmerc</code>, true in angle) never stretch more than 3.5% for 12
+          gores. Halve the width and the sinusoidal's shear halves, while the others' stretch falls to a
+          quarter (<code>test/check-peel.mjs</code> checks both rates). So a real segment of peel, which
+          can stretch only a little, sits nearer a Cassini or transverse Mercator gore than a sinusoidal
+          one; all of them meet as the gores narrow, and the sinusoidal is the one that keeps area and
+          lines up into a whole map.</p>
+        <p>Globe makers have printed gores to paste onto a ball since Waldseem&uuml;ller's set of 1507,
+          thought to be the first printed (Library of Congress). Their gores often stop short of the poles,
+          which get round caps instead, where a narrow gore is all shear.</p>
+      </details>
+      <details>
+        <summary>The spiral peel</summary>
+        <p>Peel it the other way, in one strip of even width w wound from pole to pole, latitude rising
+          by w each turn. The strip is about 4&pi; / w radii long, the sphere's area over its width. Laid
+          flat, a narrow strip keeps the curvature its centre line had on the sphere (its geodesic
+          curvature), and at latitude &phi; that is tan &phi;. Measured by arc length t from the equator,
+          sin &phi; = t / a with a = 2&pi; / w, so the flat line turns at t / &radic;(a&sup2; &minus; t&sup2;).
+          Near the equator that is t / a, curvature growing in step with arc length: an <b>Euler
+          spiral</b> (a clothoid), whose coordinates are the Fresnel integrals, scaled by &radic;(2a). This
+          is Bartholdi and Henriques (2012), <i>Orange peels and Fresnel integrals</i>. The blue line is
+          the Euler spiral; the readout says how much of the strip, from the middle out, stays within
+          half a strip's width of it. The ends, near the poles, curl tighter than the Euler spiral does,
+          and the narrower the strip, the smaller the share it matches but the closer the match there
+          once scaled.</p>
+        <p>A spiral peel is not a map projection in the usual sense: it is one long piece, every point of
+          the sphere is on it once, and nothing on it is straight. The gores are the opposite trade: many
+          pieces, each nearly a map.</p>
+      </details>
+      <details>
+        <summary>How it works</summary>
+        <p>Gores: each one is a grid in longitude and latitude, flattened by its projection
+          (<code>sinu</code>, <code>cass</code> or <code>tmerc</code> on the sphere, following PROJ and
+          checked against PROJ 9.8 in <code>test/check-peel.mjs</code>). The peel opens the flower: each
+          gore is wrapped on a sphere of radius 1 / (1 &minus; peel) that touches the orange at its south
+          pole, with each point's distance from the pole and its direction there blended from the orange
+          to the flat gore. At 0 it is the orange, at 1 the flat flower.</p>
+        <p>Spiral: the flat centre line is integrated from its heading a &minus; &radic;(a&sup2; &minus; t&sup2;),
+          and the strip is the centre line with its width either side (held inside the radius of
+          curvature near the poles, where the flat strip would fold over itself). The peel comes off from
+          the south pole; the peeled part lies flat in the plane that touches the orange where it is
+          coming away, matched to the strip's direction there.</p>
+        <p>The distortion figures are worked from the gore's own formulas by finite differences:
+          <i>area</i> is the worst error in areal scale, <i>angles</i> the worst angular distortion,
+          <i>stretch</i> the largest error in scale in any direction, and <i>edge</i> how much longer the
+          gore's flat edge is than the meridian it came from (&pi; radii).</p>
+        <p>Hash keys: <code>cut</code> (<code>gores</code>, <code>spiral</code>), <code>n</code>,
+          <code>method</code> (<code>sinu</code>, <code>cass</code>, <code>tmerc</code>), <code>lay</code>
+          (<code>flower</code>, <code>row</code>), <code>turns</code>, <code>p</code> (the peel, 0 to 1),
+          <code>lon0</code>, <code>skin</code>, <code>euler</code>, <code>fruit</code>, <code>spin</code>,
+          <code>cam</code>.</p>
+        <ul class="credits">
+          <li>Bartholdi, L. and Henriques, A. (2012) Orange peels and Fresnel integrals, <i>The Mathematical
+            Intelligencer</i> 34(3), 1-3, <a href="https://arxiv.org/abs/1202.3033">arXiv:1202.3033</a>.</li>
+          <li>Gauss, C. F. (1827) <i>Disquisitiones generales circa superficies curvas</i> (the Theorema
+            Egregium).</li>
+          <li>Snyder, J. P. (1987) <i>Map Projections: A Working Manual</i>, USGS Professional Paper 1395
+            (sinusoidal, Cassini and transverse Mercator on the sphere), as
+            <a href="https://proj.org/">PROJ</a> has them.</li>
+          <li>Library of Congress, <a href="https://blogs.loc.gov/maps/2025/03/globe-gores/">Globe gores</a>
+            (Waldseem&uuml;ller's 1507 gores; Coronelli's 1688 globe of 24 gores and two polar caps).</li>
+          <li>Coastlines and land from <a href="https://www.naturalearthdata.com/">Natural Earth</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

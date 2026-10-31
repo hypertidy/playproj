@@ -947,6 +947,21 @@ keys: `pic` (`atlas`, `crooked`), `fit` (`hand`, `northup`, `similarity`,
 `affine`), `x0`, `y0`, `w`, `h`, `rot`, `shear`, `gcp` (col,row,x,y;...),
 `op`, `grat`, `pix`.
 
+## Peeling the orange
+
+`peel.html` peels the globe like an orange, in gores from pole to pole or in
+one spiral strip, and lays the peel flat beside the 3D peeling. Each gore is
+flattened on its own central meridian as PROJ's `sinu`, `cass` or `tmerc` on
+the sphere (checked against PROJ 9.8 in `test/check-peel.mjs`, fixture from
+`test/make-peel-fixture.py`), laid out joined at the south pole (as peeled)
+or at the equator (the interrupted map), with each one's distortion in a
+table: the sinusoidal keeps area but its shear falls only with the gore's
+width, Cassini and transverse Mercator stretch by the square of it. The spiral
+strip's flat centre line turns at tan(latitude) and tends to an Euler spiral
+(Bartholdi and Henriques 2012, Orange peels and Fresnel integrals). Geometry
+in `src/core/peel.js`. Hash keys: `cut`, `n`, `method`, `lay`, `turns`, `p`,
+`lon0`, `skin`, `euler`, `fruit`, `spin`, `cam`.
+
 ## Layout
 
 ```
@@ -958,6 +973,7 @@ cones.html, js/cones.js                cones and cylinders page
 sight.html, js/sight.js                Sight and shade: a viewshed in gnomonic wedges, out to the sun
 spilhaus.html, js/spilhaus.js          Spilhaus page
 globals.html, js/globals.js            globals and interrupteds page
+peel.html, js/peel.js                  peeling the orange: gores and the spiral peel
 catastrophes.html, js/catastrophes.js  map catastrophes page
 cells.html, js/cells.js                s2 cells page
 h3.html, js/h3.js                      H3 hexagons on the icosahedron
@@ -1040,6 +1056,7 @@ src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric p
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
 src/core/sight.js                 terrain visibility: gnomonic wedges or the sun, a horizon kept front to back
+src/core/peel.js                  gores (sinu, cass, tmerc), the peel from orange to flower, the spiral peel and its Euler spiral
 src/core/affine.js                geotransform: apply, invert, parts, extent, world file, fit to control points
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
 src/core/palette.js               named palettes for scene layers (scenespec palette names)
@@ -1084,6 +1101,7 @@ s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js
 `test/check-nuyina.mjs` checks polar stereographic and the ship-centred maps against PROJ, the sea ice
 grid, the overlap plan and level choice, and reading tracks from GeoServer CSV and parquet rows.
 `test/check-sight.mjs` checks the viewshed and the cast shadow against marching every line of sight.
+`test/check-peel.mjs` checks the gore flattenings against PROJ, what each keeps, and the spiral peel against its curvature and the Euler spiral.
 `test/check-rhumb.mjs` checks rhumb line and geodesic lengths and courses against PROJ, and composite sailing.
 `test/check-structure.mjs` checks the tile and overview readers against
 GDAL, tifffile and zarr-python. `test/check-storecrs.mjs` checks CF grid mappings against PROJ, cell areas
