@@ -300,6 +300,27 @@ Hash keys: `mesh` (`small`, `globe`, `ico`, `plane`), `n`, `bend`, `proj`,
 `gebco`, `esri`), `uv`,
 `cam`.
 
+## Penguin datum
+
+`penguin.html` asks what happens if the reference surface is not an
+ellipsoid but a penguin: a king penguin with the earth's volume (about 21,000
+km tall), Heard Island at lon 0, lat 0 on its belly. Lon/lat on any body works
+by the planetocentric rule: a direction from the centre of mass is a lon/lat,
+and the surface there is where the ray leaves the body, so the datum is a
+radius grid in lon/lat. That needs a star-shaped body, and a penguin is not
+one: rays leave the chin and enter the beak, leave the body and enter a
+flipper or a foot. The page counts the exits along each ray, colours the
+surface no lon/lat reaches (the decree keeps the last exit, which shrink-wraps
+the bird), and shows a lon/lat raster in "Penguin CRS" (the world, cell area
+against the sphere of equal volume, penguin radius minus WGS84, exits) with
+COG/Zarr cells over it. Sliders take off the beak, press the flippers flat and
+tuck the feet in until the penguin is star-shaped. The rotation is PROJ's
+`ob_tran`, given as PROJJSON; the radius grid downloads as a GeoTIFF. The bird
+is a smooth union of ellipsoids in `src/core/penguin.js` (surface nets for the
+mesh, rays traced through the field). Hash keys: `beak`, `flip`, `feet`,
+`orient` (`heard` or `greenwich`), `col`, `lay`, `cell`, `grid`, `coast`, `nod`,
+`sph`, `plon`, `plat`, `bm`, `cam`.
+
 ## s2 cells
 
 `cells.html` builds [S2](https://s2geometry.io/) cells the way the library
@@ -1100,6 +1121,7 @@ s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js
 `test/check-roms.mjs` checks the s-coordinate against ROMS and the Zarr grid reader against zarr-python.
 `test/check-nuyina.mjs` checks polar stereographic and the ship-centred maps against PROJ, the sea ice
 grid, the overlap plan and level choice, and reading tracks from GeoServer CSV and parquet rows.
+`test/check-penguin.mjs` checks the penguin's rotation against PROJ's ob_tran, and the lon/lat table's areas and volume against the mesh.
 `test/check-sight.mjs` checks the viewshed and the cast shadow against marching every line of sight.
 `test/check-peel.mjs` checks the gore flattenings against PROJ, what each keeps, and the spiral peel against its curvature and the Euler spiral.
 `test/check-rhumb.mjs` checks rhumb line and geodesic lengths and courses against PROJ, and composite sailing.
