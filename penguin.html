@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Penguin datum</title>
+<meta name="description" content="What if the reference surface for lon/lat were a penguin? A king penguin of the earth's volume as a datum, the planetocentric rule that gives each direction a radius, the lon/lat raster it makes, and why a body that is not star-shaped breaks it.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/penguin.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="split stacked penguin">
+    <div class="half">
+      <div id="three"></div>
+      <span class="half-label" id="globe-label"></span>
+    </div>
+    <div class="half">
+      <canvas id="map" aria-label="The penguin as a raster in penguin longitude and latitude"></canvas>
+      <span class="half-label" id="map-label"></span>
+    </div>
+    <a id="open-full" class="open-full" href="./penguin.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html">Peeling the orange</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./penguin.html" aria-current="page">Penguin datum</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <div id="presets" class="presets" role="group" aria-label="Penguins"></div>
+      <label class="row" for="beak"><span>Beak</span><output id="beak-out"></output></label>
+      <input id="beak" type="range" min="0" max="1.6" step="0.05" aria-label="Beak length">
+      <label class="row" for="flip"><span>Flippers</span><output id="flip-out"></output></label>
+      <input id="flip" type="range" min="0" max="1" step="0.01" aria-label="Flippers, from pressed to the sides to held out level">
+      <label class="row" for="feet"><span>Feet and tail</span><output id="feet-out"></output></label>
+      <input id="feet" type="range" min="0" max="1" step="0.01" aria-label="Feet and tail, from tucked in to sticking out">
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section>
+      <label class="row" for="orient"><span>Decree</span></label>
+      <select id="orient" class="wide">
+        <option value="heard">Heard Island on the belly</option>
+        <option value="greenwich">Earth's axis up the penguin</option>
+      </select>
+      <label class="row" for="col"><span>Penguin colour</span></label>
+      <select id="col" class="wide">
+        <option value="plumage">Plumage</option>
+        <option value="world">The world</option>
+        <option value="area">Area of a lon/lat cell</option>
+        <option value="reach">What the decree reaches</option>
+      </select>
+      <label class="row" for="lay"><span>Raster</span></label>
+      <select id="lay" class="wide">
+        <option value="world">The world</option>
+        <option value="area">Area of a lon/lat cell</option>
+        <option value="und">Penguin undulation (penguin minus WGS84)</option>
+        <option value="exits">Exits along the ray</option>
+      </select>
+      <label class="row" for="cell"><span>Grid cells</span></label>
+      <select id="cell" class="wide">
+        <option value="1">1 degree</option>
+        <option value="5">5 degrees</option>
+        <option value="10">10 degrees</option>
+        <option value="15">15 degrees</option>
+        <option value="30">30 degrees</option>
+      </select>
+      <div class="toggles">
+        <label><input id="grid" type="checkbox"> Cells on the penguin</label>
+        <label><input id="coast" type="checkbox"> Coastline</label>
+        <label><input id="nod" type="checkbox"> Unreached as nodata</label>
+        <label><input id="sph" type="checkbox"> Sphere of equal volume</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+      <p class="hint">Click the penguin, or hover the raster, to send a ray from the centre and count where it leaves the bird.</p>
+    </section>
+
+    <section>
+      <label class="row" for="basemap"><span>World image</span></label>
+      <select id="basemap" class="wide"></select>
+      <p id="bm-status" class="status" role="status"></p>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+    </section>
+
+    <section>
+      <div class="buttons">
+        <button id="save-tif" type="button">Download the radius GeoTIFF</button>
+        <button id="copy-pj" type="button">Copy the PROJJSON</button>
+      </div>
+      <p id="tif-status" class="status" role="status"></p>
+      <details>
+        <summary>The decree, as PROJJSON</summary>
+        <pre id="pj" style="font-size:11px;white-space:pre-wrap;word-break:break-all"></pre>
+      </details>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>Suppose the Republic of Heard Island decreed that every COG and Zarr store must be mapped onto a
+          penguin: a king penguin (they breed on Heard) with the earth's volume, about 21,000 km tall, with
+          Mawson Peak at longitude 0, latitude 0 in the middle of its belly.</p>
+        <p>A datum is a surface that longitude and latitude are drawn on. An ellipsoid has a formula for
+          the point at each lon/lat; a penguin needs a rule. Take the one planetary science uses for irregular bodies such as asteroids
+          (IAU <b>planetocentric</b> coordinates):
+          a lon/lat is a direction from the body's centre of mass, and the surface in that direction is
+          where the ray from the centre leaves the body. The surface is then a raster of radius against
+          lon/lat, which is how lunar and planetary shape models are often stored, and every raster in "Penguin
+          CRS" is a lon/lat grid like any other.</p>
+        <p>That rule needs the body to be <b>star-shaped</b> from its centre: each ray must leave it once.
+          A penguin is not. The ray up through the chin leaves the head and enters the beak; rays out to
+          the side leave the body and enter a half-raised flipper; rays down to the front leave the belly
+          and enter the feet. Those directions have two or more exits ("Exits along the ray"), and the
+          decree has to pick one. It takes the last, so the surface it describes shrink-wraps the bird:
+          the underside of the beak, the inside of the flippers and the tops of the feet are on no ray's
+          last exit, so no lon/lat reaches them ("What the decree reaches", red), and the radius jumps at
+          the edges of the overhangs, a cliff in the raster where the true surface folds back. Press the
+          flippers flat, tuck the feet in and take off the beak and the penguin is star-shaped: one exit
+          everywhere, nothing unreached, and the cells add up to the bird's whole surface.</p>
+        <p>The <b>area of a lon/lat cell</b> on any star-shaped surface is r&sup2; / cos(a) times the cell's
+          solid angle, where r is the radius and a the angle between the ray and the surface normal; it is
+          shown against the same cell on the sphere of equal volume. A cell is big where the penguin is far
+          from its centre (the crown, the toes) and huge where the ray grazes the surface (the sides of the
+          beak, the edges of the flippers), where a in that formula goes to 90 degrees. A COG or Zarr array
+          in penguin lon/lat has equal cells in index space and wildly unequal cells on the bird.</p>
+        <p><b>Penguin undulation</b> is the penguin's radius minus the WGS84 ellipsoid's in the same
+          earth direction, the penguin's answer to the geoid's N (see the <a href="./geoid.html">Geoid</a>
+          page): thousands of kilometres, not tens of metres. The readout says how far Mawson Peak, on the
+          belly, stands off the penguin.</p>
+        <p>PROJ cannot hold the penguin. A geodetic CRS in PROJ, GeoTIFF or CF names an ellipsoid or a
+          sphere, so the decree is two things: a rotation of the sphere of the earth's volume that puts
+          Heard Island at 0, 0 (PROJ's <code>ob_tran</code>, written out as PROJJSON and checked against
+          PROJ in <code>test/check-penguin.mjs</code>), and a radius grid in those coordinates, which is
+          what the GeoTIFF download holds (radius, number of exits and cell area factor, one degree, in a
+          geographic CRS on that sphere; the rotation is in the file's citation, which GeoTIFF has no key
+          for). The penguin is a smooth union of ellipsoids (its field and mesh are in
+          <code>src/core/penguin.js</code>); its surface is drawn by surface nets, and each ray is traced
+          through the field and its crossings refined by bisection.</p>
+        <p>Hash keys: <code>beak</code>, <code>flip</code>, <code>feet</code>, <code>orient</code>
+          (<code>heard</code> or <code>greenwich</code>), <code>col</code>, <code>lay</code>,
+          <code>cell</code>, <code>grid</code>, <code>coast</code>, <code>nod</code>, <code>sph</code>,
+          <code>plon</code>, <code>plat</code> (the ray), <code>bm</code>, <code>cam</code>.</p>
+        <ul class="credits">
+          <li>Archinal, B. A. et al. (2018) Report of the IAU Working Group on Cartographic Coordinates and
+            Rotational Elements: 2015, Celest. Mech. Dyn. Astr. 130, 22 (planetocentric coordinates and
+            irregular bodies).</li>
+          <li>Pole rotation by <a href="https://proj.org/operations/projections/ob_tran.html">PROJ's ob_tran</a>;
+            surface nets after Gibson, S. F. F. (1998) Constrained elastic surface nets, MICCAI'98, LNCS 1496.</li>
+          <li>Coastlines and countries from <a href="https://www.naturalearthdata.com/">Natural Earth</a>;
+            drawn with <a href="https://threejs.org/">three.js</a>. No penguins were consulted.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

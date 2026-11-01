@@ -47,6 +47,7 @@ export * as rasterize from "./rasterize.js";
 export * as texmap from "./texmap.js";
 export * as sphull from "./sphull.js";
 export * as peel from "./peel.js";
+export * as penguin from "./penguin.js";
 export * as affine from "./affine.js";
 
 export * as structure from "./structure.js";
