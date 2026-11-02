@@ -16,6 +16,7 @@ import * as F from "../src/core/fourd.js";
 import * as R from "./fourd-read.js";
 import { PALETTES, rampAt } from "../src/core/palette.js";
 import { loadCoastline } from "./data.js";
+import * as spilhaus from "../src/core/families/spilhaus.js";
 import { makeStage, readParams, hashWriter, shareLinks, oneOf } from "../src/scene/index.js";
 
 const proj4 = window.proj4;
@@ -31,11 +32,15 @@ const STEPS = ["day", "5day", "month", "year"];
 
 const defaults = {
   date: "2025-09-15", layers: "oisst-sst,g02202-south,bran-temp", box: "60,90,-70,-45",
-  lev: 30, zmax: 3, dz: 3, cl: 0.5, cp: 0.5, cut: 1, coast: 1, step: "day", base: "", cam: null
+  lev: 30, zmax: 3, dz: 3, cl: 0.5, cp: 0.5, cut: 1, coast: 1, step: "day", base: "", view: "globe", t: 1, range: 20000, clon: null, clat: null, cam: null
 };
 const state = { ...defaults };
 function readHash() {
-  readParams(state, defaults, { date: (r) => (F.parseDay(r) !== null ? r : undefined), layers: String, box: String, base: String, step: oneOf(STEPS, "day") });
+  const num = (r) => (r === "" || !isFinite(+r) ? undefined : +r);
+  readParams(state, defaults, { date: (r) => (F.parseDay(r) !== null ? r : undefined), layers: String, box: String, base: String, step: oneOf(STEPS, "day"),
+    view: oneOf(["globe", "aeqd", "spilhaus"], "globe"), clon: num, clat: num });
+  state.t = Math.max(0, Math.min(1, state.t));
+  state.range = Math.max(100, Math.min(20000, state.range));
   state.zmax = Math.max(1, Math.min(3.7, state.zmax));
   state.dz = Math.max(0, Math.min(3, state.dz));
   state.cl = Math.max(0, Math.min(1, state.cl));
@@ -51,6 +56,7 @@ const ui = {
   box: $("box"), boxGo: $("box-go"), lev: $("lev"), levOut: $("lev-out"), zmax: $("zmax"), zmaxOut: $("zmax-out"),
   dz: $("dz"), dzOut: $("dz-out"), cl: $("cl"), clOut: $("cl-out"), cp: $("cp"), cpOut: $("cp-out"),
   pick: $("pick-table").tBodies[0], profile: $("profile"), pickHint: $("pick-hint"),
+  view: $("view"), t: $("t"), tOut: $("t-out"), range: $("range"), rangeOut: $("range-out"), centrePick: $("centre-pick"), centreBox: $("centre-box"),
   probe: $("probe"), reset: $("reset-view"), hosts: $("hosts").tBodies[0], status: $("status"), credit: $("credit")
 };
 
@@ -71,10 +77,11 @@ const { renderer, scene: world, camera, controls, setCamera, resize } = makeStag
   bg: COLORS.bg, fov: 35, near: 0.01, far: 100,
   onCamera: (cam) => { state.cam = cam; writeHash(); }
 });
-controls.minDistance = 1.05;
+controls.minDistance = 0.02;
 controls.maxDistance = 12;
 
-// lon, lat (degrees) and a radius to a point, y up, lon 0 towards +x
+// lon, lat (degrees) and a radius to a point on the Earth, y up (the pole),
+// lon 0 towards +x
 function toVec(lon, lat, r, out = new THREE.Vector3()) {
   const c = Math.cos(lat * D2R);
   return out.set(r * c * Math.cos(lon * D2R), r * Math.sin(lat * D2R), -r * c * Math.sin(lon * D2R));
@@ -84,29 +91,131 @@ function fromVec(p) {
   return { lon: Math.atan2(-p.z, p.x) / D2R, lat: Math.asin(p.y / r) / D2R, r };
 }
 
-function defaultCamera() {
-  const lon = (box[0] + box[1]) / 2, lat = (box[2] + box[3]) / 2;
-  // orbit the box: the target is its centre on the surface, the eye above
-  // and to the north west of it, low enough to see down the sections
-  const c = toVec(lon, lat, 1), up = c.clone().normalize();
-  const north = new THREE.Vector3(0, 1, 0).sub(up.clone().multiplyScalar(up.y)).normalize();
-  const east = new THREE.Vector3().crossVectors(north, up).normalize();
-  const span = Math.max(0.15, (box[3] - box[2]) * D2R * 1.6);
-  const p = c.clone().add(up.multiplyScalar(span * 0.45)).add(north.multiplyScalar(span * 0.95)).add(east.multiplyScalar(-span * 0.6));
-  return [p.x, p.y, p.z, c.x, c.y, c.z];
+// ---------------------------------------------------------------- where things go
+//
+// Every vertex is kept as (lon, lat, r) and placed in a frame on the view's
+// centre: x east, y north, z up, with the centre on the surface at the
+// origin. On the globe that is the sphere turned to face the viewer; on a
+// map it is the projection's (x, y) in Earth radii and z = r - 1, so depth
+// goes down from the plane by the same exaggeration. Unfold (t) moves every
+// vertex in a straight line between the two. Only what lies within the range
+// of the centre is drawn, and on a map a triangle or line that would cross
+// a cut of the projection (the antipode, the edge of the Spilhaus square)
+// is left out.
+
+const root = new THREE.Group();
+root.rotation.x = -Math.PI / 2; // the frame's z up is three.js's y up
+world.add(root);
+
+const VIEWS = ["globe", "aeqd", "spilhaus"];
+const view = { key: "globe", E: new THREE.Vector3(), N: new THREE.Vector3(), U: new THREE.Vector3(), cosRange: -2, flat: null, lon0: 0, lat0: 0 };
+function setView() {
+  view.key = state.view;
+  let lon0, lat0;
+  if (view.key === "spilhaus") { lon0 = spilhaus.defaults.lon0; lat0 = spilhaus.defaults.lat0; }
+  else { lon0 = state.clon ?? (box[0] + box[1]) / 2; lat0 = state.clat ?? (box[2] + box[3]) / 2; }
+  view.lon0 = lon0; view.lat0 = lat0;
+  toVec(lon0, lat0, 1, view.U);
+  view.N.set(0, 1, 0).sub(view.U.clone().multiplyScalar(view.U.y));
+  if (view.N.lengthSq() < 1e-12) view.N.set(-1, 0, 0);
+  view.N.normalize();
+  view.E.crossVectors(view.N, view.U).normalize();
+  view.cosRange = state.range >= 20000 ? -2 : Math.cos((state.range * 1000) / F.EARTH_R);
+  if (view.key === "aeqd") {
+    // azimuthal equidistant on the sphere, in Earth radii: the distance from
+    // the centre is kept along every great circle through it
+    const s0 = Math.sin(lat0 * D2R), c0 = Math.cos(lat0 * D2R);
+    view.flat = (lon, lat) => {
+      const sp = Math.sin(lat * D2R), cp = Math.cos(lat * D2R), dl = (lon - lon0) * D2R, cl = Math.cos(dl);
+      const cc = Math.max(-1, Math.min(1, s0 * sp + c0 * cp * cl)), c = Math.acos(cc);
+      if (c > Math.PI - 1e-6) return null;
+      const k = c < 1e-9 ? 1 : c / Math.sin(c);
+      return [k * cp * Math.sin(dl), k * (c0 * sp - s0 * cp * cl)];
+    };
+  } else if (view.key === "spilhaus") {
+    view.flat = (lon, lat) => { const q = spilhaus.project(lon, lat); return q && isFinite(q[0]) && isFinite(q[1]) ? [q[0], q[1]] : null; };
+  } else view.flat = null;
+}
+
+setView();
+
+const placed = new Set();
+const v3a = new THREE.Vector3();
+// the two homes of (lon, lat, r): on the turned globe and on the map, or
+// null when it is out of range or off the map
+function homes(lon, lat, r) {
+  toVec(lon, lat, 1, v3a);
+  if (v3a.dot(view.U) < view.cosRange) return null;
+  const g = [r * v3a.dot(view.E), r * v3a.dot(view.N), r * v3a.dot(view.U) - 1];
+  if (!view.flat) return { g, f: g };
+  const q = view.flat(lon, lat);
+  if (!q || !isFinite(q[0]) || !isFinite(q[1])) return null;
+  return { g, f: [q[0], q[1], r - 1] };
+}
+// work out both homes of every vertex and which triangles (or segments) to
+// draw; then blend() places them for the current unfold
+function layout(geo) {
+  const { llr, prims, per } = geo.userData, n = llr.length / 3;
+  const G = new Float32Array(n * 3), Fl = new Float32Array(n * 3), ok = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const lon = llr[3 * i], lat = llr[3 * i + 1];
+    const h = lon === lon && lat === lat ? homes(lon, lat, llr[3 * i + 2]) : null;
+    if (!h) continue;
+    ok[i] = 1;
+    G.set(h.g, 3 * i); Fl.set(h.f, 3 * i);
+  }
+  const cut = view.flat ? 0.35 : Infinity, keep = [];
+  for (let k = 0; k < prims.length; k += per) {
+    let good = true;
+    for (let a = 0; a < per && good; a++) {
+      const i = prims[k + a];
+      if (!ok[i]) good = false;
+      else for (let b = a + 1; b < per && good; b++) {
+        const j = prims[k + b];
+        if (Math.hypot(Fl[3 * i] - Fl[3 * j], Fl[3 * i + 1] - Fl[3 * j + 1]) > cut) good = false;
+      }
+    }
+    if (good) for (let a = 0; a < per; a++) keep.push(prims[k + a]);
+  }
+  geo.userData.G = G; geo.userData.F = Fl;
+  geo.setIndex(keep);
+  blend(geo);
+}
+function blend(geo) {
+  const { G, F: Fl } = geo.userData, pos = geo.attributes.position.array, t = view.flat ? state.t : 0;
+  for (let i = 0; i < pos.length; i++) pos[i] = G[i] + (Fl[i] - G[i]) * t;
+  geo.attributes.position.needsUpdate = true;
+  geo.computeBoundingSphere();
+}
+function placedGeometry(llr, prims, per, uv = null) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(llr.length), 3));
+  if (uv) g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  g.userData = { llr, prims, per };
+  placed.add(g);
+  layout(g);
+  return g;
+}
+function dropGeometry(g) { placed.delete(g); g.dispose(); }
+const relayout = () => { setView(); for (const g of placed) layout(g); placeMarker(); };
+const reblend = () => { for (const g of placed) blend(g); placeMarker(); };
+// one point placed for the current view and unfold, or null
+function placePoint(lon, lat, r, out = new THREE.Vector3()) {
+  const h = homes(lon, lat, r);
+  if (!h) return null;
+  const t = view.flat ? state.t : 0;
+  return out.set(h.g[0] + (h.f[0] - h.g[0]) * t, h.g[1] + (h.f[1] - h.g[1]) * t, h.g[2] + (h.f[2] - h.g[2]) * t);
 }
 
 // A mesh over a grid of (u, v) in [0, 1], placed by at(u, v) -> [lon, lat, r];
 // uv runs with u and v, so a texture of the grid's cells drapes onto it.
 function gridGeometry(nu, nv, at) {
-  const pos = new Float32Array((nu + 1) * (nv + 1) * 3), uv = new Float32Array((nu + 1) * (nv + 1) * 2);
-  const v3 = new THREE.Vector3();
+  const n = (nu + 1) * (nv + 1), llr = new Float32Array(n * 3), uv = new Float32Array(n * 2);
   let p = 0, q = 0;
   for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
     const u = i / nu, v = j / nv, [lon, lat, r] = at(u, v);
-    if (lon === null || !isFinite(lon) || !isFinite(lat)) { pos[p++] = 0; pos[p++] = 0; pos[p++] = 0; } else {
-      toVec(lon, lat, r, v3); pos[p++] = v3.x; pos[p++] = v3.y; pos[p++] = v3.z;
-    }
+    const bad = lon === null || !isFinite(lon) || !isFinite(lat);
+    llr[p++] = bad ? NaN : lon; llr[p++] = bad ? NaN : lat; llr[p++] = r;
     uv[q++] = u; uv[q++] = v;
   }
   const idx = [];
@@ -114,11 +223,28 @@ function gridGeometry(nu, nv, at) {
     const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1;
     idx.push(a, b, d, a, d, c);
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  return g;
+  return placedGeometry(llr, idx, 3, uv);
+}
+// line segments from a flat list of [lon, lat, r] pairs
+function lineGeometry(pairs) {
+  const llr = Float32Array.from(pairs);
+  return placedGeometry(llr, Array.from({ length: llr.length / 3 }, (_, i) => i), 2);
+}
+
+function defaultCamera() {
+  // the target is the centre (the origin of the frame); the eye stands off
+  // to the equator side of a box on the globe, low enough to see down its
+  // sections, and south of the centre over a map, so north is up
+  let s, p;
+  if (view.key === "spilhaus") p = [0, -0.6, 6.8];
+  else if (view.key === "aeqd" && state.t > 0.5) { s = Math.min(3, Math.max(0.2, (state.range * 1000) / F.EARTH_R)); p = [0, -1.3 * s, 2.2 * s]; }
+  else {
+    s = Math.max(0.15, (box[3] - box[2]) * D2R * 1.6);
+    const toEq = view.lat0 < 0 ? 1 : -1;
+    p = [-0.6 * s, 0.95 * s * toEq, 0.45 * s];
+  }
+  // frame (x, y, z) to three.js (x, z, -y), as root is turned
+  return [p[0], p[2], -p[1], 0, 0, 0];
 }
 
 // The coordinate of an axis at a fractional cell index (cell i spans i to
@@ -184,7 +310,7 @@ const inBox = (lon, lat) => {
 // layer has no data), cut open over the box so the ocean below shows
 let base = null;
 function buildBase() {
-  if (base) { world.remove(base); base.geometry.dispose(); base.material.map.dispose(); }
+  if (base) { root.remove(base); dropGeometry(base.geometry); base.material.map.dispose(); }
   const w = 720, h = 360, tex = makeTexture(w, h), d = tex.image.data;
   const c = new THREE.Color(COLORS.base);
   const active = activeLayers().some((L) => L.entry.kind === "volume" && L.visible);
@@ -196,21 +322,17 @@ function buildBase() {
   tex.needsUpdate = true;
   base = new THREE.Mesh(gridGeometry(180, 90, (u, v) => [-180 + 360 * u, -90 + 180 * v, 0.998]), cutout(tex));
   base.renderOrder = 0;
-  world.add(base);
+  root.add(base);
 }
 
 let coastLines = null;
 loadCoastline("110m").then((lines) => {
-  const pts = [], v = new THREE.Vector3();
-  for (const l of lines) for (let i = 0; i + 3 < l.length; i += 2) {
-    toVec(l[i], l[i + 1], 1.0025, v); pts.push(v.x, v.y, v.z);
-    toVec(l[i + 2], l[i + 3], 1.0025, v); pts.push(v.x, v.y, v.z);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+  const pts = [];
+  for (const l of lines) for (let i = 0; i + 3 < l.length; i += 2) pts.push(l[i], l[i + 1], 1.0025, l[i + 2], l[i + 3], 1.0025);
+  const g = lineGeometry(pts);
   coastLines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: COLORS.coast, transparent: true, opacity: 0.55 }));
   coastLines.visible = !!state.coast;
-  world.add(coastLines);
+  root.add(coastLines);
 }).catch(() => {});
 
 // ---------------------------------------------------------------- layers
@@ -250,7 +372,7 @@ function typicalStep(d) {
 // geometry for a layer: a surface mesh over its whole grid, or for an ocean
 // layer the window over the box and its shell and two sections
 function buildParts(L) {
-  for (const c of [...L.group.children]) { L.group.remove(c); c.geometry.dispose(); if (c.material.map) c.material.map.dispose(); c.material.dispose(); }
+  for (const c of [...L.group.children]) { L.group.remove(c); dropGeometry(c.geometry); if (c.material.map) c.material.map.dispose(); c.material.dispose(); }
   const d = L.ds.desc, e = L.entry, ax = d.axes;
   if (!ax.x || !ax.y) { L.error = "no horizontal axes"; return; }
   let toLonLat = (x, y) => [x, y];
@@ -304,23 +426,22 @@ function buildParts(L) {
     section("m", 0); section("m", nx - 1); section("p", 0); section("p", ny - 1);
     section("m", ci); section("p", rj);
     // the box's rim at the surface and at the deepest edge
-    const rim = [], v3 = new THREE.Vector3();
+    const rim = [];
     for (const r of [1.0015, F.depthRadius(edges[nk], X)]) {
       const ring = [];
       for (let s = 0; s <= 64; s++) ring.push([lonAt(s / 64), latAt(0)]);
       for (let s = 0; s <= 64; s++) ring.push([lonAt(1), latAt(s / 64)]);
       for (let s = 64; s >= 0; s--) ring.push([lonAt(s / 64), latAt(1)]);
       for (let s = 64; s >= 0; s--) ring.push([lonAt(0), latAt(s / 64)]);
-      for (let s = 0; s + 1 < ring.length; s++) for (const q of [ring[s], ring[s + 1]]) { toVec(q[0], q[1], r, v3); rim.push(v3.x, v3.y, v3.z); }
+      for (let s = 0; s + 1 < ring.length; s++) rim.push(ring[s][0], ring[s][1], r, ring[s + 1][0], ring[s + 1][1], r);
     }
-    const rg = new THREE.BufferGeometry();
-    rg.setAttribute("position", new THREE.Float32BufferAttribute(rim, 3));
+    const rg = lineGeometry(rim);
     const rimLines = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: COLORS.box, transparent: true, opacity: 0.6 }));
     for (const m of [shell, ...sections.map((q) => q.mesh)]) { m.userData.layer = L; L.group.add(m); }
     L.group.add(rimLines);
     L.parts = { kind: "volume", w: [wy[0], wy[1], wx[0], wx[1]], k: [0, nk], nk, nx, ny, lev, ci, rj, lonC, latC, z, edges, shellTex, shell, sections };
   }
-  if (!world.children.includes(L.group)) world.add(L.group);
+  if (!root.children.includes(L.group)) root.add(L.group);
   if (L.shown) applyData(L, L.shown.values);
 }
 
@@ -503,6 +624,10 @@ function renderControls() {
   ui.cl.value = state.cl; ui.cp.value = state.cp;
   ui.cut.checked = !!state.cut; ui.coast.checked = !!state.coast;
   ui.step.value = state.step;
+  ui.view.value = state.view; ui.t.value = state.t; ui.t.disabled = state.view === "globe";
+  ui.tOut.textContent = state.view === "globe" ? "" : state.t.toFixed(2);
+  ui.range.value = Math.log10(state.range);
+  ui.rangeOut.textContent = state.range >= 20000 ? "the whole Earth" : `${Math.round(state.range)} km`;
   const V = activeLayers().find((L) => L.entry.kind === "volume" && L.parts);
   if (V) {
     const P = V.parts;
@@ -529,7 +654,7 @@ ui.coast.addEventListener("change", () => { state.coast = ui.coast.checked ? 1 :
 ui.boxGo.addEventListener("click", () => {
   const b = parseBox(ui.box.value);
   if (!b) { ui.status.textContent = "box: west, east, south, north in degrees"; return; }
-  ui.status.textContent = ""; box = b; state.box = ui.box.value.trim(); rebuildVolumes(); show();
+  ui.status.textContent = ""; box = b; state.box = ui.box.value.trim(); relayout(); rebuildVolumes(); show();
 });
 ui.lev.addEventListener("input", () => { state.lev = +ui.lev.value; rebuildVolumes(); });
 ui.zmax.addEventListener("input", () => { ui.zmaxOut.textContent = `${Math.round(10 ** +ui.zmax.value)} m`; });
@@ -537,13 +662,36 @@ ui.zmax.addEventListener("change", () => { state.zmax = +ui.zmax.value; rebuildV
 ui.dz.addEventListener("input", () => { state.dz = +ui.dz.value; rebuildVolumes(); });
 ui.cl.addEventListener("input", () => { state.cl = +ui.cl.value; rebuildVolumes(); });
 ui.cp.addEventListener("input", () => { state.cp = +ui.cp.value; rebuildVolumes(); });
+ui.view.addEventListener("change", () => {
+  state.view = ui.view.value;
+  if (state.view !== "globe" && state.t === 0) state.t = 1;
+  relayout(); state.cam = null; setCamera(defaultCamera()); renderControls(); writeHash();
+});
+ui.t.addEventListener("input", () => { state.t = +ui.t.value; ui.tOut.textContent = state.t.toFixed(2); reblend(); writeHash(); });
+ui.range.addEventListener("input", () => {
+  const km = 10 ** +ui.range.value;
+  state.range = km >= 19900 ? 20000 : Math.round(km);
+  ui.rangeOut.textContent = state.range >= 20000 ? "the whole Earth" : `${state.range} km`;
+});
+ui.range.addEventListener("change", () => { relayout(); writeHash(); });
+ui.centrePick.addEventListener("click", () => {
+  if (!pickAt) { ui.status.textContent = "click the globe or map first"; return; }
+  ui.status.textContent = "";
+  state.clon = +pickAt.lon.toFixed(3); state.clat = +pickAt.lat.toFixed(3);
+  relayout(); state.cam = null; setCamera(defaultCamera()); writeHash();
+});
+ui.centreBox.addEventListener("click", () => { state.clon = state.clat = null; relayout(); state.cam = null; setCamera(defaultCamera()); writeHash(); });
 ui.reset.addEventListener("click", () => { state.cam = null; setCamera(defaultCamera()); writeHash(); });
 
 // ---------------------------------------------------------------- picking
 
 let pickAt = null;
 const marker = new THREE.Mesh(new THREE.SphereGeometry(0.004, 12, 8), new THREE.MeshBasicMaterial({ color: COLORS.pick }));
-marker.visible = false; world.add(marker);
+marker.visible = false; root.add(marker);
+function placeMarker() {
+  const p = pickAt && placePoint(pickAt.lon, pickAt.lat, pickAt.r, marker.position);
+  marker.visible = !!p;
+}
 const ray = new THREE.Raycaster();
 let downAt = null;
 renderer.domElement.addEventListener("pointerdown", (e) => { downAt = [e.clientX, e.clientY]; });
@@ -555,9 +703,17 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   for (const L of activeLayers()) if (L.visible) L.group.traverse((o) => { if (o.isMesh) targets.push(o); });
   if (base) targets.push(base);
   const hit = ray.intersectObjects(targets, false)[0];
-  if (!hit) return;
-  pickAt = { ...fromVec(hit.point), point: hit.point.clone() };
-  marker.position.copy(hit.point); marker.visible = true;
+  if (!hit || !hit.face) return;
+  // back from the picture to the Earth: the hit's barycentric weights in its
+  // triangle as drawn, applied to the triangle's corners on the Earth
+  const geo = hit.object.geometry, pos = geo.attributes.position, llr = geo.userData.llr;
+  const local = hit.object.worldToLocal(hit.point.clone());
+  const cs = [hit.face.a, hit.face.b, hit.face.c], P = cs.map((i) => new THREE.Vector3().fromBufferAttribute(pos, i));
+  const w = new THREE.Triangle(P[0], P[1], P[2]).getBarycoord(local, new THREE.Vector3());
+  const earth = new THREE.Vector3(), q = new THREE.Vector3();
+  cs.forEach((i, k) => earth.add(toVec(llr[3 * i], llr[3 * i + 1], llr[3 * i + 2], q).multiplyScalar(w.getComponent(k))));
+  pickAt = fromVec(earth);
+  placeMarker();
   refreshPick();
 });
 
