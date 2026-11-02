@@ -918,6 +918,55 @@ exaggerated by 10^gx), `dz` (height by 10^dz on top of the scene's
 `z_scale`), `col` (`scene`, `k`, `h`, `s`, `omega`, `conv`), `grat`,
 `globe`, `pick` (triangle), `cam`.
 
+## Time and depth
+
+`fourd.html` puts several time series on one globe on one date: sea ice,
+sea surface temperature and an ocean model, with time and depth treated as
+axes every layer shares. The clock is a date (the middle of the day); each
+layer shows its own nearest time step, so daily sea ice from 1978, daily
+OISST from 1981 and daily Bluelink BRAN from 1993 line up, and a layer with
+nothing near the date says so rather than showing an old field. Step by a
+day, five days, a month or a year, or Play: the next few dates of every
+layer are read ahead into a byte-budgeted cache, and a frame is painted only
+when every layer has its data, so playback never mixes two dates.
+
+The datasets are virtual stores (byte-reference indexes that point into the
+original netCDF files where they are published) built by
+[raad.virtualize](https://github.com/mdsumner/raad.virtualize). The page
+reads each dataset's `flat/arrays.json` for its axes (dims with roles:
+time, vertical with its direction, x and y; coordinates as an affine start
+and step or inline values; scale, offset and fill), opens its Icechunk form
+with icechunk-js, and reads only the chunks it draws with zarrita.js.
+`data/fourd/stores.json` names where the index lives, once (`base`), and
+each dataset by its path under it, its variable, palette and range, and
+what the store does not say (the CRS of the polar stereographic sea ice
+grids). When a group moves to its own home, change `base` or give that
+entry its own; `#base=` overrides it for a session.
+
+Surface layers drape on the globe through the grid's own CRS (longitude and
+latitude, or polar stereographic through proj4js). An ocean layer is read
+over a box (west, east, south, north), every level down to a chosen depth,
+and drawn as a shell at one level, sunk by its depth times the
+exaggeration, the four walls of the box and two sections across it, along a
+meridian and a parallel; surface layers are cut away over the box so it can
+be seen into. A click gives every layer's value there on the date, its cell
+and chunk indices, and for an ocean layer the profile against depth.
+
+A chunk can be read in a browser only if the host of the original file
+allows reads from other sites (CORS). OISST's netCDF on AWS
+(`noaa-cdr-sea-surface-temp-optimum-interpolation-pds`) does, and the
+indexes on source.coop do; for Bluelink BRAN (NCI THREDDS) and the NSIDC
+and Bremen sea ice the page counts reads and failures by host, and "Test
+the data hosts" reads one chunk of every dataset. The synthetic ocean
+(BRAN's 51 depths, a seasonal mixed layer and drifting eddies) needs no
+network. `src/core/fourd.js` holds the axes, the clock, the cache and the
+synthetic ocean, `js/fourd-read.js` the reading; `test/check-fourd.mjs`
+checks them against two published `arrays.json` (in `test/fixtures/fourd`)
+and the registry. Hash keys: `date`, `layers` (ids from the registry),
+`box`, `lev` (shell level), `zmax` (deepest level read, 10^zmax m), `dz`
+(depth exaggeration, 10^dz), `cl`, `cp` (sections across the box, 0 to 1),
+`cut`, `coast`, `step`, `base`, `cam`.
+
 ## Share and embed
 
 The view state lives in the URL hash, so a link reproduces what you see:
