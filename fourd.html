@@ -51,6 +51,23 @@
       <p id="loading" class="hint" role="status"></p>
     </section>
 
+    <section class="embed-keep">
+      <label class="row" for="view"><span>View</span></label>
+      <select id="view" class="wide" aria-label="View">
+        <option value="globe">Globe</option>
+        <option value="aeqd">Map: equidistant from a centre</option>
+        <option value="spilhaus">Map: Spilhaus (the world ocean in a square)</option>
+      </select>
+      <label class="row" for="t"><span>Unfold</span><output id="t-out"></output></label>
+      <input id="t" type="range" min="0" max="1" step="0.005" aria-label="Globe to map">
+      <label class="row" for="range"><span>Horizon: range from the centre</span><output id="range-out"></output></label>
+      <input id="range" type="range" min="2" max="4.302" step="0.005" aria-label="Range from the centre, as a power of ten in km">
+      <div class="buttons">
+        <button id="centre-pick" type="button" class="small">Centre on the picked point</button>
+        <button id="centre-box" type="button" class="small">Centre on the box</button>
+      </div>
+    </section>
+
     <section>
       <label class="row"><span>Layers</span></label>
       <table class="readout" id="layers"><tbody></tbody></table>
@@ -110,6 +127,10 @@
           exaggeration, and two sections through the box along a meridian and a parallel. Decoded windows are
           cached, and the next few dates are read ahead while one is shown, so Play only shows dates that have
           arrived.</p>
+        <p>The globe unfolds onto a map: equidistant from a centre (the box, or a picked point), or Spilhaus,
+          which puts the world ocean in one square. Depth stays depth: on the map it goes down from the plane
+          by the same exaggeration. The horizon keeps only what lies within a range of the centre, on the
+          globe and on the map.</p>
       </details>
     </section>
 
