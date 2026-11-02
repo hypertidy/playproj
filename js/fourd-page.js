@@ -18,6 +18,7 @@ import { PALETTES, rampAt } from "../src/core/palette.js";
 import { loadCoastline } from "./data.js";
 import * as spilhaus from "../src/core/families/spilhaus.js";
 import { makeStage, readParams, hashWriter, shareLinks, oneOf } from "../src/scene/index.js";
+import { hashString } from "../src/core/storecrs.js";
 
 const proj4 = window.proj4;
 const $ = (id) => document.getElementById(id);
@@ -32,12 +33,12 @@ const STEPS = ["day", "5day", "month", "year"];
 
 const defaults = {
   date: "2025-09-15", layers: "oisst-sst,g02202-south,bran-temp", box: "60,90,-70,-45",
-  lev: 30, zmax: 3, dz: 3, cl: 0.5, cp: 0.5, cut: 1, coast: 1, step: "day", base: "", view: "globe", t: 1, range: 20000, clon: null, clat: null, cam: null
+  lev: 30, zmax: 3, dz: 3, cl: 0.5, cp: 0.5, cut: 1, coast: 1, step: "day", base: "", view: "globe", t: 1, range: 20000, clon: null, clat: null, cam: null, iso: ""
 };
 const state = { ...defaults };
 function readHash() {
   const num = (r) => (r === "" || !isFinite(+r) ? undefined : +r);
-  readParams(state, defaults, { date: (r) => (F.parseDay(r) !== null ? r : undefined), layers: String, box: String, base: String, step: oneOf(STEPS, "day"),
+  readParams(state, defaults, { date: (r) => (F.parseDay(r) !== null ? r : undefined), layers: String, box: String, base: String, iso: String, step: oneOf(STEPS, "day"),
     view: oneOf(["globe", "aeqd", "spilhaus"], "globe"), clon: num, clat: num });
   state.t = Math.max(0, Math.min(1, state.t));
   state.range = Math.max(100, Math.min(20000, state.range));
@@ -49,6 +50,20 @@ function readHash() {
 }
 const writeHash = hashWriter(state, defaults);
 readHash();
+
+// how each layer is drawn: "fill" (the default), "lines" (contours only) or
+// "both"; the hash keeps the others as id:mode,id:mode
+const ISO = ["fill", "lines", "both"];
+function isoOf(id) {
+  for (const p of state.iso.split(",")) { const [k, m] = p.split(":"); if (k === id && ISO.includes(m)) return m; }
+  return "fill";
+}
+function setIso(id, mode) {
+  const keep = state.iso.split(",").filter((p) => p && p.split(":")[0] !== id);
+  if (mode !== "fill") keep.push(`${id}:${mode}`);
+  state.iso = keep.join(",");
+  writeHash();
+}
 
 const ui = {
   date: $("date"), dateOut: $("date-out"), dateText: $("date-text"), play: $("play"), back: $("back"), fwd: $("fwd"), step: $("step"),
@@ -226,9 +241,11 @@ function gridGeometry(nu, nv, at) {
   return placedGeometry(llr, idx, 3, uv);
 }
 // line segments from a flat list of [lon, lat, r] pairs
-function lineGeometry(pairs) {
-  const llr = Float32Array.from(pairs);
-  return placedGeometry(llr, Array.from({ length: llr.length / 3 }, (_, i) => i), 2);
+function lineGeometry(pairs, rgb = null) {
+  const llr = pairs instanceof Float32Array ? pairs : Float32Array.from(pairs);
+  const g = placedGeometry(llr, Array.from({ length: llr.length / 3 }, (_, i) => i), 2);
+  if (rgb) g.setAttribute("color", new THREE.BufferAttribute(rgb, 3));
+  return g;
 }
 
 function defaultCamera() {
@@ -279,7 +296,8 @@ function makeTexture(w, h) {
   t.needsUpdate = true;
   return t;
 }
-const cutout = (map) => new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide, alphaTest: 0.5 });
+// fills sit a little behind in depth, so contour lines drawn on them win
+const cutout = (map) => new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide, alphaTest: 0.5, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
 
 // values (row major, w by h) into a texture through the layer's palette;
 // NaN, values below the range when the layer clears them, and cells the mask
@@ -395,7 +413,10 @@ function buildParts(L) {
       const [lon, lat] = toLonLat(ax.x.values[i], ax.y.values[j]);
       centres[(j * nx + i) * 2] = lon === null ? NaN : lon; centres[(j * nx + i) * 2 + 1] = lat === null ? NaN : lat;
     }
-    L.parts = { kind: "surface", w, k: 0, tex, mesh, centres, toLonLat, nx, ny };
+    // contours run through cell centres; the cut hides cells as the fill does
+    const iso = [{ w: nx, h: ny, at: (values, mask) => (i, j) => { const q = j * nx + i; return mask && mask[q] ? NaN : values[q]; },
+      place: (x, y) => [...toLonLat(axisAt(ax.x, x + 0.5), axisAt(ax.y, y + 0.5)), lift + 0.0003] }];
+    L.parts = { kind: "surface", w, k: 0, tex, mesh, centres, toLonLat, nx, ny, fills: [mesh], iso };
   } else {
     if (e.crs) { L.error = "an ocean layer in a projected CRS is not drawn yet"; return; }
     const wy = F.windowOf(ax.y, box[2], box[3]), wx = F.windowOf(ax.x, box[0], box[1], { lon: true });
@@ -439,7 +460,19 @@ function buildParts(L) {
     const rimLines = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: COLORS.box, transparent: true, opacity: 0.6 }));
     for (const m of [shell, ...sections.map((q) => q.mesh)]) { m.userData.layer = L; L.group.add(m); }
     L.group.add(rimLines);
-    L.parts = { kind: "volume", w: [wy[0], wy[1], wx[0], wx[1]], k: [0, nk], nk, nx, ny, lev, ci, rj, lonC, latC, z, edges, shellTex, shell, sections };
+    // contours on the shell and on each section, through cell centres
+    const n = nx * ny, rShell = F.depthRadius(z[lev], X);
+    const iso = [{ w: nx, h: ny, at: (values) => (i, j) => values[lev * n + j * nx + i],
+      place: (x, y) => [axisAt(ax.x, wx[0] + x + 0.5), axisAt(ax.y, wy[0] + y + 0.5), rShell] }];
+    for (const q of sections) {
+      const rv = (y) => rAt((y + 0.5) / nk);
+      if (q.along === "m") iso.push({ w: ny, h: nk, at: (values) => (i, k) => values[k * n + i * nx + q.at],
+        place: (x, y) => [axisAt(ax.x, wx[0] + q.at + 0.5), axisAt(ax.y, wy[0] + x + 0.5), rv(y)] });
+      else iso.push({ w: nx, h: nk, at: (values) => (i, k) => values[k * n + q.at * nx + i],
+        place: (x, y) => [axisAt(ax.x, wx[0] + x + 0.5), axisAt(ax.y, wy[0] + q.at + 0.5), rv(y)] });
+    }
+    L.parts = { kind: "volume", w: [wy[0], wy[1], wx[0], wx[1]], k: [0, nk], nk, nx, ny, lev, ci, rj, lonC, latC, z, edges, shellTex, shell, sections,
+      fills: [shell, ...sections.map((q) => q.mesh)], iso };
   }
   if (!root.children.includes(L.group)) root.add(L.group);
   if (L.shown) applyData(L, L.shown.values);
@@ -458,12 +491,62 @@ function surfaceMask(L) {
 function applyData(L, values) {
   const P = L.parts, e = L.entry;
   if (!P) return;
-  if (P.kind === "surface") { paint(P.tex, values, e, undefined, surfaceMask(L)); return; }
+  if (P.kind === "surface") { const mask = surfaceMask(L); paint(P.tex, values, e, undefined, mask); drawIso(L, values, mask); return; }
   const { nx, ny, nk, lev } = P, n = nx * ny;
   paint(P.shellTex, values, e, (i) => values[lev * n + i]);
   for (const q of P.sections) {
     if (q.along === "m") paint(q.tex, values, e, (i) => { const j = i % ny, k = (i / ny) | 0; return values[k * n + j * nx + q.at]; });
     else paint(q.tex, values, e, (i) => { const x = i % nx, k = (i / nx) | 0; return values[k * n + q.at * nx + x]; });
+  }
+  drawIso(L, values, null);
+}
+
+// Contour lines of a layer (iso mode "lines" or "both"), at the registry's
+// iso_step (or ten steps over the colour range), plus the low end for a
+// layer that clears below it (the ice edge). Lines alone take the palette's
+// colour of their level; over the fill they are dark. The fill meshes stay
+// in place when hidden, so picking still answers.
+function drawIso(L, values, mask) {
+  const P = L.parts, e = L.entry, mode = isoOf(e.id);
+  if (P.isoLines) { L.group.remove(P.isoLines); dropGeometry(P.isoLines.geometry); P.isoLines.material.dispose(); P.isoLines = null; }
+  for (const m of P.fills) m.visible = mode !== "lines";
+  if (mode === "fill") return;
+  const levels = F.isoLevels(e.range, { n: 10, step: e.iso_step ?? null, edge: e.below === "clear" });
+  const stops = PALETTES[e.palette] || PALETTES.viridis, [lo, hi] = e.range;
+  const cols = levels.map((c) => (mode === "both" ? [0.05, 0.06, 0.09] : rampAt(stops, (c - lo) / (hi - lo)).map((x) => x / 255)));
+  const llr = [], rgb = [];
+  for (const s of P.iso) {
+    const { xy, lev } = F.isolines(s.w, s.h, s.at(values, mask), levels);
+    for (let q = 0; q < lev.length; q++) for (const o of [0, 2]) {
+      const p = s.place(xy[4 * q + o], xy[4 * q + o + 1]);
+      llr.push(p[0] ?? NaN, p[1] ?? NaN, p[2]);
+      rgb.push(...cols[lev[q]]);
+    }
+  }
+  if (!llr.length) return;
+  P.isoLines = new THREE.LineSegments(lineGeometry(Float32Array.from(llr), Float32Array.from(rgb)),
+    new THREE.LineBasicMaterial({ vertexColors: true, transparent: mode === "both", opacity: mode === "both" ? 0.8 : 1 }));
+  L.group.add(P.isoLines);
+}
+
+// The same array in gridlook, and in this site's store explorer, at a time
+// step (and level), centred on the view's centre.
+function lookUrls(ds, t, k = null) {
+  if (!ds || !ds.urls) return null;
+  const d = ds.desc, p = { varname: ds.entry.var };
+  if (d.axes.t && t != null) p[`dimIndices_${d.axes.t.dim}`] = t;
+  if (d.axes.z && k) p[`dimIndices_${d.axes.z.dim}`] = k;
+  p.lat = +view.lat0.toFixed(2); p.lon = +view.lon0.toFixed(2);
+  const h = hashString("icechunk+" + ds.urls.icechunk, p);
+  return { gridlook: "https://gridlook.pages.dev/#" + h, store: "./store.html#" + h };
+}
+function lookLinks(parent, urls) {
+  if (!urls) return;
+  for (const [label, href] of [["gridlook", urls.gridlook], ["store", urls.store]]) {
+    const a = document.createElement("a");
+    a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = label;
+    a.title = label === "gridlook" ? "open this array in gridlook" : "open this array in the store explorer";
+    parent.append(" ", a);
   }
 }
 
@@ -596,7 +679,14 @@ function renderLayers() {
       const t2 = document.createElement("tr"), c = document.createElement("td");
       c.colSpan = 2; c.className = "hint"; c.style.textAlign = "left";
       const u = L.entry.units ?? (L.ds ? L.ds.desc.units : "");
-      c.textContent = `colour ${L.entry.range[0]} to ${L.entry.range[1]} ${u}${L.entry.below === "clear" ? ", clear below" : ""}`;
+      c.append(`colour ${L.entry.range[0]} to ${L.entry.range[1]} ${u}${L.entry.below === "clear" ? ", clear below" : ""} `);
+      const sel = document.createElement("select");
+      sel.setAttribute("aria-label", `${L.entry.title}: fill, contour lines or both`);
+      for (const m of ISO) { const o = document.createElement("option"); o.value = m; o.textContent = m === "fill" ? "fill" : m === "lines" ? "lines" : "fill + lines"; sel.append(o); }
+      sel.value = isoOf(L.entry.id);
+      sel.addEventListener("change", () => { setIso(L.entry.id, sel.value); if (L.visible && L.shown) applyData(L, L.shown.values); });
+      c.append(sel);
+      if (L.visible && L.shown) lookLinks(c, lookUrls(L.ds, L.shown.plan.tt.index, L.parts.kind === "volume" ? L.parts.lev : null));
       t2.append(c); ui.layers.append(t2);
     }
   }
@@ -790,7 +880,8 @@ function drawProfile(L, li, lj, kOn) {
 
 ui.probe.addEventListener("click", async () => {
   ui.probe.disabled = true; ui.status.textContent = "reading one chunk from each dataset\u2026";
-  const out = [];
+  const out = document.createElement("ul");
+  out.className = "probe-list";
   for (const e of [...registry.datasets, ...(registry.probe || [])]) {
     if (e.synthetic) continue;
     const t0 = performance.now();
@@ -798,11 +889,14 @@ ui.probe.addEventListener("click", async () => {
       const ds = await R.openDataset(e, baseUrl), d = ds.desc;
       const t = d.axes.t ? d.axes.t.n - 1 : 0;
       await ds.read(t, 0, 0, 1, 0, 1);
-      out.push(`${e.id}: read (${Math.round(performance.now() - t0)} ms)`);
-    } catch (err) { out.push(`${e.id}: not read`); }
+      const li = document.createElement("li");
+      li.append(`${e.id}: read (${Math.round(performance.now() - t0)} ms)`);
+      lookLinks(li, lookUrls(ds, t));
+      out.append(li);
+    } catch (err) { const li = document.createElement("li"); li.textContent = `${e.id}: not read`; li.style.color = "var(--orange)"; out.append(li); }
     renderHosts();
   }
-  ui.status.textContent = out.join("; ");
+  ui.status.replaceChildren(out);
   ui.probe.disabled = false;
 });
 

@@ -274,3 +274,51 @@ export function syntheticOcean({ start = Date.UTC(2024, 0, 1), days = 1096, dx =
   };
   return { desc, read };
 }
+
+// ---------------------------------------------------------------- isolines
+
+// Contour levels for a value range: n even steps across it, ends left out,
+// plus the low end itself when values below it are cleared (so the edge of
+// the drawn field, such as a 15% sea ice edge, is one of the lines).
+export function isoLevels([lo, hi], { n = 10, step = null, edge = false } = {}) {
+  const out = [];
+  if (edge) out.push(lo);
+  if (step) { for (let v = Math.ceil(lo / step) * step; v < hi; v += step) if (v > lo + 1e-12) out.push(+v.toFixed(10)); }
+  else for (let i = 1; i < n; i++) out.push(lo + ((hi - lo) * i) / n);
+  return out;
+}
+
+// Marching squares over a w by h grid of values (get(i, j)) at cell centres:
+// for each level, the segments where the field crosses it, as a flat list of
+// [x0, y0, x1, y1] in cell-centre index units (column i is at x = i), and
+// the level index of each segment. Squares with a missing corner are skipped;
+// a saddle is split by the mean of its four corners.
+export function isolines(w, h, get, levels) {
+  const xy = [], lev = [];
+  const v = new Float32Array(4);
+  for (let j = 0; j + 1 < h; j++) for (let i = 0; i + 1 < w; i++) {
+    v[0] = get(i, j); v[1] = get(i + 1, j); v[2] = get(i + 1, j + 1); v[3] = get(i, j + 1);
+    if (v[0] !== v[0] || v[1] !== v[1] || v[2] !== v[2] || v[3] !== v[3]) continue;
+    const mn = Math.min(v[0], v[1], v[2], v[3]), mx = Math.max(v[0], v[1], v[2], v[3]);
+    for (let L = 0; L < levels.length; L++) {
+      const c = levels[L];
+      if (c < mn || c >= mx) continue;
+      // the crossing on each edge: 0 bottom (0-1), 1 right (1-2), 2 top (2-3), 3 left (3-0)
+      const pts = [];
+      const edge = (a, b, xa, ya, xb, yb) => {
+        if ((v[a] < c) !== (v[b] < c)) { const f = (c - v[a]) / (v[b] - v[a]); pts.push(xa + (xb - xa) * f, ya + (yb - ya) * f); return true; }
+        pts.push(NaN, NaN); return false;
+      };
+      edge(0, 1, i, j, i + 1, j); edge(1, 2, i + 1, j, i + 1, j + 1); edge(2, 3, i + 1, j + 1, i, j + 1); edge(3, 0, i, j + 1, i, j);
+      const on = [0, 1, 2, 3].filter((e) => pts[2 * e] === pts[2 * e]);
+      if (on.length === 2) { xy.push(pts[2 * on[0]], pts[2 * on[0] + 1], pts[2 * on[1]], pts[2 * on[1] + 1]); lev.push(L); }
+      else if (on.length === 4) {
+        // a saddle: pair the edges so the mean's side stays joined
+        const high0 = v[0] >= c, centreHigh = (v[0] + v[1] + v[2] + v[3]) / 4 >= c;
+        const pairs = high0 === centreHigh ? [[0, 1], [2, 3]] : [[0, 3], [1, 2]];
+        for (const [a, b] of pairs) { xy.push(pts[2 * a], pts[2 * a + 1], pts[2 * b], pts[2 * b + 1]); lev.push(L); }
+      }
+    }
+  }
+  return { xy: Float32Array.from(xy), lev: Uint16Array.from(lev) };
+}

@@ -107,8 +107,8 @@
         <button id="reset-view" type="button" class="small">Reset view</button>
       </div>
       <table class="readout" id="hosts"><tbody></tbody></table>
-      <p class="hint">A browser can read a chunk only if the host of the original file allows reads from other sites (CORS). The table counts reads by host as layers load; the button reads one chunk of every dataset.</p>
-      <p id="status" class="status" role="status"></p>
+      <p class="hint">A browser can read a chunk only if the host of the original file allows reads from other sites (CORS). The table counts reads by host as layers load; the button reads one chunk of every dataset, and links each one it reads to <a href="https://gridlook.pages.dev/">gridlook</a> and to the store explorer.</p>
+      <div id="status" class="status" role="status"></div>
     </section>
 
     <section class="about">
@@ -131,6 +131,10 @@
           which puts the world ocean in one square. Depth stays depth: on the map it goes down from the plane
           by the same exaggeration. The horizon keeps only what lies within a range of the centre, on the
           globe and on the map.</p>
+        <p>Each layer can be drawn as its colour fill, as contour lines, or both: lines are traced through
+          the cell centres (marching squares) at the layer's contour step, on surfaces and on the shell and
+          sections of an ocean layer, and a sea ice layer also gets its edge at 15 percent. The links beside a
+          layer open the same array and date in gridlook or the store explorer.</p>
       </details>
     </section>
 

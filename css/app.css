@@ -144,6 +144,8 @@ label.inline { display: flex; gap: 6px; align-items: center; color: var(--muted)
 button:disabled { opacity: 0.5; cursor: default; }
 .status { margin: 6px 0 0; font-size: 12px; color: var(--orange); min-height: 0; }
 .status:empty { display: none; }
+.status .probe-list { list-style: none; margin: 0; padding: 0; color: var(--text); }
+.status .probe-list li { margin: 2px 0; }
 .hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
 .credit {
   position: absolute; right: 8px; bottom: 6px; margin: 0;

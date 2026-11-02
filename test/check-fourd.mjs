@@ -116,5 +116,22 @@ near(F.depthRadius(6371, 1000), 0, 1e-12, "6371 m at x 1000 reaches the centre")
     "https://thredds.nci.org.au/thredds/fileServer/gb6/BRAN/BRAN2023/daily/ocean_temp_2025_09.nc", "remap to public");
 }
 
+// isolines: a cone of values, distance from the middle, gives rings
+{
+  const w = 41, h = 41, get = (i, j) => Math.hypot(i - 20, j - 20);
+  const { xy, lev } = F.isolines(w, h, get, [5, 10]);
+  ok(xy.length === lev.length * 4 && lev.length > 40, `isoline segments ${lev.length}`);
+  let worst = 0;
+  for (let s = 0; s < lev.length; s++) for (const q of [0, 2]) {
+    const r = Math.hypot(xy[4 * s + q] - 20, xy[4 * s + q + 1] - 20);
+    worst = Math.max(worst, Math.abs(r - [5, 10][lev[s]]));
+  }
+  ok(worst < 0.1, `isoline points on their rings (worst ${worst.toFixed(3)})`);
+  ok(F.isolines(2, 2, () => NaN, [1]).xy.length === 0, "missing corners give no lines");
+  const L = F.isoLevels([0.15, 1], { n: 4, edge: true });
+  ok(L.length === 4 && L[0] === 0.15, `levels with the edge ${L}`);
+  ok(F.isoLevels([-2, 30], { step: 5 }).join() === "0,5,10,15,20,25", "levels by step");
+}
+
 console.log(fails ? `${fails} failed` : "fourd: all checks pass");
 process.exit(fails ? 1 : 0);
