@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Time and depth</title>
+<meta name="description" content="Sea ice, sea surface temperature and an ocean model on one globe, on one date: a shared clock over time series, with depth drawn as shells and sections, read in place from virtual stores.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "icechunk-js": "https://cdn.jsdelivr.net/npm/icechunk-js@0.6.0/+esm",
+    "zarrita": "https://cdn.jsdelivr.net/npm/zarrita@0.7.5/+esm",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/fourd-page.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <a id="open-full" class="open-full" href="./fourd.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html">Peeling the orange</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./penguin.html">Penguin datum</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a><a href="./fourd.html" aria-current="page">Time and depth</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="date"><span>Date</span><output id="date-out"></output></label>
+      <input id="date" type="range" min="0" max="1" step="1" aria-label="Date">
+      <div class="buttons">
+        <button id="back" type="button" class="small" aria-label="Step back">&lt;</button>
+        <button id="play" type="button" class="small">Play</button>
+        <button id="fwd" type="button" class="small" aria-label="Step forward">&gt;</button>
+        <select id="step" aria-label="Step">
+          <option value="day">1 day</option>
+          <option value="5day">5 days</option>
+          <option value="month">1 month</option>
+          <option value="year">1 year</option>
+        </select>
+        <input id="date-text" class="token" type="text" size="10" spellcheck="false" aria-label="Date as YYYY-MM-DD">
+      </div>
+      <p id="loading" class="hint" role="status"></p>
+    </section>
+
+    <section>
+      <label class="row"><span>Layers</span></label>
+      <table class="readout" id="layers"><tbody></tbody></table>
+      <div class="toggles">
+        <label><input id="cut" type="checkbox"> Cut surface layers over the ocean box</label>
+        <label><input id="coast" type="checkbox"> Coastline</label>
+      </div>
+    </section>
+
+    <section class="embed-keep">
+      <label class="row"><span>Ocean box (lon, lat)</span></label>
+      <div class="projline">
+        <input id="box" class="token" type="text" spellcheck="false" aria-label="Box: west, east, south, north">
+        <button id="box-go" type="button" class="small">Set</button>
+      </div>
+      <label class="row" for="lev"><span>Shell at depth</span><output id="lev-out"></output></label>
+      <input id="lev" type="range" min="0" max="1" step="1" aria-label="Depth of the shell, as a level">
+      <label class="row" for="zmax"><span>Down to</span><output id="zmax-out"></output></label>
+      <input id="zmax" type="range" min="1" max="3.7" step="0.05" aria-label="Deepest level read, as a power of ten in metres">
+      <label class="row" for="dz"><span>Depth exaggeration</span><output id="dz-out"></output></label>
+      <input id="dz" type="range" min="0" max="3" step="0.05" aria-label="Depth exaggeration, as a power of ten">
+      <label class="row" for="cl"><span>Section along longitude</span><output id="cl-out"></output></label>
+      <input id="cl" type="range" min="0" max="1" step="0.001" aria-label="Longitude of the meridian section, across the box">
+      <label class="row" for="cp"><span>Section along latitude</span><output id="cp-out"></output></label>
+      <input id="cp" type="range" min="0" max="1" step="0.001" aria-label="Latitude of the parallel section, across the box">
+    </section>
+
+    <section>
+      <table class="readout" id="pick-table"><tbody></tbody></table>
+      <canvas id="profile" width="300" height="200" hidden aria-label="Profile against depth at the picked point"></canvas>
+      <p id="pick-hint" class="hint">Click the globe for every layer's value there on this date, its cell and chunk, and the profile against depth for an ocean layer.</p>
+    </section>
+
+    <section>
+      <div class="buttons">
+        <button id="probe" type="button" class="small">Test the data hosts</button>
+        <button id="reset-view" type="button" class="small">Reset view</button>
+      </div>
+      <table class="readout" id="hosts"><tbody></tbody></table>
+      <p class="hint">A browser can read a chunk only if the host of the original file allows reads from other sites (CORS). The table counts reads by host as layers load; the button reads one chunk of every dataset.</p>
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>Every layer is an array with a time axis and, for an ocean model, a depth axis. The clock is a date,
+          and each layer finds its own nearest time step, so daily sea ice from 1978, daily SST from 1981 and a
+          daily ocean model from 1993 line up on one day; a layer with nothing near that date says so.</p>
+        <p>The datasets are virtual stores: byte-reference indexes on source.coop that point into the original
+          netCDF files where they are published. The page reads each one's <code>flat/arrays.json</code> for its
+          axes and units, opens its Icechunk form with <a href="https://github.com/EarthyScience/icechunk-js">icechunk-js</a>,
+          and reads only the chunks it draws with <a href="https://github.com/manzt/zarrita.js">zarrita.js</a>.
+          Where the index lives is named once, in <code>data/fourd/stores.json</code>.</p>
+        <p>Depth is a place, not a slider: for an ocean layer the page reads every level down to a chosen depth
+          over a box, and draws one level as a shell below the surface, sunk by its depth times the
+          exaggeration, and two sections through the box along a meridian and a parallel. Decoded windows are
+          cached, and the next few dates are read ahead while one is shown, so Play only shows dates that have
+          arrived.</p>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

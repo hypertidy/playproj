@@ -1,0 +1,197 @@
+{
+ "format_version": "mdim-refs/0.2",
+ "meta": {
+  "config": "seaice-g02202.sh source-coop.sh",
+  "created": "2026-11-02 04:01:11 UTC",
+  "dataset": "g02202-v6-daily-south",
+  "format_version": "mdim-refs/0.2",
+  "generator": "https://github.com/mdsumner/raad.virtualize.git acf5212",
+  "plan": "plan.vrt"
+ },
+ "dimensions": {
+  "time": {
+   "type": "TEMPORAL"
+  },
+  "x": {
+   "type": "HORIZONTAL_X"
+  },
+  "y": {
+   "type": "HORIZONTAL_Y"
+  }
+ },
+ "arrays": [
+  {
+   "array": "cdr_seaice_conc",
+   "kind": "data",
+   "storage": "referenced",
+   "dims": [
+    "time",
+    "y",
+    "x"
+   ],
+   "shape": [
+    5,
+    332,
+    316
+   ],
+   "chunks": [
+    1,
+    332,
+    316
+   ],
+   "dtype": "|u1",
+   "fill": "255",
+   "codec": {
+    "compressor": {
+     "id": "zlib",
+     "level": 1
+    },
+    "filters": [
+     {
+      "id": "shuffle",
+      "elementsize": 1
+     }
+    ]
+   },
+   "attrs": {
+    "standard_name": "sea_ice_area_fraction",
+    "coverage_content_type": "image",
+    "long_name": "NOAA/NSIDC CDR of Passive Microwave Sea Ice Concentration",
+    "ancillary_variables": "cdr_seaice_conc_stdev cdr_seaice_conc_qa_flag",
+    "valid_range": [
+     0,
+     100
+    ],
+    "coordinates": "time y x",
+    "units": "1",
+    "_FillValue": 255,
+    "scale_factor": 0.01
+   },
+   "affine": null,
+   "values": null
+  },
+  {
+   "array": "time",
+   "kind": "coord",
+   "storage": "inline",
+   "dims": [
+    "time"
+   ],
+   "shape": [
+    5
+   ],
+   "chunks": [
+    5
+   ],
+   "dtype": "<f8",
+   "fill": null,
+   "codec": null,
+   "attrs": {
+    "standard_name": "time",
+    "long_name": "ANSI date",
+    "axis": "T",
+    "coverage_content_type": "coordinate",
+    "valid_range": [
+     0,
+     30000
+    ],
+    "calendar": "standard",
+    "units": "days since 1970-01-01"
+   },
+   "affine": null,
+   "values": [
+    3219,
+    3220,
+    3221,
+    20750,
+    20751
+   ]
+  },
+  {
+   "array": "x",
+   "kind": "coord",
+   "storage": "affine",
+   "dims": [
+    "x"
+   ],
+   "shape": [
+    316
+   ],
+   "chunks": [
+    316
+   ],
+   "dtype": "<f8",
+   "fill": null,
+   "codec": null,
+   "attrs": {
+    "standard_name": "projection_x_coordinate",
+    "long_name": "x coordinate of projection",
+    "axis": "X",
+    "valid_range": [
+     -3950000,
+     3950000
+    ],
+    "coverage_content_type": "coordinate",
+    "units": "meters",
+    "_FillValue": "NaN"
+   },
+   "affine": {
+    "start": -3937500,
+    "step": 25000
+   },
+   "values": null
+  },
+  {
+   "array": "y",
+   "kind": "coord",
+   "storage": "affine",
+   "dims": [
+    "y"
+   ],
+   "shape": [
+    332
+   ],
+   "chunks": [
+    332
+   ],
+   "dtype": "<f8",
+   "fill": null,
+   "codec": null,
+   "attrs": {
+    "standard_name": "projection_y_coordinate",
+    "long_name": "y coordinate of projection",
+    "axis": "Y",
+    "valid_range": [
+     -3950000,
+     4350000
+    ],
+    "coverage_content_type": "coordinate",
+    "units": "meters",
+    "_FillValue": "NaN"
+   },
+   "affine": {
+    "start": 4337500,
+    "step": -25000
+   },
+   "values": null
+  }
+ ],
+ "remap": [
+  {
+   "target": "gdal",
+   "prefix": "/rdsi/PUBLIC/raad/data/",
+   "replacement": "/vsicurl/https://"
+  },
+  {
+   "target": "public",
+   "prefix": "/rdsi/PUBLIC/raad/data/",
+   "replacement": "https://"
+  },
+  {
+   "target": "public",
+   "prefix": "/vsicurl/https://",
+   "replacement": "https://"
+  }
+ ],
+ "note": "trimmed for the test: the time axis keeps its first three and last two values"
+}

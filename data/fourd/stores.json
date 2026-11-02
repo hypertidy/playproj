@@ -1,0 +1,25 @@
+{
+  "about": "Datasets for the 4D page. base is the one place the index's home is named: when a group moves to its own repository, change base, or give that entry its own base. A #base= hash key overrides it for a session.",
+  "base": "https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/ausantarctic/ausantarctic-scratch",
+  "datasets": [
+    { "id": "oisst-sst", "title": "OISST sea surface temperature", "path": "oisst/oisst-v2.1-daily", "var": "sst",
+      "kind": "surface", "palette": "viridis", "range": [-2, 30], "lift": 0 },
+    { "id": "oisst-ice", "title": "OISST sea ice concentration", "path": "oisst/oisst-v2.1-daily", "var": "ice",
+      "kind": "surface", "units": "fraction", "palette": "ice", "range": [0.15, 1], "below": "clear", "lift": 2 },
+    { "id": "g02202-south", "title": "NSIDC CDR sea ice, south (25 km)", "path": "seaice/g02202-v6-daily-south", "var": "cdr_seaice_conc",
+      "kind": "surface", "units": "fraction", "crs": "+proj=stere +lat_0=-90 +lat_ts=-70 +lon_0=0 +k=1 +x_0=0 +y_0=0 +a=6378273 +b=6356889.449 +units=m +no_defs",
+      "crs_note": "EPSG:3412, assumed: the store has no grid mapping", "palette": "ice", "range": [0.15, 1], "valid": [0, 1], "below": "clear", "lift": 3 },
+    { "id": "g02202-north", "title": "NSIDC CDR sea ice, north (25 km)", "path": "seaice/g02202-v6-daily-north", "var": "cdr_seaice_conc",
+      "kind": "surface", "units": "fraction", "crs": "+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 +k=1 +x_0=0 +y_0=0 +a=6378273 +b=6356889.449 +units=m +no_defs",
+      "crs_note": "EPSG:3411, assumed: the store has no grid mapping", "palette": "ice", "range": [0.15, 1], "valid": [0, 1], "below": "clear", "lift": 3 },
+    { "id": "bran-temp", "title": "Bluelink BRAN potential temperature", "path": "bluelink/bluelink-daily-temp", "var": "temp",
+      "kind": "volume", "palette": "viridis", "range": [-2, 30] },
+    { "id": "bran-salt", "title": "Bluelink BRAN salinity", "path": "bluelink/bluelink-daily-salt", "var": "salt",
+      "kind": "volume", "palette": "ocean", "range": [33.8, 35.2] },
+    { "id": "synthetic", "title": "Synthetic ocean (no network)", "synthetic": true,
+      "kind": "volume", "palette": "viridis", "range": [0, 12] }
+  ],
+  "probe": [
+    { "id": "amsr2-south", "title": "Bremen ASI AMSR2 sea ice, south (3.125 km)", "path": "seaice/asi-amsr2-v5.4-daily-south", "var": "z" }
+  ]
+}

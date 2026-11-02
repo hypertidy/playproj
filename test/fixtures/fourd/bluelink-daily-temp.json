@@ -1,0 +1,189 @@
+{
+  "format_version": "mdim-refs/0.2",
+  "meta": {
+    "config": "bluelink.sh",
+    "created": "2026-10-28 04:20:23 UTC",
+    "dataset": "bluelink-daily-temp",
+    "format_version": "mdim-refs/0.2",
+    "generator": "https://github.com/mdsumner/raad.virtualize.git 19f31e3",
+    "plan": "plan.vrt"
+  },
+  "dimensions": {
+    "Time": {
+      "type": "TEMPORAL"
+    },
+    "st_ocean": {
+      "type": "VERTICAL",
+      "direction": "DOWN"
+    },
+    "xt_ocean": {
+      "type": "HORIZONTAL_X"
+    },
+    "yt_ocean": {
+      "type": "HORIZONTAL_Y"
+    }
+  },
+  "arrays": [
+    {
+      "array": "temp",
+      "kind": "data",
+      "storage": "referenced",
+      "dims": ["Time", "st_ocean", "yt_ocean", "xt_ocean"],
+      "shape": [12265, 51, 1500, 3600],
+      "chunks": [1, 1, 300, 300],
+      "dtype": "<i2",
+      "fill": "-32768",
+      "codec": {
+        "compressor": {
+          "id": "zlib",
+          "level": 1
+        },
+        "filters": [
+          {
+            "id": "shuffle",
+            "elementsize": 2
+          }
+        ]
+      },
+      "attrs": {
+        "long_name": "Potential temperature",
+        "valid_range": [
+          -32767,
+          32767
+        ],
+        "packing": 4,
+        "cell_methods": "time: mean",
+        "time_avg_info": "average_T1,average_T2,average_DT",
+        "coordinates": "geolon_t geolat_t",
+        "standard_name": "sea_water_potential_temperature",
+        "units": "degrees C",
+        "_FillValue": -32768,
+        "scale_factor": 0.0077822199091315269,
+        "add_offset": 245
+      },
+      "affine": null,
+      "values": null,
+      "summary": {
+        "chunks": 37530900,
+        "present": 37530900,
+        "absent": 0,
+        "bytes": 2051070553942
+      }
+    },
+    {
+      "array": "Time",
+      "kind": "coord",
+      "storage": "affine",
+      "dims": ["Time"],
+      "shape": [12265],
+      "chunks": [12265],
+      "dtype": "<f8",
+      "fill": null,
+      "codec": null,
+      "attrs": {
+        "long_name": "Time",
+        "cartesian_axis": "T",
+        "calendar_type": "GREGORIAN",
+        "calendar": "GREGORIAN",
+        "bounds": "Time_bounds",
+        "units": "days since 1979-01-01 00:00:00"
+      },
+      "affine": {
+        "start": 5114.5,
+        "step": 1
+      },
+      "values": null
+    },
+    {
+      "array": "st_ocean",
+      "kind": "coord",
+      "storage": "inline",
+      "dims": ["st_ocean"],
+      "shape": [51],
+      "chunks": [51],
+      "dtype": "<f8",
+      "fill": null,
+      "codec": null,
+      "attrs": {
+        "long_name": "tcell zstar depth",
+        "cartesian_axis": "Z",
+        "positive": "down",
+        "edges": "st_edges_ocean",
+        "units": "meters"
+      },
+      "affine": null,
+      "values": [2.5, 7.5, 12.5, 17.515390396118164, 22.667020797729492, 28.169380187988281, 34.218006134033203, 40.954975128173828, 48.454975128173828, 56.718006134033203, 65.669380187988281, 75.167022705078125, 85.015388488769531, 95, 105, 115, 125, 135, 145, 155, 165, 175, 185, 195, 205.18989562988281, 217.05448913574219, 233.19432067871094, 255.88423156738281, 286.60897827148438, 325.88421630859375, 373.1943359375, 427.05447387695312, 485.18991088867188, 545.5111083984375, 610.4156494140625, 685.9267578125, 775.9267578125, 880.4156494140625, 995.5111083984375, 1115.3133544921875, 1238.3538818359375, 1368.157470703125, 1507.73388671875, 1658.157470703125, 1818.3538818359375, 1985.3133544921875, 2165.18017578125, 2431.10107421875, 2894.841796875, 3603.10107421875, 4509.18017578125]
+    },
+    {
+      "array": "xt_ocean",
+      "kind": "coord",
+      "storage": "affine",
+      "dims": ["xt_ocean"],
+      "shape": [3600],
+      "chunks": [3600],
+      "dtype": "<f8",
+      "fill": null,
+      "codec": null,
+      "attrs": {
+        "long_name": "tcell longitude",
+        "cartesian_axis": "X",
+        "domain_decomposition": [
+          1,
+          3600,
+          1,
+          1800
+        ],
+        "units": "degrees_E"
+      },
+      "affine": {
+        "start": 0.05000000074505806,
+        "step": 0.10000000369999582
+      },
+      "values": null
+    },
+    {
+      "array": "yt_ocean",
+      "kind": "coord",
+      "storage": "affine",
+      "dims": ["yt_ocean"],
+      "shape": [1500],
+      "chunks": [1500],
+      "dtype": "<f8",
+      "fill": null,
+      "codec": null,
+      "attrs": {
+        "long_name": "tcell latitude",
+        "cartesian_axis": "Y",
+        "domain_decomposition": [
+          1,
+          1500,
+          1,
+          150
+        ],
+        "units": "degrees_N"
+      },
+      "affine": {
+        "start": -74.949996948242188,
+        "step": 0.099999998091060582
+      },
+      "values": null
+    }
+  ],
+  "remap": [
+    {
+      "target": "gdal",
+      "prefix": "/g/data/gb6/",
+      "replacement": "/vsicurl/https://thredds.nci.org.au/thredds/fileServer/gb6/"
+    },
+    {
+      "target": "public",
+      "prefix": "/g/data/gb6/",
+      "replacement": "https://thredds.nci.org.au/thredds/fileServer/gb6/"
+    },
+    {
+      "target": "public",
+      "prefix": "/vsicurl/https://",
+      "replacement": "https://"
+    }
+  ]
+}
