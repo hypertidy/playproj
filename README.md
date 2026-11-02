@@ -951,6 +951,12 @@ exaggeration, the four walls of the box and two sections across it, along a
 meridian and a parallel; surface layers are cut away over the box so it can
 be seen into. A click gives every layer's value there on the date, its cell
 and chunk indices, and for an ocean layer the profile against depth.
+Each layer draws as its colour fill, as contour lines, or both: marching
+squares through the cell centres at the registry's `iso_step` (a sea ice
+layer also gets its edge, the low end of its range), on surfaces and on an
+ocean layer's shell and sections. Each shown layer, and each dataset "Test
+the data hosts" reads, links to the same array, date and level in
+[gridlook](https://gridlook.pages.dev/) and in the store explorer.
 
 A chunk can be read in a browser only if the host of the original file
 allows reads from other sites (CORS). OISST's netCDF on AWS
@@ -965,7 +971,8 @@ checks them against two published `arrays.json` (in `test/fixtures/fourd`)
 and the registry. Hash keys: `date`, `layers` (ids from the registry),
 `box`, `lev` (shell level), `zmax` (deepest level read, 10^zmax m), `dz`
 (depth exaggeration, 10^dz), `cl`, `cp` (sections across the box, 0 to 1),
-`cut`, `coast`, `step`, `base`, `cam`.
+`cut`, `coast`, `step`, `base`, `cam`, `iso` (layers drawn as `lines` or
+`both`, as `id:mode,id:mode`).
 
 ## Share and embed
 
