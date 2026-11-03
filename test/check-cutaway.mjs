@@ -74,8 +74,29 @@ const nd = (v) => (v === -9999 ? NaN : v);
   ok(two.length === 2 && two[0].join() === "178,-83.6,180,-77.6" && two[1].join() === "-180,-83.6,-150,-77.6", `across the antimeridian ${JSON.stringify(two)}`);
 }
 
+// sites, the frame, the curved block and the bare side
+{
+  const f = C.lineFrame([0, 0], [1000, 0]);
+  const q = C.frameOf(f, [400, -250]);
+  ok(q.s === 400 && q.t === -250, `frame of a point ${JSON.stringify(q)}`);
+  const both = C.blockOf(f, 300, 0);
+  ok(both.t0 === -300 && both.t1 === 300 && both.box.join() === "0,-300,1000,300", `both sides ${both.box}`);
+  ok(C.place(2000, -500, 300).join() === "2,0.3,0.5", "flat placement");
+  const c = C.place(5000, 0, 0, { curve: true, cs: 5000, ct: 0 });
+  ok(c.join() === "5,0,0", `the centre stays put ${c}`);
+  // a quarter of the way round the Earth from the centre drops by R
+  const d = Math.PI / 2 * C.R, p = C.place(d, 0, 0, { curve: true });
+  near(p[0], C.R / 1000, 1e-6, "a quarter turn out"); near(p[1], -C.R / 1000, 1e-6, "a quarter turn down");
+  // 500 km from the centre drops by about d^2 / 2R
+  near(C.place(500e3, 0, 0, { curve: true })[1], -(500e3 ** 2) / (2 * C.R) / 1000, 0.05, "the drop at 500 km");
+  const g = C.bare(C.layer(1437, 197, 1240, 1));
+  ok(g.ice === 0 && g.top === 1240 && g.wasIce && g.water === null, `bare ${JSON.stringify(g)}`);
+  ok(C.bare(C.layer(NaN, NaN, -588, NaN)).kind === "sea", "the sea stays the sea");
+  ok(C.SITES.every((x) => x.ll[1] < -60) && C.PRESETS.find((x) => x.key === "dcn").site === "dcn", "sites");
+}
+
 ok(C.autoExaggeration(700000, 3000) === 25, `auto exaggeration ${C.autoExaggeration(700000, 3000)}`);
-ok(C.PRESETS.every((p) => p.a[1] < -60 && p.b[1] < -60), "presets in the south");
+ok(C.PRESETS.every((p) => p.a[1] < -50 && p.b[1] < -50), "presets in the south");
 
 console.log(fails ? `${fails} failed` : "cutaway: all checks pass");
 process.exit(fails ? 1 : 0);

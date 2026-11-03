@@ -26,16 +26,32 @@ const INK = { rock: "#7a6552", water: "#1d5f9e", ice: "#e3f0fb", sky: "#05070d",
 
 // ---------------------------------------------------------------- state
 
-const defaults = { at: "amery", a: "", b: "", w: 120, side: 1, ve: 0, ice: "solid", rema: 1, gebco: 1, unc: 1, cam: null };
+// w, side, curve and site left empty take the preset's own (or the usual)
+const defaults = { at: "amery", a: "", b: "", w: 0, side: "", curve: "", site: "", ve: 0, ice: "solid", rema: 1, gebco: 1, unc: 1, cam: null };
 const state = { ...defaults };
 const lonlat = (s) => { const v = String(s).split(",").map(Number); return v.length === 2 && v.every(isFinite) && v[1] < -50 && v[1] >= -90 ? s : undefined; };
-readParams(state, defaults, { at: oneOf(C.PRESETS.map((p) => p.key), "amery"), a: lonlat, b: lonlat, ice: oneOf(["solid", "glass", "off"], "solid") });
-state.w = Math.max(10, Math.min(600, state.w));
-state.side = state.side < 0 ? -1 : 1;
+readParams(state, defaults, {
+  at: oneOf(C.PRESETS.map((p) => p.key), "amery"), a: lonlat, b: lonlat, ice: oneOf(["solid", "glass", "off"], "solid"),
+  side: oneOf(["1", "-1", "0"], ""), curve: oneOf(["flat", "earth"], ""),
+  site: (s) => (s === "none" || C.SITES.some((x) => x.key === s) || lonlat(s) ? s : undefined)
+});
+state.w = state.w ? Math.max(10, Math.min(3000, state.w)) : 0;
 state.ve = Math.max(0, Math.min(500, state.ve));
 const writeHash = hashWriter(state, defaults);
 
 const preset = () => C.PRESETS.find((p) => p.key === state.at) || C.PRESETS[0];
+const widthKm = () => state.w || preset().w || 120;
+const sideOf = () => (state.side !== "" ? +state.side : preset().side ?? 1);
+const curved = () => (state.curve || preset().curve || "flat") === "earth";
+// the drill site: a named site, a typed longitude,latitude, or the preset's
+function siteOf() {
+  const k = state.site || preset().site || "none";
+  if (k === "none") return null;
+  const named = C.SITES.find((x) => x.key === k);
+  if (named) return { key: k, label: named.label, short: named.label.split(" (")[0], ll: named.ll };
+  const ll = k.split(",").map(Number);
+  return { key: k, label: `${ll[1].toFixed(3)}${DEG}, ${ll[0].toFixed(3)}${DEG}`, short: "site", ll };
+}
 const ends = () => {
   const p = preset();
   const a = state.a ? state.a.split(",").map(Number) : p.a, b = state.b ? state.b.split(",").map(Number) : p.b;
@@ -92,6 +108,19 @@ async function readBox(levels, box, px, nodata, max = 1600) {
   return g;
 }
 
+// A drill site at Bedmap3's full resolution: every array in a small window
+// round it.
+async function readSite(site, f) {
+  const p = toXY(site.ll[0], site.ll[1]), box = [p[0] - 2000, p[1] - 2000, p[0] + 2000, p[1] + 2000];
+  const v = {};
+  await Promise.all([...C.SOURCES.bedmap.arrays, "thickness_uncertainty"].map(async (a) => {
+    const w = await readBox(await openCog(C.SOURCES.bedmap.url(a)), box, 500, C.SOURCES.bedmap.nodata);
+    v[a] = a === "mask" ? C.nearest(w, p[0], p[1]) : C.sample(w, p[0], p[1]);
+  }));
+  const l = C.layer(v.surface_topography, v.ice_thickness, v.bed_topography, v.mask);
+  return { ...site, p, ...C.frameOf(f, p), l, unc: v.bed_uncertainty, hunc: v.thickness_uncertainty };
+}
+
 let geoid = null;
 async function loadGeoid() {
   if (!geoid) geoid = fetch(new URL("../data/geoid-egm2008-1deg.bin", import.meta.url)).then((r) => r.arrayBuffer()).then((b) => GE.fromInt16(b));
@@ -106,7 +135,8 @@ let building = 0;
 async function build() {
   const ticket = ++building;
   const { A, B } = ends();
-  const f = C.lineFrame(A, B), blk = C.blockOf(f, state.w * 1000, state.side);
+  const W = widthKm() * 1000, side = sideOf();
+  const f = C.lineFrame(A, B), blk = C.blockOf(f, W, side);
   const req0 = ledger.req, b0 = ledger.bytes, t0 = performance.now();
   setStatus("Reading Bedmap3...");
   try {
@@ -122,23 +152,28 @@ async function build() {
       C.sample(bedmap.bed_topography, x, y), C.nearest(bedmap.mask, x, y));
     const rows = C.samplesAlong(f, N).map((r) => ({ ...r, l: layerAt(r.p), unc: C.sample(bedmap.bed_uncertainty, r.p[0], r.p[1]), ll: toLL(r.p[0], r.p[1]) }));
     // the block's grid
-    const nu = Math.max(40, Math.min(220, Math.round(f.L / res))), nv = Math.max(8, Math.min(120, Math.round((state.w * 1000) / res)));
+    // the block's grid; with the block on both sides of the line, the ice
+    // comes off the right-hand side
+    const span = Math.abs(blk.t1 - blk.t0);
+    const nu = Math.max(40, Math.min(300, Math.round(f.L / res))), nv = Math.max(8, Math.min(300, Math.round(span / res)));
     const grid = [];
     for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
-      const s = (f.L * i) / nu, t = (state.w * 1000 * state.side * j) / nv;
-      grid.push({ s, t, l: layerAt(C.at(f, s, t)) });
+      const s = (f.L * i) / nu, t = blk.t0 + ((blk.t1 - blk.t0) * j) / nv, l = layerAt(C.at(f, s, t));
+      grid.push({ s, t, l: side === 0 && t < 0 ? C.bare(l) : l });
     }
     const all = rows.map((r) => r.l).concat(grid.map((g) => g.l));
     const floor = C.floorOf(all);
     let top = 0;
     for (const l of all) if (l.top === l.top && l.top > top) top = l.top;
     top = Math.ceil((top + 200) / 100) * 100;
-    current = { f, blk, rows, grid, nu, nv, floor, top, res, N, levels: { bedmap: bedmap.bed_topography.level }, cost: null };
+    current = { f, blk, rows, grid, nu, nv, floor, top, res, N, side, curve: curved(), levels: { bedmap: bedmap.bed_topography.level }, cost: null, site: null };
     drawAll();
     // REMA and GEBCO along the section, after the first picture
     const lineBox = [Math.min(A[0], B[0]), Math.min(A[1], B[1]), Math.max(A[0], B[0]), Math.max(A[1], B[1])];
     const spacing = f.L / N;
     const extras = [];
+    const site = siteOf();
+    if (site) extras.push(readSite(site, f).then((v) => { current.site = v; }).catch((e) => { current.siteErr = e.message || String(e); }));
     if (state.rema) extras.push((async () => {
       setStatus("Reading REMA...");
       const [L, g] = await Promise.all([remaLevels(), loadGeoid()]);
@@ -164,7 +199,7 @@ async function build() {
     if (ticket !== building) return;
     current.cost = { req: ledger.req - req0, bytes: ledger.bytes - b0, ms: performance.now() - t0 };
     setStatus("");
-    drawSection(); renderReadout();
+    drawSection(); drawBlock(); drawMap(); renderReadout();
   } catch (e) {
     if (ticket === building) setStatus(`The read failed: ${e.message || e}`);
   }
@@ -256,6 +291,13 @@ function drawSection() {
   const S = C.summary(rows);
   g.strokeStyle = INK.ground; g.lineWidth = 1.2 * k;
   for (const s of S.grounding) { g.beginPath(); g.moveTo(X(s), m.t); g.lineTo(X(s), H - m.b); g.stroke(); }
+  // the drill site, where it lies near the line
+  const st = current.site;
+  if (st && Math.abs(st.t) < Math.max(20000, 0.03 * f.L) && st.s >= 0 && st.s <= f.L) {
+    g.strokeStyle = "#ff3b3b"; g.lineWidth = 2 * k;
+    g.beginPath(); g.moveTo(X(st.s), Y(st.l.top === st.l.top ? st.l.top + (top - floor) * 0.08 : top)); g.lineTo(X(st.s), Y(st.l.bed === st.l.bed ? st.l.bed : floor)); g.stroke();
+    g.fillStyle = "#ff8080"; g.textAlign = "center"; g.fillText(st.short, X(st.s), m.t + 10 * k);
+  }
   // the vertical exaggeration as drawn
   const ve = ((f.L / (W - m.l - m.r)) / ((top - floor) / (H - m.t - m.b)));
   g.textAlign = "left"; g.fillStyle = INK.text;
@@ -339,6 +381,12 @@ function drawMap() {
     const [x, y] = P(C.at(current.f, hoverS, 0));
     g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill();
   }
+  const site = siteOf();
+  if (site) {
+    const [x, y] = P(toXY(site.ll[0], site.ll[1]));
+    g.fillStyle = "#ff3b3b"; g.strokeStyle = "#fff"; g.lineWidth = 1;
+    g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill(); g.stroke();
+  }
 }
 // two clicks: the first sets A, the second B
 let pending = null;
@@ -367,9 +415,9 @@ const pin = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.V
 pin.visible = false; scene.add(pin);
 
 const ve = () => (state.ve > 0 ? state.ve : current ? C.autoExaggeration(current.f.L, current.top - current.floor) : 25);
-// the block's frame: x along the line (km), z off it (km, the block on
-// the far side from where the camera starts), y up (km, exaggerated)
-const posOf = (s, t, m) => [s / 1000, C.zOf(m, ve()), -t / 1000];
+// the block's frame: x along the line (km), z off it (km, the left side
+// towards -z), y up (km, exaggerated); flat, or bent over the Earth
+const posOf = (s, t, m) => C.place(s, t, m * ve(), { curve: current.curve, cs: current.f.L / 2, ct: (current.blk.t0 + current.blk.t1) / 2 });
 
 function clearBlock() {
   for (const o of [...block.children]) {
@@ -417,15 +465,24 @@ function face(rows, s0, t0, s1, t1) {
   paintBands(g, rr, floor, top, (d) => (d / len) * cv.width, (z) => ((top - z) / (top - floor)) * cv.height);
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const a = posOf(s0, t0, floor), b = posOf(s1, t1, floor), c = posOf(s1, t1, top), d = posOf(s0, t0, top);
+  // a strip, bottom and top at each step, so a curved block bends with it
+  const n = current.curve ? 96 : 1, pos = [], uv = [], idx = [];
+  for (let q = 0; q <= n; q++) {
+    const u = q / n, s = s0 + (s1 - s0) * u, t = t0 + (t1 - t0) * u;
+    pos.push(...posOf(s, t, floor), ...posOf(s, t, top));
+    uv.push(u, 0, u, 1);
+    if (q) idx.push(2 * q - 2, 2 * q, 2 * q + 1, 2 * q - 2, 2 * q + 1, 2 * q - 1);
+  }
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(Float32Array.from([...a, ...b, ...c, ...d]), 3));
-  geo.setAttribute("uv", new THREE.BufferAttribute(Float32Array.of(0, 0, 1, 0, 1, 1, 0, 1), 2));
-  geo.setIndex([0, 1, 2, 0, 2, 3]);
+  geo.setAttribute("position", new THREE.BufferAttribute(Float32Array.from(pos), 3));
+  geo.setAttribute("uv", new THREE.BufferAttribute(Float32Array.from(uv), 2));
+  geo.setIndex(idx);
   block.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide })));
 }
 
 function bedColour(l, h) {
+  // where the ice was taken off, as the capvis renders had it
+  if (l.wasIce) return [0.4, 0.29, 0.2];
   if (h < 0) { const d = Math.max(0, Math.min(1, -h / 3000)); return [0.35 - 0.25 * d, 0.5 - 0.3 * d, 0.62 - 0.25 * d]; }
   const u = Math.max(0, Math.min(1, h / 3000));
   return [0.48 + 0.3 * u, 0.4 + 0.3 * u, 0.32 + 0.3 * u];
@@ -434,7 +491,7 @@ function bedColour(l, h) {
 function drawBlock() {
   clearBlock();
   if (!current) return;
-  const { grid, nu, nv, rows, f } = current, W = state.w * 1000 * state.side;
+  const { grid, nu, nv, rows, f, blk } = current;
   // the bed, everywhere
   surface((l) => l.bed, bedColour, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
   // the sea's surface over open water
@@ -449,18 +506,35 @@ function drawBlock() {
   // others from the block's grid
   const edge = (pick) => grid.filter(pick).map((g) => ({ s0: g.s, t0: g.t, l: g.l }));
   face(rows.map((r) => ({ s0: r.s, t0: 0, l: r.l })), 0, 0, f.L, 0);
-  face(edge((g, k) => Math.floor(k / (nu + 1)) === nv), 0, W, f.L, W);
-  face(edge((g, k) => k % (nu + 1) === 0), 0, 0, 0, W);
-  face(edge((g, k) => k % (nu + 1) === nu), f.L, 0, f.L, W);
+  face(edge((g, k) => Math.floor(k / (nu + 1)) === nv), 0, blk.t1, f.L, blk.t1);
+  if (blk.t0 !== 0) face(edge((g, k) => Math.floor(k / (nu + 1)) === 0), 0, blk.t0, f.L, blk.t0);
+  face(edge((g, k) => k % (nu + 1) === 0), 0, blk.t0, 0, blk.t1);
+  face(edge((g, k) => k % (nu + 1) === nu), f.L, blk.t0, f.L, blk.t1);
+  drill();
   placePin();
+}
+
+// the drill: a red rod from the bed up through the surface, as thick as a
+// few hundredths of a percent of the block
+function drill() {
+  const st = current.site;
+  if (!st || st.l.bed !== st.l.bed) return;
+  const up = st.l.top === st.l.top ? st.l.top : 0, over = (current.top - current.floor) * 0.15;
+  const a = new THREE.Vector3(...posOf(st.s, st.t, st.l.bed)), b = new THREE.Vector3(...posOf(st.s, st.t, up + over));
+  const len = a.distanceTo(b), r = Math.max(current.f.L, Math.abs(current.blk.t1 - current.blk.t0)) / 1000 * 0.0025;
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 12), new THREE.MeshBasicMaterial({ color: 0xff2a2a }));
+  rod.position.copy(a).add(b).multiplyScalar(0.5);
+  rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+  block.add(rod);
 }
 
 function defaultCamera() {
   if (!current) return [0, 200, 800, 0, 0, 0];
-  const L = current.f.L / 1000, w = state.w * state.side, z = C.zOf((current.top + current.floor) / 2, ve());
-  // in front of the cut face, a little above it and towards A
-  const back = Math.max(L, Math.abs(w)) * 0.8;
-  return [L * 0.35, z + back * 0.45, state.side * back * 0.9, L / 2, z, -w / 2];
+  const { blk } = current, L = current.f.L / 1000, w0 = blk.t0 / 1000, w1 = blk.t1 / 1000, z = C.zOf((current.top + current.floor) / 2, ve());
+  // in front of the cut face (from the bare side for a block on both
+  // sides), a little above it and towards A
+  const back = Math.max(L, Math.abs(w1 - w0)) * 1.1, toward = current.side === 0 ? 1 : current.side;
+  return [L * 0.35, z + back * 0.45, toward * back * 0.9 - (w0 + w1) / 2 + (current.side === 0 ? back * 0.3 : 0), L / 2, z, -(w0 + w1) / 2];
 }
 
 function placePin() {
@@ -489,6 +563,13 @@ function renderReadout() {
   row("Deepest bed", Number.isFinite(S.minBed) ? `${S.minBed.toFixed(0)} m` : "none");
   if (S.maxCavity) row("Deepest cavity", `${S.maxCavity.toFixed(0)} m of water under the shelf`);
   row("Grounding lines", S.grounding.length ? S.grounding.map((s) => `${(s / 1000).toFixed(0)} km`).join(", ") : "none crossed");
+  const st = current.site;
+  if (st) {
+    const l = st.l, fmt = (v, u = "") => (v === v ? `${v.toFixed(0)}${u}` : "no data");
+    row(st.short, `${st.ll[1].toFixed(3)}${DEG}, ${st.ll[0].toFixed(3)}${DEG}, ${(Math.abs(st.t) / 1000).toFixed(1)} km off the line at ${(st.s / 1000).toFixed(0)} km`);
+    row(`${st.short}: ice`, `${fmt(l.ice)}${st.hunc === st.hunc ? ` \u00b1 ${st.hunc.toFixed(0)}` : ""} m thick, surface ${fmt(l.top, " m")}`);
+    row(`${st.short}: bed`, `${fmt(l.bed)}${st.unc === st.unc ? ` \u00b1 ${st.unc.toFixed(0)}` : ""} m (${l.kind}, Bedmap3 at 500 m)`);
+  } else if (current.siteErr) row("Site", current.siteErr);
   row("Bedmap3 read at", `${(current.res / 1000).toFixed(current.res < 1000 ? 1 : 0)} km (${current.N + 1} samples)`);
   if (state.rema) row("REMA read at", levels.rema ? `${levels.rema} m, minus EGM2008` : current.remaErr || "reading");
   if (state.gebco) row("GEBCO read at", levels.gebco ? `about ${(levels.gebco / 1000).toFixed(1)} km north to south` : current.gebcoErr || "reading");
@@ -500,15 +581,34 @@ function syncInputs() {
   const { a, b } = ends();
   $("preset").value = state.at;
   $("a").value = `${a[0]},${a[1]}`; $("b").value = `${b[0]},${b[1]}`;
-  $("width").value = state.w; $("width-out").textContent = `${state.w} km`;
-  $("side").value = String(state.side);
+  $("width").value = widthKm(); $("width-out").textContent = `${widthKm()} km`;
+  $("side").value = String(sideOf());
+  $("curve").value = curved() ? "earth" : "flat";
+  const site = siteOf();
+  $("site").value = site ? (C.SITES.some((x) => x.key === site.key) ? site.key : "custom") : "none";
+  $("site-ll").value = site ? `${site.ll[0]},${site.ll[1]}` : "";
   $("ve").value = state.ve; $("vert").textContent = state.ve ? `x ${state.ve}` : "auto";
   $("ice").value = state.ice;
   $("rema").checked = !!state.rema; $("gebco").checked = !!state.gebco; $("unc").checked = !!state.unc;
 }
 
 for (const p of C.PRESETS) { const o = document.createElement("option"); o.value = p.key; o.textContent = p.label; $("preset").append(o); }
-$("preset").addEventListener("change", () => { state.at = $("preset").value; state.a = state.b = ""; state.cam = null; syncInputs(); writeHash(); build(); });
+$("preset").addEventListener("change", () => {
+  state.at = $("preset").value; state.a = state.b = ""; state.w = 0; state.side = state.curve = state.site = ""; state.cam = null;
+  syncInputs(); writeHash(); build();
+});
+for (const x of C.SITES) { const o = document.createElement("option"); o.value = x.key; o.textContent = x.label; $("site").insertBefore(o, $("site").lastElementChild); }
+$("site").addEventListener("change", () => {
+  const v = $("site").value;
+  if (v === "custom") { $("site-ll").focus(); return; }
+  state.site = v; syncInputs(); writeHash(); build();
+});
+$("site-ll").addEventListener("change", () => {
+  const v = lonlat($("site-ll").value.replace(/\s+/g, ""));
+  if (!v) { setStatus("site: longitude,latitude in degrees, south of 50S"); return; }
+  state.site = v; syncInputs(); writeHash(); build();
+});
+$("curve").addEventListener("change", () => { state.curve = $("curve").value; state.cam = null; writeHash(); build(); });
 const endInput = (id) => $(id).addEventListener("change", () => {
   const v = lonlat($(id).value.replace(/\s+/g, ""));
   if (!v) { setStatus("ends: longitude,latitude in degrees, south of 50S"); return; }
@@ -518,7 +618,7 @@ endInput("a"); endInput("b");
 $("swap").addEventListener("click", () => { const { a, b } = ends(); state.a = `${b[0]},${b[1]}`; state.b = `${a[0]},${a[1]}`; state.cam = null; syncInputs(); writeHash(); build(); });
 $("width").addEventListener("input", () => { $("width-out").textContent = `${$("width").value} km`; });
 $("width").addEventListener("change", () => { state.w = +$("width").value; state.cam = null; writeHash(); build(); });
-$("side").addEventListener("change", () => { state.side = +$("side").value; state.cam = null; writeHash(); build(); });
+$("side").addEventListener("change", () => { state.side = $("side").value; state.cam = null; writeHash(); build(); });
 $("ve").addEventListener("input", () => { state.ve = +$("ve").value; $("vert").textContent = state.ve ? `x ${state.ve}` : "auto"; });
 $("ve").addEventListener("change", () => { writeHash(); drawBlock(); renderReadout(); });
 $("ice").addEventListener("change", () => { state.ice = $("ice").value; writeHash(); drawBlock(); });

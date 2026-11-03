@@ -994,10 +994,21 @@ across the continent costs about what one across a glacier does) and counts
 the requests and bytes. A line is two clicks on the map, an end typed as
 longitude,latitude, or a preset (the Amery, Totten, Thwaites, Pine Island,
 the Ross Ice Shelf, Prydz Bay to Dome A); the section downloads as CSV with
-every layer per sample. Hash keys: `at` (preset), `a`, `b` (ends as
-lon,lat), `w` (block width, km), `side` (1 left of A to B, -1 right), `ve`
+every layer per sample.
+
+After the capvis renders: a block can lie on both sides of the line with the
+ice taken off one side, showing the bed under it, and can be bent over the
+Earth's curve, so a line across the whole continent reads as a piece of the
+globe. A drill site (Dome C North, the million year ice core site; Little
+Dome C; Dome C; Dome A; Law Dome; or any longitude,latitude) is a red rod
+from the bed to the surface, with the ice thickness, bed and their
+uncertainties read there at Bedmap3's full 500 m. Hash keys: `at`
+(preset), `a`, `b` (ends as lon,lat), `w` (block width, km, up to 3000),
+`side` (1 left of A to B, -1 right, 0 both with the ice off the right),
+`curve` (`flat`, `earth`), `site` (a site key, lon,lat, or `none`), `ve`
 (vertical exaggeration, 0 automatic), `ice` (`solid`, `glass`, `off`),
-`rema`, `gebco`, `unc`, `cam`.
+`rema`, `gebco`, `unc`, `cam`. A preset brings its own width, side, curve
+and site unless the hash names them.
 
 ## Share and embed
 

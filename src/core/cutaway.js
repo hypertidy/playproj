@@ -40,15 +40,52 @@ export const SOURCES = {
   }
 };
 
-// Lines worth a look, as two longitude, latitude ends, sea end first.
+// Lines worth a look, as two longitude, latitude ends, sea end first; a
+// line may also bring its own block width (km), side (1 left, -1 right, 0
+// both, with the ice taken off the right) and shape (flat or earth).
 export const PRESETS = [
   { key: "amery", label: "Amery Ice Shelf to the Lambert Glacier", a: [73, -67.5], b: [68.5, -73.5] },
   { key: "totten", label: "Totten Glacier", a: [115.6, -65.9], b: [117.2, -68.6] },
   { key: "thwaites", label: "Thwaites Glacier", a: [-105.6, -74.0], b: [-108.6, -76.6] },
   { key: "ross", label: "Ross Ice Shelf to the Siple Coast", a: [178, -77.6], b: [-150, -83.6] },
   { key: "pig", label: "Pine Island Glacier", a: [-101.8, -74.6], b: [-97.5, -75.6] },
-  { key: "dome", label: "Prydz Bay to Dome A", a: [76, -68.6], b: [77.4, -80.4] }
+  { key: "dome", label: "Prydz Bay to Dome A", a: [76, -68.6], b: [77.4, -80.4] },
+  { key: "dcn", label: "Through Dome C North towards Dome C", a: [117.29, -76.64], b: [126.86, -73.94], w: 200, site: "dcn" },
+  { key: "continent", label: "Across the continent, ice off one side", a: [-174, -54], b: [53, -56], w: 2800, side: 0, curve: "earth", site: "dcn" }
 ];
+
+// Places to drill: a vertical line from the bed to the surface, with the
+// ice there read at Bedmap3's full resolution.
+export const SITES = [
+  { key: "dcn", label: "Dome C North (million year ice core)", ll: [122.5206, -75.3413] },
+  { key: "ldc", label: "Little Dome C (Beyond EPICA), as drawn in capvis", ll: [122.59185, -75.28015] },
+  { key: "domec", label: "Dome C (EPICA, Concordia)", ll: [123.35, -75.1] },
+  { key: "domea", label: "Dome A (Kunlun)", ll: [77.37, -80.37] },
+  { key: "dss", label: "Law Dome (DSS)", ll: [112.8, -66.77] }
+];
+
+// A point's place in the line's frame: s metres along from a, t metres off
+// to the left.
+export function frameOf(f, p) {
+  const dx = p[0] - f.a[0], dy = p[1] - f.a[1];
+  return { s: dx * f.ux + dy * f.uy, t: dx * f.nx + dy * f.ny };
+}
+
+// The Earth's mean radius (m), for the curved block.
+export const R = 6371008.8;
+
+// A point of the block (s, t metres in the line's frame, h exaggerated
+// metres up) in the scene, in km: x along the line, y up, z off it (the
+// left side towards -z). Flat, or bent over a sphere about the block's
+// centre (cs, ct): the plane distance from the centre is laid out as an arc
+// (azimuthal equidistant about the centre, read backwards), so a block the
+// size of the continent shows the Earth's curve as well as its relief.
+export function place(s, t, h, { curve = false, cs = 0, ct = 0 } = {}) {
+  if (!curve) return [s / 1000, h / 1000, -t / 1000];
+  const u = s - cs, v = t - ct, d = Math.hypot(u, v), th = d / R, r = R + h;
+  const k = d > 0 ? (r * Math.sin(th)) / d : 1;
+  return [(cs + u * k) / 1000, (r * Math.cos(th) - R) / 1000, -(ct + v * k) / 1000];
+}
 
 // The line from a to b (EPSG:3031 metres): its length, the unit vector
 // along it and the unit normal to its left.
@@ -63,13 +100,13 @@ export function lineFrame(a, b) {
 export const at = (f, s, t) => [f.a[0] + f.ux * s + f.nx * t, f.a[1] + f.uy * s + f.ny * t];
 
 // The block: the line, and width metres to one side of it (side 1 is the
-// left of a to b, -1 the right). Corners in order a, b, b', a', and the
-// bounding box [xmin, ymin, xmax, ymax].
+// left of a to b, -1 the right, 0 both sides). Corners in order, the
+// bounding box [xmin, ymin, xmax, ymax], and t0, t1, its span off the line.
 export function blockOf(f, width, side = 1) {
-  const w = width * side;
-  const c = [at(f, 0, 0), at(f, f.L, 0), at(f, f.L, w), at(f, 0, w)];
+  const t0 = side === 0 ? -width : 0, t1 = side === 0 ? width : width * side;
+  const c = [at(f, 0, t0), at(f, f.L, t0), at(f, f.L, t1), at(f, 0, t1)];
   const xs = c.map((p) => p[0]), ys = c.map((p) => p[1]);
-  return { corners: c, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], width, side };
+  return { corners: c, box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)], width, side, t0, t1 };
 }
 
 // n + 1 points evenly from a to b, with their distance along the line.
@@ -146,6 +183,15 @@ export function layer(s, h, b, m) {
 // A height in the block for drawing: metres to the scene's units (km) with
 // the vertical exaggeration.
 export const zOf = (m, ve) => (m * ve) / 1000;
+
+// A sample with its ice taken off, as on the bare side of a block: the bed
+// stands bare where the ice was (no sea floods it and the bed does not
+// rebound), the open sea stays as it is.
+export function bare(l) {
+  if (l.kind === "sea" || l.bed !== l.bed) return l;
+  const top = l.ice > 0 ? l.bed : l.top;
+  return { kind: "bare", top, base: top, bed: l.bed, ice: 0, water: null, wasIce: l.ice > 0 };
+}
 
 // The heights of the three bands at one sample, bottom up, for drawing:
 // rock from the floor to the bed, water from the bed to the water's top

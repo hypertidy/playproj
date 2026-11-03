@@ -46,17 +46,30 @@
 
     <section>
       <label class="row" for="width"><span>Block width</span><output id="width-out"></output></label>
-      <input id="width" type="range" min="10" max="600" step="10">
+      <input id="width" type="range" min="10" max="3000" step="10">
       <div class="buttons">
         <select id="side" aria-label="Which side of the line the block lies">
           <option value="1">block to the left of A to B</option>
           <option value="-1">block to the right of A to B</option>
+          <option value="0">both sides, ice off the right</option>
+        </select>
+        <select id="curve" aria-label="Flat, or bent over the Earth">
+          <option value="flat">flat</option>
+          <option value="earth">on the Earth's curve</option>
         </select>
         <select id="ice" aria-label="How the ice is drawn in the block">
           <option value="solid">ice solid</option>
           <option value="glass">ice see-through</option>
           <option value="off">ice off</option>
         </select>
+      </div>
+      <label class="row" for="site"><span>Drill site</span></label>
+      <div class="buttons">
+        <select id="site" aria-label="A drill site: a red rod from the bed to the surface">
+          <option value="none">none</option>
+          <option value="custom">longitude,latitude...</option>
+        </select>
+        <input id="site-ll" class="token" type="text" size="16" spellcheck="false" aria-label="Drill site as longitude,latitude">
       </div>
       <label class="row" for="ve"><span>Vertical exaggeration</span><output id="vert"></output></label>
       <input id="ve" type="range" min="0" max="200" step="5" aria-label="Vertical exaggeration (0 is automatic)">
@@ -90,7 +103,11 @@
           floating shelf) or to sea level (the open sea), and ice from its base to its surface. Grounded ice
           rests on its bed; floating ice has its base at its surface less its thickness. The cut face of the
           block is the section itself, the other three faces are the same bands along the block's edges, and
-          its top surfaces are the bed, the ice and the sea from the same grid.</p>
+          its top surfaces are the bed, the ice and the sea from the same grid. With the block on both sides of
+          the line, the ice is taken off the right-hand side to show the bed under it (unflooded and not
+          rebounded), and the block can be bent over the Earth's curve, for a line across the continent.</p>
+        <p>A drill site is a red rod from the bed up through the surface, with the ice thickness, bed and
+          their uncertainties read there at Bedmap3's full 500 m.</p>
         <p>REMA gives heights above the WGS84 ellipsoid; the page subtracts the EGM2008 geoid (as the Geoid
           page does) so its line sits with Bedmap3's and GEBCO's heights above sea level. Where REMA and
           Bedmap3's surface part, that is the datum, the date and the resolution of each source, and worth a
