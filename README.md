@@ -920,6 +920,12 @@ exaggerated by 10^gx), `dz` (height by 10^dz on top of the scene's
 
 ## Time and depth
 
+The Time and depth page now lives in [sondage](https://github.com/allboa/sondage), the
+allboa package this page grew into. playproj's `fourd.html` keeps its place in the
+nav and loads sondage's page script from jsDelivr, pinned to one commit
+(move the pin in the `<script>` tag to take a newer sondage). The code,
+tests and registry described below are in sondage.
+
 `fourd.html` puts several time series on one globe on one date: sea ice,
 sea surface temperature and an ocean model, with time and depth treated as
 axes every layer shares. The clock is a date (the middle of the day); each
@@ -965,16 +971,21 @@ indexes on source.coop do; for Bluelink BRAN (NCI THREDDS) and the NSIDC
 and Bremen sea ice the page counts reads and failures by host, and "Test
 the data hosts" reads one chunk of every dataset. The synthetic ocean
 (BRAN's 51 depths, a seasonal mixed layer and drifting eddies) needs no
-network. `src/core/fourd.js` holds the axes, the clock, the cache and the
-synthetic ocean, `js/fourd-read.js` the reading; `test/check-fourd.mjs`
-checks them against two published `arrays.json` (in `test/fixtures/fourd`)
-and the registry. Hash keys: `date`, `layers` (ids from the registry),
+network. In sondage, `src/core/fourd.js` holds the axes, the clock, the
+cache and the synthetic ocean, `src/read/` the reading, and its tests check
+them against published `arrays.json` and the registry. Hash keys: `date`, `layers` (ids from the registry),
 `box`, `lev` (shell level), `zmax` (deepest level read, 10^zmax m), `dz`
 (depth exaggeration, 10^dz), `cl`, `cp` (sections across the box, 0 to 1),
 `cut`, `coast`, `step`, `base`, `cam`, `iso` (layers drawn as `lines` or
 `both`, as `id:mode,id:mode`).
 
 ## Cutaway
+
+The Cutaway page now lives in [sondage](https://github.com/allboa/sondage), the
+allboa package this page grew into. playproj's `cutaway.html` keeps its place in the
+nav and loads sondage's page script from jsDelivr, pinned to one commit
+(move the pin in the `<script>` tag to take a newer sondage). The code,
+tests and registry described below are in sondage.
 
 `cutaway.html` draws a line across Antarctic ice as a section and as a block
 diagram cut along the line. Bedmap3 (ice thickness, bed and surface elevation
@@ -1113,8 +1124,8 @@ ortho.html, js/ortho.js                Orthorectification: frame camera or pushb
 nuyina.html, js/nuyina.js              Nuyina: voyage track, sea ice, two bathymetry mosaics, near-ship maps
 rhumb.html, js/rhumb.js                Rhumb lines: rhumb line and great circle on four maps, composite sailing
 frame.html, js/frame.js                Frame: any scenespec mesh in its CRS, distortion, graticule, unfolded onto the ellipsoid
-fourd.html, js/fourd-page.js           Time and depth: time series of sea ice, SST and an ocean model on one globe
-cutaway.html, js/cutaway-page.js       Cutaway: a section and block diagram through Antarctic ice, bed and sea
+fourd.html (sondage)                   Time and depth: time series of sea ice, SST and an ocean model on one globe
+cutaway.html (sondage)                 Cutaway: a section and block diagram through Antarctic ice, bed and sea
 
 js/data.js          loads the coastlines in data/
 js/basemap-load.js  fetches the basemaps in the browser and makes their canvases
@@ -1175,7 +1186,6 @@ src/core/sight.js                 terrain visibility: gnomonic wedges or the sun
 src/core/peel.js                  gores (sinu, cass, tmerc), the peel from orange to flower, the spiral peel and its Euler spiral
 src/core/affine.js                geotransform: apply, invert, parts, extent, world file, fit to control points
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
-src/core/cutaway.js               Bedmap3, REMA and GEBCO sources; a line's frame and block; levels; ice, water and rock layers
 src/core/palette.js               named palettes for scene layers (scenespec palette names)
 src/core/meshframe.js             a mesh's two homes, the map and the ellipsoid (ECEF turned to east, up, north); graticule lines
 
@@ -1219,8 +1229,6 @@ s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js
 grid, the overlap plan and level choice, and reading tracks from GeoServer CSV and parquet rows.
 `test/check-penguin.mjs` checks the penguin's rotation against PROJ's ob_tran, and the lon/lat table's areas and volume against the mesh.
 `test/check-sight.mjs` checks the viewshed and the cast shadow against marching every line of sight.
-`test/check-cutaway.mjs` checks the line and block geometry, the level choice, the antimeridian split and the
-layering of Bedmap3 samples (read across the Amery Ice Shelf) into ice, water and rock.
 `test/check-peel.mjs` checks the gore flattenings against PROJ, what each keeps, and the spiral peel against its curvature and the Euler spiral.
 `test/check-rhumb.mjs` checks rhumb line and geodesic lengths and courses against PROJ, and composite sailing.
 `test/check-structure.mjs` checks the tile and overview readers against
