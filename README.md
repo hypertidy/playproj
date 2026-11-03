@@ -1005,8 +1005,9 @@ from the bed to the surface, with the ice thickness, bed and their
 uncertainties read there at Bedmap3's full 500 m. Hash keys: `at`
 (preset), `a`, `b` (ends as lon,lat), `w` (block width, km, up to 3000),
 `side` (1 left of A to B, -1 right, 0 both with the ice off the right),
-`curve` (`flat`, `earth`), `site` (a site key, lon,lat, or `none`), `ve`
-(vertical exaggeration, 0 automatic), `ice` (`solid`, `glass`, `off`),
+`curve` (`flat`, `earth`), `site` (a site key, lon,lat, or `none`), `guide`
+(0 hides the guide through the site while B is placed), `ve` (vertical
+exaggeration from 1, true scale, to 500 on a log slider; 0 automatic), `ice` (`solid`, `glass`, `off`),
 `rema`, `gebco`, `unc`, `cam`. A preset brings its own width, side, curve
 and site unless the hash names them.
 

@@ -27,7 +27,7 @@ const INK = { rock: "#7a6552", water: "#1d5f9e", ice: "#e3f0fb", sky: "#05070d",
 // ---------------------------------------------------------------- state
 
 // w, side, curve and site left empty take the preset's own (or the usual)
-const defaults = { at: "amery", a: "", b: "", w: 0, side: "", curve: "", site: "", ve: 0, ice: "solid", rema: 1, gebco: 1, unc: 1, cam: null };
+const defaults = { at: "amery", a: "", b: "", w: 0, side: "", curve: "", site: "", guide: 1, ve: 0, ice: "solid", rema: 1, gebco: 1, unc: 1, cam: null };
 const state = { ...defaults };
 const lonlat = (s) => { const v = String(s).split(",").map(Number); return v.length === 2 && v.every(isFinite) && v[1] < -50 && v[1] >= -90 ? s : undefined; };
 readParams(state, defaults, {
@@ -36,7 +36,7 @@ readParams(state, defaults, {
   site: (s) => (s === "none" || C.SITES.some((x) => x.key === s) || lonlat(s) ? s : undefined)
 });
 state.w = state.w ? Math.max(10, Math.min(3000, state.w)) : 0;
-state.ve = Math.max(0, Math.min(500, state.ve));
+state.ve = state.ve > 0 ? Math.max(1, Math.min(C.VE_MAX, state.ve)) : 0;
 const writeHash = hashWriter(state, defaults);
 
 const preset = () => C.PRESETS.find((p) => p.key === state.at) || C.PRESETS[0];
@@ -372,31 +372,74 @@ function drawMap() {
     g.fillStyle = "rgba(255,211,77,0.25)"; g.strokeStyle = "rgba(255,211,77,0.9)"; g.lineWidth = 1;
     g.beginPath(); current.blk.corners.forEach((q, i) => { const [x, y] = P(q); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); g.fill(); g.stroke();
   }
-  g.strokeStyle = "#ff7ab8"; g.lineWidth = 2;
-  const pa = P(A), pb = pending ? P(pending) : P(B);
-  g.beginPath(); g.moveTo(pa[0], pa[1]); if (!pending) g.lineTo(pb[0], pb[1]); g.stroke();
+  const site = siteOf(), sp = site ? toXY(site.ll[0], site.ll[1]) : null;
+  const pa = P(pending || A), pb = P(B);
+  if (pending) {
+    // placing B: the guide from A through the site, out to the map's
+    // edge (B anywhere on it gives a line through the site), and the line
+    // to the cursor as it would be
+    if (sp && state.guide) {
+      const e = P(C.guideEnd(pending, sp, MAP.half));
+      // dark under bright, so it shows over the ice and the sea alike
+      g.lineWidth = 3; g.strokeStyle = "rgba(5,7,13,0.75)";
+      g.beginPath(); g.moveTo(pa[0], pa[1]); g.lineTo(e[0], e[1]); g.stroke();
+      g.lineWidth = 1.5; g.strokeStyle = "#ffd34d"; g.setLineDash([6, 4]);
+      g.beginPath(); g.moveTo(pa[0], pa[1]); g.lineTo(e[0], e[1]); g.stroke(); g.setLineDash([]);
+    }
+    if (cursor) {
+      const q = P(cursor);
+      g.strokeStyle = "#ff7ab8"; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(pa[0], pa[1]); g.lineTo(q[0], q[1]); g.stroke();
+    }
+  } else {
+    g.strokeStyle = "#ff7ab8"; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(pa[0], pa[1]); g.lineTo(pb[0], pb[1]); g.stroke();
+  }
   g.fillStyle = "#fff"; g.font = "11px system-ui, sans-serif";
   g.fillText("A", pa[0] + 4, pa[1] - 4); if (!pending) g.fillText("B", pb[0] + 4, pb[1] - 4);
   if (hoverS !== null && current) {
     const [x, y] = P(C.at(current.f, hoverS, 0));
     g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill();
   }
-  const site = siteOf();
   if (site) {
-    const [x, y] = P(toXY(site.ll[0], site.ll[1]));
+    const [x, y] = P(sp);
     g.fillStyle = "#ff3b3b"; g.strokeStyle = "#fff"; g.lineWidth = 1;
     g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill(); g.stroke();
   }
 }
 // two clicks: the first sets A, the second B
-let pending = null;
+let pending = null, cursor = null;
+const HINT = "Click twice on the map for a new line: A, then B.";
+const mapXY = (e) => {
+  const r = $("cut-map").getBoundingClientRect();
+  return [((e.clientX - r.left) / r.width) * 2 * MAP.half - MAP.half, MAP.half - ((e.clientY - r.top) / r.height) * 2 * MAP.half];
+};
+// while B is being placed, how far the line to the cursor passes from the
+// site
+function placingHint() {
+  const site = siteOf();
+  if (!pending) return HINT;
+  if (!site || !cursor) return site && state.guide ? `Now click B: on the dashed line, the section passes through ${site.short}.` : "Now click the other end (B).";
+  const o = C.offLine(pending, cursor, toXY(site.ll[0], site.ll[1]));
+  return `Now click B: this line passes ${(o.d / 1000).toFixed(o.d < 10000 ? 1 : 0)} km from ${site.short}${o.u <= 0 || o.u >= 1 ? " (beyond its end)" : ""}.`;
+}
+$("cut-map").addEventListener("mousemove", (e) => {
+  if (!pending) return;
+  cursor = mapXY(e);
+  $("map-hint").textContent = placingHint();
+  drawMap();
+});
+$("cut-map").addEventListener("mouseleave", () => { cursor = null; if (pending) drawMap(); });
 $("cut-map").addEventListener("click", (e) => {
-  const r = e.target.getBoundingClientRect();
-  const x = ((e.clientX - r.left) / r.width) * 2 * MAP.half - MAP.half, y = MAP.half - ((e.clientY - r.top) / r.height) * 2 * MAP.half;
+  const [x, y] = mapXY(e);
   const ll = toLL(x, y), s = `${ll[0].toFixed(3)},${ll[1].toFixed(3)}`;
-  if (!pending) { pending = [x, y]; state.a = s; $("map-hint").textContent = "Now click the other end (B)."; drawMap(); return; }
-  pending = null; state.b = s; $("map-hint").textContent = "Click twice on the map for a new line: A, then B.";
+  if (!pending) { pending = [x, y]; cursor = null; state.a = s; $("a").value = s; $("map-hint").textContent = placingHint(); drawMap(); return; }
+  pending = null; cursor = null; state.b = s; $("map-hint").textContent = HINT;
   state.cam = null; syncInputs(); writeHash(); build();
+});
+// Escape gives up placing B
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && pending) { pending = null; cursor = null; state.a = state.b = ""; $("map-hint").textContent = HINT; syncInputs(); drawMap(); }
 });
 
 // ---------------------------------------------------------------- the block
@@ -587,8 +630,9 @@ function syncInputs() {
   const site = siteOf();
   $("site").value = site ? (C.SITES.some((x) => x.key === site.key) ? site.key : "custom") : "none";
   $("site-ll").value = site ? `${site.ll[0]},${site.ll[1]}` : "";
-  $("ve").value = state.ve; $("vert").textContent = state.ve ? `x ${state.ve}` : "auto";
+  $("ve").value = C.sliderOfVe(state.ve); $("vert").textContent = state.ve ? `x ${state.ve}` : "auto";
   $("ice").value = state.ice;
+  $("guide").checked = !!state.guide;
   $("rema").checked = !!state.rema; $("gebco").checked = !!state.gebco; $("unc").checked = !!state.unc;
 }
 
@@ -608,6 +652,7 @@ $("site-ll").addEventListener("change", () => {
   if (!v) { setStatus("site: longitude,latitude in degrees, south of 50S"); return; }
   state.site = v; syncInputs(); writeHash(); build();
 });
+$("guide").addEventListener("change", () => { state.guide = $("guide").checked ? 1 : 0; writeHash(); if (pending) { $("map-hint").textContent = placingHint(); drawMap(); } });
 $("curve").addEventListener("change", () => { state.curve = $("curve").value; state.cam = null; writeHash(); build(); });
 const endInput = (id) => $(id).addEventListener("change", () => {
   const v = lonlat($(id).value.replace(/\s+/g, ""));
@@ -619,7 +664,9 @@ $("swap").addEventListener("click", () => { const { a, b } = ends(); state.a = `
 $("width").addEventListener("input", () => { $("width-out").textContent = `${$("width").value} km`; });
 $("width").addEventListener("change", () => { state.w = +$("width").value; state.cam = null; writeHash(); build(); });
 $("side").addEventListener("change", () => { state.side = $("side").value; state.cam = null; writeHash(); build(); });
-$("ve").addEventListener("input", () => { state.ve = +$("ve").value; $("vert").textContent = state.ve ? `x ${state.ve}` : "auto"; });
+$("ve").addEventListener("input", () => { state.ve = C.veOfSlider(+$("ve").value); $("vert").textContent = state.ve ? `x ${state.ve}` : "auto"; });
+$("ve").addEventListener("input", () => { clearTimeout(veTimer); veTimer = setTimeout(() => { drawBlock(); renderReadout(); }, 60); });
+let veTimer = 0;
 $("ve").addEventListener("change", () => { writeHash(); drawBlock(); renderReadout(); });
 $("ice").addEventListener("change", () => { state.ice = $("ice").value; writeHash(); drawBlock(); });
 for (const id of ["rema", "gebco", "unc"]) $(id).addEventListener("change", () => { state[id] = $(id).checked ? 1 : 0; writeHash(); if (id === "unc") drawSection(); else build(); });

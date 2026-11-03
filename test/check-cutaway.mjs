@@ -95,6 +95,22 @@ const nd = (v) => (v === -9999 ? NaN : v);
   ok(C.SITES.every((x) => x.ll[1] < -60) && C.PRESETS.find((x) => x.key === "dcn").site === "dcn", "sites");
 }
 
+// the guide for placing B through a site
+{
+  const o = C.offLine([0, 0], [10, 0], [4, 3]);
+  ok(o.d === 3 && o.u === 0.4, `off the line ${JSON.stringify(o)}`);
+  ok(C.offLine([0, 0], [10, 0], [14, 3]).d === 5, "past the end, to the end");
+  const e = C.guideEnd([0, 0], [1, 2], 10);
+  ok(e[0] === 5 && e[1] === 10, `the guide's end ${e}`);
+  const q = C.guideEnd([-5, 5], [-5, 0], 10);
+  ok(q[0] === -5 && q[1] === -10, `straight down ${q}`);
+}
+
+// the exaggeration slider: automatic, true scale, x 500, and back
+ok(C.veOfSlider(0) === 0 && C.veOfSlider(1) === 1 && C.veOfSlider(100) === 500, `slider ends ${C.veOfSlider(1)} ${C.veOfSlider(100)}`);
+ok(C.veOfSlider(20) > 2 && C.veOfSlider(20) < 4, `low on the slider ${C.veOfSlider(20)}`);
+ok([1, 2, 5, 25, 100, 500].every((v) => Math.abs(C.veOfSlider(C.sliderOfVe(v)) - v) / v < 0.08), "slider round trip");
+
 ok(C.autoExaggeration(700000, 3000) === 25, `auto exaggeration ${C.autoExaggeration(700000, 3000)}`);
 ok(C.PRESETS.every((p) => p.a[1] < -50 && p.b[1] < -50), "presets in the south");
 
