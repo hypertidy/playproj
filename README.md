@@ -974,6 +974,31 @@ and the registry. Hash keys: `date`, `layers` (ids from the registry),
 `cut`, `coast`, `step`, `base`, `cam`, `iso` (layers drawn as `lines` or
 `both`, as `id:mode,id:mode`).
 
+## Cutaway
+
+`cutaway.html` draws a line across Antarctic ice as a section and as a block
+diagram cut along the line. Bedmap3 (ice thickness, bed and surface elevation
+at 500 m, the grounding mask and the bed's uncertainty) gives the layers:
+rock up to the bed, water from the bed to the base of floating ice or to sea
+level, and ice from its base to its surface. The section is drawn under the
+block, and the block's cut face is the section itself, so the two agree; its
+other faces are the same bands along its edges, its top the bed, the ice and
+the sea. REMA's surface (ellipsoidal heights, less EGM2008) and GEBCO 2026 are
+drawn along the section beside Bedmap3's.
+
+Each source is a cloud-optimised GeoTIFF read by byte ranges: Bedmap3 and
+GEBCO 2026 from source.coop, REMA's 100 m, 500 m and 1 km mosaics from
+[rema-ovr](https://github.com/mdsumner/rema-ovr). The page reads the window
+round the block at the overview whose pixels suit the line's length (a line
+across the continent costs about what one across a glacier does) and counts
+the requests and bytes. A line is two clicks on the map, an end typed as
+longitude,latitude, or a preset (the Amery, Totten, Thwaites, Pine Island,
+the Ross Ice Shelf, Prydz Bay to Dome A); the section downloads as CSV with
+every layer per sample. Hash keys: `at` (preset), `a`, `b` (ends as
+lon,lat), `w` (block width, km), `side` (1 left of A to B, -1 right), `ve`
+(vertical exaggeration, 0 automatic), `ice` (`solid`, `glass`, `off`),
+`rema`, `gebco`, `unc`, `cam`.
+
 ## Share and embed
 
 The view state lives in the URL hash, so a link reproduces what you see:
@@ -1076,6 +1101,8 @@ ortho.html, js/ortho.js                Orthorectification: frame camera or pushb
 nuyina.html, js/nuyina.js              Nuyina: voyage track, sea ice, two bathymetry mosaics, near-ship maps
 rhumb.html, js/rhumb.js                Rhumb lines: rhumb line and great circle on four maps, composite sailing
 frame.html, js/frame.js                Frame: any scenespec mesh in its CRS, distortion, graticule, unfolded onto the ellipsoid
+fourd.html, js/fourd-page.js           Time and depth: time series of sea ice, SST and an ocean model on one globe
+cutaway.html, js/cutaway-page.js       Cutaway: a section and block diagram through Antarctic ice, bed and sea
 
 js/data.js          loads the coastlines in data/
 js/basemap-load.js  fetches the basemaps in the browser and makes their canvases
@@ -1136,6 +1163,7 @@ src/core/sight.js                 terrain visibility: gnomonic wedges or the sun
 src/core/peel.js                  gores (sinu, cass, tmerc), the peel from orange to flower, the spiral peel and its Euler spiral
 src/core/affine.js                geotransform: apply, invert, parts, extent, world file, fit to control points
 src/core/mosaic.js                overlapping sources: the per-pixel plan, level and window choice, sampling, shading
+src/core/cutaway.js               Bedmap3, REMA and GEBCO sources; a line's frame and block; levels; ice, water and rock layers
 src/core/palette.js               named palettes for scene layers (scenespec palette names)
 src/core/meshframe.js             a mesh's two homes, the map and the ellipsoid (ECEF turned to east, up, north); graticule lines
 
@@ -1179,6 +1207,8 @@ s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js
 grid, the overlap plan and level choice, and reading tracks from GeoServer CSV and parquet rows.
 `test/check-penguin.mjs` checks the penguin's rotation against PROJ's ob_tran, and the lon/lat table's areas and volume against the mesh.
 `test/check-sight.mjs` checks the viewshed and the cast shadow against marching every line of sight.
+`test/check-cutaway.mjs` checks the line and block geometry, the level choice, the antimeridian split and the
+layering of Bedmap3 samples (read across the Amery Ice Shelf) into ice, water and rock.
 `test/check-peel.mjs` checks the gore flattenings against PROJ, what each keeps, and the spiral peel against its curvature and the Euler spiral.
 `test/check-rhumb.mjs` checks rhumb line and geodesic lengths and courses against PROJ, and composite sailing.
 `test/check-structure.mjs` checks the tile and overview readers against
