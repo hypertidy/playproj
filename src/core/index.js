@@ -60,3 +60,4 @@ export * as mosaic from "./mosaic.js";
 export * as palette from "./palette.js";
 export * as meshframe from "./meshframe.js";
 export * as fourd from "./fourd.js";
+export * as cutaway from "./cutaway.js";

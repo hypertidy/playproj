@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Cutaway</title>
+<meta name="description" content="A line across Antarctic ice as a section and a block diagram: the ice surface, the ice base, the cavity under a floating shelf, the bed and the sea, from Bedmap3 with REMA and GEBCO 2026 beside it, read in place from cloud-optimised GeoTIFFs.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/cutaway-page.js"></script>
+</head>
+<body class="cutaway">
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <canvas id="section" aria-label="The section along the line, A on the left"></canvas>
+    <a id="open-full" class="open-full" href="./cutaway.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html">Peeling the orange</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./penguin.html">Penguin datum</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a><a href="./fourd.html">Time and depth</a><a href="./cutaway.html" aria-current="page">Cutaway</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="preset"><span>Line</span></label>
+      <select id="preset" aria-label="A line worth a look"></select>
+      <canvas id="cut-map" width="300" height="300" aria-label="Antarctica from Bedmap3: click twice for a line, A then B" class="cut-map"></canvas>
+      <p id="map-hint" class="hint">Click twice on the map for a new line: A, then B.</p>
+      <div class="buttons">
+        <label>A <input id="a" class="token" type="text" size="14" spellcheck="false" aria-label="A as longitude,latitude"></label>
+        <label>B <input id="b" class="token" type="text" size="14" spellcheck="false" aria-label="B as longitude,latitude"></label>
+        <button id="swap" type="button" class="small">Swap</button>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="width"><span>Block width</span><output id="width-out"></output></label>
+      <input id="width" type="range" min="10" max="3000" step="10">
+      <div class="buttons">
+        <select id="side" aria-label="Which side of the line the block lies">
+          <option value="1">block to the left of A to B</option>
+          <option value="-1">block to the right of A to B</option>
+          <option value="0">both sides, ice off the right</option>
+        </select>
+        <select id="curve" aria-label="Flat, or bent over the Earth">
+          <option value="flat">flat</option>
+          <option value="earth">on the Earth's curve</option>
+        </select>
+        <select id="ice" aria-label="How the ice is drawn in the block">
+          <option value="solid">ice solid</option>
+          <option value="glass">ice see-through</option>
+          <option value="off">ice off</option>
+        </select>
+      </div>
+      <label class="row" for="site"><span>Drill site</span></label>
+      <div class="buttons">
+        <select id="site" aria-label="A drill site: a red rod from the bed to the surface">
+          <option value="none">none</option>
+          <option value="custom">longitude,latitude...</option>
+        </select>
+        <input id="site-ll" class="token" type="text" size="16" spellcheck="false" aria-label="Drill site as longitude,latitude">
+      </div>
+      <label class="row" for="ve"><span>Vertical exaggeration</span><output id="vert"></output></label>
+      <input id="ve" type="range" min="0" max="200" step="5" aria-label="Vertical exaggeration (0 is automatic)">
+      <div class="buttons">
+        <label><input id="rema" type="checkbox"> REMA surface</label>
+        <label><input id="gebco" type="checkbox"> GEBCO 2026</label>
+        <label><input id="unc" type="checkbox"> bed uncertainty</label>
+      </div>
+      <div class="buttons">
+        <button id="csv" type="button" class="small">Download the section (CSV)</button>
+        <button id="reset-view" type="button" class="small">Reset view</button>
+      </div>
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section>
+      <table class="readout" id="readout"><tbody></tbody></table>
+      <p class="hint">Section: ice white, water blue, rock brown; the white line is the ice surface, the pale blue line
+        the base of floating ice, orange REMA, dashed cyan GEBCO 2026, the yellow band the bed plus or minus
+        its uncertainty, pink lines where the section crosses a grounding line.</p>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>Bedmap3 grids ice thickness, bed and surface elevation over Antarctica at 500 m, with a mask of
+          grounded ice, floating ice shelves and rock. Each array is a cloud-optimised GeoTIFF on source.coop
+          with overviews, so the page reads only the window round the line and block, at the level whose
+          pixels suit its length: a few requests for a line across the continent as for one across a glacier.</p>
+        <p>Each sample becomes three bands: rock up to the bed, water from the bed to the ice base (under a
+          floating shelf) or to sea level (the open sea), and ice from its base to its surface. Grounded ice
+          rests on its bed; floating ice has its base at its surface less its thickness. The cut face of the
+          block is the section itself, the other three faces are the same bands along the block's edges, and
+          its top surfaces are the bed, the ice and the sea from the same grid. With the block on both sides of
+          the line, the ice is taken off the right-hand side to show the bed under it (unflooded and not
+          rebounded), and the block can be bent over the Earth's curve, for a line across the continent.</p>
+        <p>A drill site is a red rod from the bed up through the surface, with the ice thickness, bed and
+          their uncertainties read there at Bedmap3's full 500 m.</p>
+        <p>REMA gives heights above the WGS84 ellipsoid; the page subtracts the EGM2008 geoid (as the Geoid
+          page does) so its line sits with Bedmap3's and GEBCO's heights above sea level. Where REMA and
+          Bedmap3's surface part, that is the datum, the date and the resolution of each source, and worth a
+          look. GEBCO 2026 is the ice surface in Antarctica and the sea floor beyond, in longitude and
+          latitude, sampled through the projection.</p>
+        <ul class="credits">
+          <li>Bedmap3: Pritchard, H.D., Fretwell, P.T., Fremand, A.C., et al. (2025) Bedmap3 updated ice bed, surface and thickness gridded datasets for Antarctica. Sci Data 12, 414; data from the UK Polar Data Centre (CC BY 4.0), <a href="https://source.coop/ausantarctic/bedmap">copied to source.coop</a>.</li>
+          <li>REMA v2: Howat, I. et al., Polar Geospatial Center; the 100 m, 500 m and 1 km mosaics from <a href="https://github.com/mdsumner/rema-ovr">rema-ovr</a>.</li>
+          <li>GEBCO Compilation Group (2026) GEBCO 2026 Grid, <a href="https://source.coop/ausantarctic/gebco">on source.coop</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
