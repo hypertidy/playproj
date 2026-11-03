@@ -923,7 +923,8 @@ exaggerated by 10^gx), `dz` (height by 10^dz on top of the scene's
 The Time and depth page now lives in [sondage](https://github.com/allboa/sondage), the
 allboa package this page grew into. playproj's `fourd.html` keeps its place in the
 nav and loads sondage's page script from jsDelivr, pinned to one commit
-(move the pin in the `<script>` tag to take a newer sondage). The code,
+(`node tools/pin-sondage.mjs ../sondage <commit>` rebuilds both pages from
+sondage's own at that commit, keeping playproj's nav). The code,
 tests and registry described below are in sondage.
 
 `fourd.html` puts several time series on one globe on one date: sea ice,
@@ -984,7 +985,8 @@ them against published `arrays.json` and the registry. Hash keys: `date`, `layer
 The Cutaway page now lives in [sondage](https://github.com/allboa/sondage), the
 allboa package this page grew into. playproj's `cutaway.html` keeps its place in the
 nav and loads sondage's page script from jsDelivr, pinned to one commit
-(move the pin in the `<script>` tag to take a newer sondage). The code,
+(`node tools/pin-sondage.mjs ../sondage <commit>` rebuilds both pages from
+sondage's own at that commit, keeping playproj's nav). The code,
 tests and registry described below are in sondage.
 
 `cutaway.html` draws a line across Antarctic ice as a section and as a block
