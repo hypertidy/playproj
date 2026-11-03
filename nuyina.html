@@ -164,7 +164,8 @@
             (CC BY 4.0), each voyage cited by its record (linked under the voyage list). The parquet copy of the
             whole record is <a href="https://github.com/mdsumner/nuyina-underway">nuyina-underway</a>, read a few
             columns and row groups at a time with <a href="https://github.com/hyparam/hyparquet">hyparquet</a>
-            and <a href="https://github.com/101arrowz/fzstd">fzstd</a>.</li>
+            and <a href="https://github.com/101arrowz/fzstd">fzstd</a>. The <em>Now</em> entry reads the last
+            two weeks by time rather than by voyage code, so the page follows the ship between voyages.</li>
           <li><a href="https://ibcso.org/">IBCSO v2</a>: Dorschel, B. et al. (2022) The International Bathymetric Chart of the
             Southern Ocean Version 2, Scientific Data 9, 275, doi:10.1038/s41597-022-01366-7; read from a
             <a href="https://github.com/mdsumner/ibcso-cog">COG copy</a>.</li>
@@ -175,7 +176,9 @@
             <a href="https://github.com/wxylib/design/blob/150b4d3bb078bdd1f12ec0a3ced2fde9bc191985/docs/m10-overlapping-mosaics.md">m10: overlapping COG mosaics</a>.</li>
           <li>Map projections with <a href="https://github.com/proj4js/proj4js">proj4js</a>, checked against
             <a href="https://proj.org/">PROJ</a>; polar stereographic after Snyder (1987) <i>Map Projections: A Working Manual</i>.
-            COGs read with <a href="https://geotiffjs.github.io/">geotiff.js</a>; coastlines from
+            COGs read with <a href="https://geotiffjs.github.io/">geotiff.js</a>. NSIDC's server sends no CORS
+            header, so the sea ice GeoTIFF is read through a small relay that forwards Range requests and adds
+            it (<a href="https://github.com/mdsumner/nectar">nectar</a>, <code>recipes/relay</code>); coastlines from
             <a href="https://www.naturalearthdata.com/">Natural Earth</a>; the globe drawn with <a href="https://github.com/d3/d3-geo">d3-geo</a>.</li>
         </ul>
       </details>

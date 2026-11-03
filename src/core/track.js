@@ -25,6 +25,16 @@ export const VOYAGES = [
     record: "https://researchdata.edu.au/rsv-nuyina-voyage-24-v1/3650863", stops: ["hobart", "davis"] }
 ];
 
+// "Now": the last days of the record, read by time rather than by voyage
+// code, so the page follows the ship between and during voyages. Built when
+// asked, so the dates are today's.
+export function nowVoyage(days = 14) {
+  const d = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const end = Date.now();
+  return { code: "now", label: "Now", from: d(end - days * 864e5), to: d(end), about: `the last ${days} days, live from the AADC service`,
+    record: "https://github.com/mdsumner/nuyina-underway", stops: ["hobart"], live: true };
+}
+
 export const PLACES = {
   hobart: { name: "Hobart", lon: 147.3272, lat: -42.8821 },
   macquarie: { name: "Macquarie Island", lon: 158.9369, lat: -54.4994 },
@@ -37,9 +47,9 @@ export const PLACES = {
 
 // A GetFeature request for one voyage as CSV: only the named properties
 // when given, at most max rows when given.
-export function wfsUrl(code, { props = null, max = 0 } = {}) {
+export function wfsUrl(code, { props = null, max = 0, since = null } = {}) {
   const q = new URLSearchParams({ service: "WFS", version: "1.0.0", request: "GetFeature", typeName: LAYER, outputFormat: "csv" });
-  q.set("cql_filter", `set_code='${code}'`);
+  q.set("cql_filter", since ? `datetime > '${since}T00:00:00Z'` : `set_code='${code}'`);
   if (props && props.length) q.set("propertyName", props.join(","));
   if (max) q.set("maxFeatures", String(max));
   return `${WFS}?${q}`;
@@ -254,6 +264,7 @@ export function thin(tr, max = 6000) {
 // track, and pages should say so.
 export function portsOfCall(voyage) {
   const stops = voyage.stops.map((k) => PLACES[k]);
+  if (stops.length < 2) stops.push(PLACES.casey); // a one-stop schematic needs a leg to draw
   const legs = [...stops, stops[0]];
   const recs = [];
   let t = Date.parse(voyage.from + "T00:00:00Z");

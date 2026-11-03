@@ -173,3 +173,16 @@ check(M.pick("gebco", -65, true, false) === 0, "fallback alone");
 
 console.log(fails ? `nuyina: ${fails} failing` : "nuyina ok");
 if (fails) process.exit(1);
+
+// "Now": a live entry built from today's date, read by time rather than code
+{
+  const T = await import("../src/core/track.js");
+  const n = T.nowVoyage(14);
+  const days = (Date.parse(n.to) - Date.parse(n.from)) / 864e5;
+  if (n.code !== "now" || !n.live || days !== 14) throw new Error(`nowVoyage: ${JSON.stringify(n)}`);
+  const u = T.wfsUrl("now", { since: n.from, max: 1 });
+  if (!u.includes("cql_filter=datetime") || u.includes("set_code")) throw new Error(`wfsUrl since: ${u}`);
+  if (!T.wfsUrl("202526010").includes("set_code")) throw new Error("wfsUrl by code");
+  if (T.portsOfCall(n).n < 2) throw new Error("portsOfCall for one stop");
+  console.log("nuyina: now entry ok");
+}

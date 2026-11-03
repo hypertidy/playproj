@@ -26,6 +26,12 @@ const FZSTD = "https://cdn.jsdelivr.net/npm/fzstd@0.1.1/+esm";
 // sds lists IBCSO as github.com/mdsumner/ibcso-cog/raw/main/...; that
 // redirects (without CORS) to the LFS host, which is read directly
 const IBCSO = "https://media.githubusercontent.com/media/mdsumner/ibcso-cog/main/IBCSO_v2_ice-surface_cog.tif";
+// NSIDC sends no CORS header, so the sea ice GeoTIFF is read through a relay
+// that forwards Range requests and adds the header: a small Nectar VM built
+// from github.com/mdsumner/nectar recipes/relay (guide: A relay for browser
+// reads). Only NSIDC goes through it; set to "" to read direct.
+const RELAY = "https://relay.ace-eco-stats.cloud.edu.au/?url=";
+const viaRelay = (url) => (RELAY ? RELAY + encodeURIComponent(url) : url);
 const IBCSO_GRID = { x0: -4800000, y0: 4800000, dx: 500, dy: 500, width: 19200, height: 19200 };
 const GEBCO_GRID = { x0: -180, y0: 90, dx: 1 / 240, dy: 1 / 240, width: 86400, height: 43200 };
 const MAX_IMAGE = 900;     // map image pixels on the longer side
@@ -44,7 +50,7 @@ const COLORS = {
 
 const VIEW_SPAN = { ship: 3, polar: Math.log10(7000) };
 const defaults = {
-  v: T.VOYAGES[0].code, t: 0.3, view: "ship", proj: "laea", up: 0, span: VIEW_SPAN.ship, cx: 0, cy: 0,
+  v: "now", t: 1, view: "ship", proj: "laea", up: 0, span: VIEW_SPAN.ship, cx: 0, cy: 0,
   plan: "first", cut: -60, src: 0, ice: 1, cells: 0, coast: 1, rings: 1, by: "", to: "hobart", from: "wfs", pq: ""
 };
 const state = { ...defaults };
@@ -62,7 +68,8 @@ function readHash() {
 }
 const writeHash = hashWriter(state, defaults, { skip: (k) => (k === "cx" || k === "cy") && state.view !== "polar" });
 
-const voyage = () => T.VOYAGES.find((v) => v.code === state.v) || T.VOYAGES[0];
+const NOW = T.nowVoyage();
+const voyage = () => (state.v === "now" ? NOW : T.VOYAGES.find((v) => v.code === state.v) || NOW);
 
 // ---------------------------------------------------------------- data
 
@@ -162,7 +169,7 @@ function loadIce(day) {
   if (ice.has(day)) return ice.get(day);
   const p = (async () => {
     const GT = await geotiff();
-    const tiff = await GT.fromUrl(S.nsidcUrl(day));
+    const tiff = await GT.fromUrl(viaRelay(S.nsidcUrl(day)));
     const img = await tiff.getImage();
     const [band] = await img.readRasters({ samples: [0] });
     const bits = band.BYTES_PER_ELEMENT === 1 ? 8 : 16;
@@ -196,16 +203,17 @@ async function loadTrack() {
       if (trackKey !== key) return;
       track = tr; trackNote = pqLocal ? `from ${pqLocal.name}` : "";
     } else {
-      $("csv-link").href = T.wfsUrl(v.code);
-      setTrackStatus(`Asking the AADC for voyage ${v.label}...`);
-      const head = await fetchText(T.wfsUrl(v.code, { max: 1 }));
+      const since = v.live ? v.from : null;
+      $("csv-link").href = T.wfsUrl(v.code, { since });
+      setTrackStatus(v.live ? "Asking the AADC for the last two weeks..." : `Asking the AADC for voyage ${v.label}...`);
+      const head = await fetchText(T.wfsUrl(v.code, { max: 1, since }));
       const rows = T.parseCSV(head);
       if (rows.length < 1) throw new Error("no rows");
       const cols = T.detectColumns(rows[0]);
       const names = [cols.time, cols.lon, cols.lat, cols.geom].filter((i) => i >= 0).map((i) => rows[0][i]);
       if (state.by && rows[0].includes(state.by)) names.push(state.by);
       setTrackStatus(`Reading voyage ${v.label}, one fix a minute...`);
-      const text = await fetchText(T.wfsUrl(v.code, { props: names.filter((n) => n !== "FID") }));
+      const text = await fetchText(T.wfsUrl(v.code, { props: names.filter((n) => n !== "FID"), since }));
       const tr = T.trackFromCSV(text, state.by);
       tr.numeric = T.numericColumns(rows, cols);
       if (trackKey !== key) return;
@@ -810,7 +818,7 @@ function setStatus(t) {
 }
 function setTrackStatus(t) { $("track-status").textContent = t; }
 
-for (const v of T.VOYAGES) {
+for (const v of [NOW, ...T.VOYAGES]) {
   const o = document.createElement("option");
   o.value = v.code; o.textContent = `${v.label}: ${v.about}`;
   $("voyage").appendChild(o);
@@ -918,7 +926,7 @@ $("play").addEventListener("click", () => {
   if (playing) requestAnimationFrame(tick);
 });
 $("t").addEventListener("input", (e) => { state.t = +e.target.value; schedule(); });
-$("voyage").addEventListener("change", (e) => { state.v = e.target.value; state.t = defaults.t; loadTrack().then(schedule); schedule(); });
+$("voyage").addEventListener("change", (e) => { state.v = e.target.value; state.t = state.v === "now" ? 1 : 0.3; loadTrack().then(schedule); schedule(); });
 for (const b of $("views").querySelectorAll("button")) b.addEventListener("click", () => {
   if (state.view === b.dataset.view) return;
   state.view = b.dataset.view; state.span = VIEW_SPAN[state.view]; state.cx = state.cy = 0;
