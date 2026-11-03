@@ -36,7 +36,7 @@
       <label class="row" for="preset"><span>Line</span></label>
       <select id="preset" aria-label="A line worth a look"></select>
       <canvas id="cut-map" width="300" height="300" aria-label="Antarctica from Bedmap3: click twice for a line, A then B" class="cut-map"></canvas>
-      <p id="map-hint" class="hint">Click twice on the map for a new line: A, then B.</p>
+      <p id="map-hint" class="hint" role="status">Click twice on the map for a new line: A, then B.</p>
       <div class="buttons">
         <label>A <input id="a" class="token" type="text" size="14" spellcheck="false" aria-label="A as longitude,latitude"></label>
         <label>B <input id="b" class="token" type="text" size="14" spellcheck="false" aria-label="B as longitude,latitude"></label>
@@ -70,9 +70,10 @@
           <option value="custom">longitude,latitude...</option>
         </select>
         <input id="site-ll" class="token" type="text" size="16" spellcheck="false" aria-label="Drill site as longitude,latitude">
+        <label title="While placing B on the map, a dashed line from A through the drill site"><input id="guide" type="checkbox"> guide through the site</label>
       </div>
       <label class="row" for="ve"><span>Vertical exaggeration</span><output id="vert"></output></label>
-      <input id="ve" type="range" min="0" max="200" step="5" aria-label="Vertical exaggeration (0 is automatic)">
+      <input id="ve" type="range" min="0" max="100" step="1" aria-label="Vertical exaggeration: far left automatic, then true scale up to x 500">
       <div class="buttons">
         <label><input id="rema" type="checkbox"> REMA surface</label>
         <label><input id="gebco" type="checkbox"> GEBCO 2026</label>
@@ -107,7 +108,9 @@
           the line, the ice is taken off the right-hand side to show the bed under it (unflooded and not
           rebounded), and the block can be bent over the Earth's curve, for a line across the continent.</p>
         <p>A drill site is a red rod from the bed up through the surface, with the ice thickness, bed and
-          their uncertainties read there at Bedmap3's full 500 m.</p>
+          their uncertainties read there at Bedmap3's full 500 m. While B is placed on the map, a dashed guide
+          runs from A through the site to the map's edge, and the hint says how far the line to the cursor
+          passes from the site (Escape starts again).</p>
         <p>REMA gives heights above the WGS84 ellipsoid; the page subtracts the EGM2008 geoid (as the Geoid
           page does) so its line sits with Bedmap3's and GEBCO's heights above sea level. Where REMA and
           Bedmap3's surface part, that is the datum, the date and the resolution of each source, and worth a

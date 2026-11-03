@@ -71,6 +71,26 @@ export function frameOf(f, p) {
   return { s: dx * f.ux + dy * f.uy, t: dx * f.nx + dy * f.ny };
 }
 
+// How far a point p passes from the segment a to b (all EPSG:3031 metres),
+// and where along it (0 at a, 1 at b) the nearest point lies.
+export function offLine(a, b, p) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+  const u = L2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
+  return { d: Math.hypot(a[0] + u * dx - p[0], a[1] + u * dy - p[1]), u };
+}
+
+// The guide from a through p, out to the edge of the square of half width
+// h about the origin: the far end, where a line from a must end to pass
+// through p.
+export function guideEnd(a, p, h) {
+  const dx = p[0] - a[0], dy = p[1] - a[1];
+  if (!dx && !dy) return p.slice();
+  let k = Infinity;
+  if (dx > 0) k = Math.min(k, (h - a[0]) / dx); else if (dx < 0) k = Math.min(k, (-h - a[0]) / dx);
+  if (dy > 0) k = Math.min(k, (h - a[1]) / dy); else if (dy < 0) k = Math.min(k, (-h - a[1]) / dy);
+  return [a[0] + k * dx, a[1] + k * dy];
+}
+
 // The Earth's mean radius (m), for the curved block.
 export const R = 6371008.8;
 
@@ -241,6 +261,20 @@ export function summary(rows) {
     if (i && (rows[i - 1].l.kind === "floating") !== (l.kind === "floating") && (l.kind === "grounded" || rows[i - 1].l.kind === "grounded")) out.grounding.push((r.s + rows[i - 1].s) / 2);
   }
   return out;
+}
+
+// The vertical exaggeration slider: 0 is automatic, 1 to 100 run on a log
+// scale from true scale (x 1) to x 500, rounded to two figures.
+export const VE_MAX = 500;
+export function veOfSlider(v) {
+  if (!(v > 0)) return 0;
+  const x = 10 ** (((Math.min(100, v) - 1) / 99) * Math.log10(VE_MAX));
+  const p = 10 ** (Math.floor(Math.log10(x)) - 1);
+  return Math.round(x / p) * p >= 10 ? Math.round(Math.round(x / p) * p) : +(Math.round(x / p) * p).toFixed(1);
+}
+export function sliderOfVe(ve) {
+  if (!(ve > 0)) return 0;
+  return Math.max(1, Math.min(100, Math.round(1 + (99 * Math.log10(Math.max(1, ve))) / Math.log10(VE_MAX))));
 }
 
 // A good vertical exaggeration for a line L metres long over a relief of
