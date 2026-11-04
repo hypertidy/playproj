@@ -12,6 +12,8 @@
 // quantise to whole voxels, and a block of them writes as a MagicaVoxel
 // .vox file.
 
+import { sampleWindow } from "./basemap.js";
+
 const D2R = Math.PI / 180;
 export const R = 6371008.8;   // mean radius, metres
 
@@ -156,6 +158,22 @@ export function syntheticWindow(lon0, lat0, ext, size = 256) {
   return { elev, width: size, height: size, west: box.west, north: box.north, dx, dy };
 }
 
+// The mean colour of each column from an RGBA lon/lat window (imagery,
+// as basemap.js reads it), s x s samples over the footprint: rgb[3k..],
+// and has[k] = 0 where the window has nothing there.
+export function columnColours(grid, win, s = 2) {
+  const n = grid.cols.length, rgb = new Uint8Array(n * 3), has = new Uint8Array(n), px = new Float32Array(4);
+  grid.cols.forEach((c, k) => {
+    let r = 0, g = 0, b = 0, m = 0;
+    for (const [lon, lat] of c.pts(s)) {
+      if (!sampleWindow(win, lon, lat, px, 0)) continue;
+      r += px[0]; g += px[1]; b += px[2]; m++;
+    }
+    if (m) { rgb[3 * k] = r / m; rgb[3 * k + 1] = g / m; rgb[3 * k + 2] = b / m; has[k] = 1; }
+  });
+  return { rgb, has };
+}
+
 // ------------------------------------------------------------ voxels
 
 // Palette, index 1 up as in a .vox file. Each column's surface class comes
@@ -174,6 +192,16 @@ export const PALETTE = [
   { key: "ice", rgb: [196, 226, 240] }
 ];
 export const CLASS = Object.fromEntries(PALETTE.slice(1).map((p, k) => [p.key, k + 1]));
+
+// Imagery on the tops goes into a .vox as a 6 x 6 x 6 colour cube after
+// the classes: index CUBE + 36 r + 6 g + b, levels 0, 51, .. 255.
+export const CUBE = PALETTE.length;
+export const cubeIndex = (r, g, b) => CUBE + 36 * Math.round(r / 51) + 6 * Math.round(g / 51) + Math.round(b / 51);
+function paletteRgb(c) {
+  if (c < CUBE) return PALETTE[c] ? PALETTE[c].rgb : null;
+  const k = c - CUBE;
+  return k < 216 ? [51 * Math.floor(k / 36), 51 * (Math.floor(k / 6) % 6), 51 * (k % 6)] : null;
+}
 
 // Snow from about 4800 m at the equator down to the sea toward the poles.
 export const snowLine = (lat) => 4800 * Math.cos(lat * D2R) ** 2;
@@ -227,9 +255,10 @@ export function shellFloor(top, ni, nj, base) {
 
 // A MagicaVoxel .vox file (version 150) of the block: x east, y north,
 // z up, the shell of each column with its layers' classes, and the sea as
-// water where water is set. Throws where the block is over 256 voxels on
-// a side, the format's limit.
-export function writeVox(q, ni, nj, surface, { water = true } = {}) {
+// water where water is set. With tops ({ rgb, has } from columnColours),
+// a land column's top voxel takes its colour from the cube. Throws where
+// the block is over 256 voxels on a side, the format's limit.
+export function writeVox(q, ni, nj, surface, { water = true, tops = null } = {}) {
   const { top, base } = q, nz = Math.max(q.hi, 0) - base;
   if (ni > 256 || nj > 256 || nz > 256)
     throw new Error(`the block is ${ni} x ${nj} x ${nz} voxels, and a .vox model stops at 256 on a side`);
@@ -237,7 +266,12 @@ export function writeVox(q, ni, nj, surface, { water = true } = {}) {
   for (let j = 0; j < nj; j++)
     for (let i = 0; i < ni; i++) {
       const k = j * ni + i;
-      for (let t = floor[k]; t < top[k]; t++) vox.push(i, j, t - base, layerClass(surface[k], top[k] - 1 - t));
+      const img = tops && tops.has[k] && top[k] > 0
+        ? cubeIndex(tops.rgb[3 * k], tops.rgb[3 * k + 1], tops.rgb[3 * k + 2]) : 0;
+      for (let t = floor[k]; t < top[k]; t++) {
+        const d = top[k] - 1 - t;
+        vox.push(i, j, t - base, d === 0 && img ? img : layerClass(surface[k], d));
+      }
       if (water) for (let t = top[k]; t < 0; t++) {
         const edge = i === 0 || j === 0 || i === ni - 1 || j === nj - 1;
         if (t === -1 || edge) vox.push(i, j, t - base, CLASS.water);
@@ -257,8 +291,8 @@ export function writeVox(q, ni, nj, surface, { water = true } = {}) {
   u8.set(vox, o); o += vox.length;
   id("RGBA"); i32(rgba); i32(0);
   for (let c = 1; c <= 256; c++) {
-    const p = PALETTE[c];
-    const [r, g, b] = p ? p.rgb : [0, 0, 0];
+    const p = paletteRgb(c);
+    const [r, g, b] = p || [0, 0, 0];
     u8[o++] = r; u8[o++] = g; u8[o++] = b; u8[o++] = p ? 255 : 0;
   }
   return { bytes: u8, count, size: [ni, nj, nz] };

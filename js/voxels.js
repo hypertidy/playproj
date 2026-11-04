@@ -9,7 +9,8 @@
 import * as THREE from "three";
 import * as V from "../src/core/voxels.js";
 import { loadCoastline } from "./data.js";
-import { readElevation } from "./basemap-load.js";
+import { readElevation, readWindow } from "./basemap-load.js";
+import { sources } from "../src/core/basemap.js";
 import { saveBlob } from "./download.js";
 import { makeStage, readParams, hashWriter, shareLinks, oneOf, drawLocator } from "../src/scene/index.js";
 
@@ -32,11 +33,11 @@ const PLACES = [
 
 const defaults = {
   lon: PLACES[0].lon, lat: PLACES[0].lat, ext: PLACES[0].ext, n: 96, crs: "laea",
-  vs: 0, vx: 4, cube: 1, water: 1, edges: 1, src: "gebco", cam: null
+  vs: 0, vx: 4, cube: 1, water: 1, edges: 1, src: "gebco", tops: "classes", cam: null
 };
 const state = { ...defaults };
 function readHash() {
-  readParams(state, defaults, { crs: oneOf(Object.keys(V.CRS), "laea"), src: oneOf(["gebco", "synth"], "gebco") });
+  readParams(state, defaults, { crs: oneOf(Object.keys(V.CRS), "laea"), src: oneOf(["gebco", "synth"], "gebco"), tops: oneOf(["classes", "esri"], "classes") });
   state.lat = Math.max(-85, Math.min(85, state.lat));
   state.lon = ((state.lon + 540) % 360) - 180;
   state.ext = Math.max(5, Math.min(3000, state.ext));
@@ -54,11 +55,13 @@ const DEFAULT_CAM = [2.1, 1.9, 2.9, 0, -0.1, 0];
 const box = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
 
 const pal = V.PALETTE.map((p) => new THREE.Color(p ? `rgb(${p.rgb.join(",")})` : "#000"));
-const uniforms = { uPal: { value: pal }, uEdges: { value: 1 } };
+const uniforms = { uPal: { value: pal }, uEdges: { value: 1 }, uImg: { value: 0 } };
 
 const VERT = /* glsl */ `
   attribute vec2 aSpan;
   attribute float aClass;
+  attribute vec3 aRgb;
+  varying vec3 vRgb;
   varying float vLayer;
   varying float vTop;
   varying float vClass;
@@ -69,6 +72,7 @@ const VERT = /* glsl */ `
     vLayer = mix(aSpan.x, aSpan.y, position.y);
     vTop = aSpan.y;
     vClass = aClass;
+    vRgb = aRgb;
     vN = normal;
     vUv = uv;
     vCol = instanceMatrix[3].xz;
@@ -80,6 +84,8 @@ const VERT = /* glsl */ `
 const FRAG_COMMON = /* glsl */ `
   uniform vec3 uPal[${pal.length}];
   uniform float uEdges;
+  uniform float uImg;
+  varying vec3 vRgb;
   varying float vLayer;
   varying float vTop;
   varying float vClass;
@@ -123,6 +129,8 @@ const solidMat = new THREE.ShaderMaterial({
       else c = ${V.CLASS.stone}.0;
     }
     vec3 col = palette(c) * faceShade();
+    // imagery on the land's top faces (aRgb.r < 0 where there is none)
+    if (uImg > 0.5 && vN.y > 0.5 && d < 0.5 && vRgb.r >= 0.0) col = vRgb;
     col *= 0.94 + 0.12 * hash(vec3(floor(vCol * 997.0), floor(vLayer)));
     col *= 1.0 - 0.32 * uEdges * edgeLine();
     gl_FragColor = vec4(col, 1.0);
@@ -152,6 +160,7 @@ function instanced(mat, count) {
   const g = box.clone();
   g.setAttribute("aSpan", new THREE.InstancedBufferAttribute(new Float32Array(count * 2), 2));
   g.setAttribute("aClass", new THREE.InstancedBufferAttribute(new Float32Array(count), 1));
+  g.setAttribute("aRgb", new THREE.InstancedBufferAttribute(new Float32Array(count * 3).fill(-1), 3));
   const m = new THREE.InstancedMesh(g, mat, count);
   m.frustumCulled = false;
   scene.add(m);
@@ -185,6 +194,19 @@ async function windowFor(cellDeg) {
   return cache.get(k);
 }
 
+// Esri imagery over the block, about two pixels a column, kept likewise.
+async function imageryFor(cellDeg) {
+  const res = cellDeg / 2, lev = Math.round(Math.log2(res * 3600));
+  const k = `esri:${state.lon},${state.lat},${state.ext},${lev}`;
+  if (!cache.has(k)) {
+    const b = V.groundBox(state.lon, state.lat, state.ext * 1000 * 1.45);
+    const p = readWindow("esri", b, res, status);
+    p.catch(() => cache.delete(k));
+    cache.set(k, p);
+  }
+  return cache.get(k);
+}
+
 const status = (s) => { $("status").textContent = s; };
 
 // ---------------------------------------------------------------- build
@@ -201,7 +223,17 @@ async function build() {
     return;
   }
   if (my !== job) return;
-  status("");
+  let tops = null, imgNote = "";
+  if (state.tops === "esri") {
+    try {
+      const img = await imageryFor(cellDeg);
+      if (my !== job) return;
+      tops = V.columnColours(grid, img, 2);
+      if (img.note) imgNote = img.note;
+    } catch (e) { imgNote = `the imagery did not load (${e.message})`; }
+  }
+  if (my !== job) return;
+  status(imgNote ? `Esri imagery: ${imgNote}.` : "");
   const srcM = win.dy * (V.R * Math.PI / 180);
   const { z, s } = V.columnMeans(grid, V.sampler(win), srcM);
   let lo = Infinity, hi = -Infinity;
@@ -212,7 +244,7 @@ async function build() {
   const P = V.laea(grid.centre[0], grid.centre[1]);
   grid.cols.forEach((c, k) => { surface[k] = V.surfaceClass(z[k], c.lat !== undefined ? c.lat : P.inverse(c.x, c.y)[1]); });
   const exag = state.cube ? grid.cellM / step : state.vx;
-  built = { grid, z, q, surface, step, exag, win, s, srcM, lo, hi };
+  built = { grid, z, q, surface, step, exag, win, s, srcM, lo, hi, tops };
   draw();
   readout();
   locator();
@@ -225,7 +257,7 @@ function autoStep(relief) {
 }
 
 function draw() {
-  const { grid, q, surface, step, exag } = built;
+  const { grid, q, surface, step, exag, tops } = built;
   const S = 2 / (state.ext * 1000), vh = step * exag * S;
   const { cols } = grid, { top, base } = q;
   dispose(solid); dispose(water);
@@ -233,6 +265,7 @@ function draw() {
   const sea = cols.map((c, k) => k).filter((k) => top[k] < 0);
   water = state.water && sea.length ? instanced(waterMat, sea.length) : null;
   const m = new THREE.Matrix4(), span = solid.geometry.attributes.aSpan, cls = solid.geometry.attributes.aClass;
+  const rgb = solid.geometry.attributes.aRgb;
   const yOff = -((base + Math.max(q.hi, 0)) / 2) * vh;
   cols.forEach((c, k) => {
     const h = (top[k] - base) * vh;
@@ -240,6 +273,7 @@ function draw() {
     solid.setMatrixAt(k, m);
     span.setXY(k, base, top[k]);
     cls.setX(k, surface[k]);
+    if (tops && tops.has[k] && top[k] > 0) rgb.setXYZ(k, ...[0, 1, 2].map((c) => (tops.rgb[3 * k + c] / 255) ** 2.2));
   });
   if (water) {
     const ws = water.geometry.attributes.aSpan, wc = water.geometry.attributes.aClass;
@@ -253,6 +287,7 @@ function draw() {
     water.renderOrder = 1;
   }
   uniforms.uEdges.value = state.edges ? 1 : 0;
+  uniforms.uImg.value = tops ? 1 : 0;
 }
 
 // ---------------------------------------------------------------- readout
@@ -286,9 +321,9 @@ function readout() {
     ["Voxels", `${q.solid.toLocaleString("en")} ground${q.water ? `, ${q.water.toLocaleString("en")} water` : ""}`]
   ];
   $("out").innerHTML = rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("");
-  $("credit").innerHTML = win.label === "GEBCO 2026"
+  $("credit").innerHTML = (win.label === "GEBCO 2026"
     ? 'GEBCO Compilation Group (2026) GEBCO 2026 Grid, from <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>'
-    : "A synthetic island";
+    : "A synthetic island") + (built.tops ? `; ${sources.esri.credit}` : "");
 }
 
 function locator() {
@@ -318,6 +353,7 @@ function syncControls() {
   $("lonlat").value = `${+state.lon.toFixed(4)}, ${+state.lat.toFixed(4)}`;
   $("ext").value = Math.log10(state.ext); $("ext-out").textContent = `${+state.ext.toFixed(state.ext < 100 ? 1 : 0)} km`;
   $("src").value = state.src;
+  $("tops").value = state.tops;
 }
 
 function changed({ rebuild = true, view = false } = {}) {
@@ -343,6 +379,7 @@ $("cube").addEventListener("change", (e) => { state.cube = e.target.checked ? 1 
 $("water").addEventListener("change", (e) => { state.water = e.target.checked ? 1 : 0; changed({ rebuild: false }); });
 $("edges").addEventListener("change", (e) => { state.edges = e.target.checked ? 1 : 0; changed({ rebuild: false }); });
 $("src").addEventListener("change", (e) => { state.src = e.target.value; changed(); });
+$("tops").addEventListener("change", (e) => { state.tops = e.target.value; changed(); });
 $("ext").addEventListener("change", (e) => { state.ext = +(10 ** +e.target.value).toFixed(1); changed(); });
 $("ext").addEventListener("input", (e) => { $("ext-out").textContent = `${+(10 ** +e.target.value).toFixed(1)} km`; });
 $("lonlat").addEventListener("change", (e) => {
@@ -372,7 +409,7 @@ $("sweep").addEventListener("click", () => {
 $("save-vox").addEventListener("click", () => {
   if (!built) return;
   try {
-    const { bytes, count, size } = V.writeVox(built.q, built.grid.ni, built.grid.nj, built.surface, { water: !!state.water });
+    const { bytes, count, size } = V.writeVox(built.q, built.grid.ni, built.grid.nj, built.surface, { water: !!state.water, tops: built.tops });
     const name = (PLACES.find((p) => p.key === $("place").value) || { key: "voxels" }).key;
     saveBlob(new Blob([bytes], { type: "application/octet-stream" }), `${name}-${state.crs}-${state.n}.vox`);
     $("vox-status").textContent = `${size.join(" x ")} voxels, ${count.toLocaleString("en")} written (the shell of each column).`;
