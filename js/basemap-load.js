@@ -102,8 +102,9 @@ async function loadEsri(src, status) {
 // res degrees per pixel (or finer), read from the source at the level that
 // suits: GEBCO's own overviews, or Esri tiles at a deeper zoom. Where the
 // global image already has the detail, or the finer read fails, the global
-// image is used (and the window says why in `note`).
-export async function readWindow(id, box, res, status = () => {}) {
+// image is used (and the window says why in `note`). maxTiles caps the
+// Esri tiles one window may take (64 unless a page asks for more).
+export async function readWindow(id, box, res, status = () => {}, { maxTiles } = {}) {
   const world = await loadWorld(id, status);
   const global = worldWindow(world);
   if (res >= global.dx * 0.999) return global;
@@ -111,7 +112,7 @@ export async function readWindow(id, box, res, status = () => {}) {
     let w = null;
     if (id === "gebco") w = await readGebcoWindow(await gebcoLevels(sources.gebco, status), box, res, status);
     else {
-      const plan = esriPlan(box, res);
+      const plan = esriPlan(box, res, sources.esri, maxTiles);
       if (plan) {
         const { z, tx0, tx1, ty0, ty1 } = plan;
         status(`Loading ${(tx1 - tx0 + 1) * (ty1 - ty0 + 1)} Esri imagery tiles at zoom ${z}...`);

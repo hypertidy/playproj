@@ -13,6 +13,7 @@
 // .vox file.
 
 import { sampleWindow } from "./basemap.js";
+import { tmerc, centralMeridian } from "./mgrs.js";
 
 const D2R = Math.PI / 180;
 export const R = 6371008.8;   // mean radius, metres
@@ -182,6 +183,29 @@ export function planWindow(src, fwd, pts, cellM, lat0 = 0, max = 2048) {
     x0: src.x0 + i0 * f * src.dx, y0: src.y0 + j0 * f * src.dy, dx: src.dx * f * step, dy: src.dy * f * step,
     cellM: cell(f * step)
   };
+}
+
+// lon/lat to x, y for the transverse Mercator zones a regional DEM is
+// likely to come in: UTM (EPSG 326zz north, 327zz south) and the Map Grid
+// of Australia (GDA94 283zz, GDA2020 78zz), which is UTM on GRS80, here
+// on WGS84 (the two ellipsoids differ by well under a millimetre in these
+// coordinates, the datums by a metre or two). null for any other code.
+export function zoneForward(epsg) {
+  let zone = 0, south = true;
+  if (epsg >= 32601 && epsg <= 32660) { zone = epsg - 32600; south = false; }
+  else if (epsg >= 32701 && epsg <= 32760) zone = epsg - 32700;
+  else if (epsg >= 28348 && epsg <= 28358) zone = epsg - 28300;
+  else if (epsg >= 7846 && epsg <= 7859) zone = epsg - 7800;
+  else return null;
+  const lon0 = centralMeridian(zone), fn = south ? 10000000 : 0;
+  return (lon, lat) => { const [x, y] = tmerc(lon, lat, lon0); return [x + 500000, y + fn]; };
+}
+
+// A sampler that reads first, and falls back to second where first has
+// nothing (off its grid, or at its nodata): a fine regional DEM over its
+// land, a global grid round it.
+export function fallbackSampler(first, second) {
+  return (lon, lat) => { const v = first(lon, lat); return v === v ? v : second(lon, lat); };
 }
 
 // Points round a block (its outline and a cross through it), lon/lat.

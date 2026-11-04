@@ -212,14 +212,14 @@ const tyOf = (lat) => (1 - Math.log(Math.tan(Math.PI / 4 + clamp(lat, -MERC_LIM,
 // z (n tiles across) and the tile columns tx0..tx1 and rows ty0..ty1 (tx
 // can run past n across the antimeridian), or null where the global
 // image's zoom is as deep as the read can go.
-export function esriPlan(box, res, src = sources.esri) {
+export function esriPlan(box, res, src = sources.esri, maxTiles = ESRI_MAX_TILES) {
   let z = clamp(Math.ceil(Math.log2(360 / (256 * res))), src.zoom, ESRI_MAX_ZOOM), n, tx0, tx1, ty0, ty1;
   for (;; z--) {
     n = 2 ** z;
     tx0 = Math.floor(((box.west + 180) / 360) * n); tx1 = Math.floor(((box.east + 180) / 360) * n - 1e-9);
     if (tx1 - tx0 + 1 > n) { tx0 = 0; tx1 = n - 1; }
     ty0 = Math.floor(tyOf(box.north) * n); ty1 = Math.min(n - 1, Math.floor(tyOf(box.south) * n));
-    if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) <= ESRI_MAX_TILES || z <= src.zoom) break;
+    if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) <= maxTiles || z <= src.zoom) break;
   }
   if (z <= src.zoom) return null;
   return { z, n, tx0, tx1, ty0, ty1 };

@@ -1032,7 +1032,7 @@ elevation over its footprint, rounded to whole voxels of one height and
 stacked from a common floor, then drawn as one instanced box per column with
 its layers coloured and edged in the shader (Minecraft's face shading: grass,
 dirt and stone; rock, snow and ice by height and latitude; sea floor and a
-translucent sea). Columns across, 8 to 256, is the resolution; Sweep steps
+translucent sea). Columns across, 8 to 512, is the resolution; Sweep steps
 through the powers of two, which is what a stack of overviews does to the
 same ground. GEBCO is read in place at the level of its own overviews that
 suits the columns, and the readout says which and how many samples each
@@ -1048,15 +1048,20 @@ model (version 150: SIZE, XYZI, RGBA), the visible shell of each column, up
 to 256 voxels on a side. Tops can take Esri World Imagery instead of the
 height colours: each land column's top face is the imagery's mean colour over
 its footprint (a 6 x 6 x 6 colour cube in the .vox palette). A synthetic
-island stands in where GEBCO cannot be read. Hash keys: `lon`, `lat`, `ext` (km), `n`, `crs` (`array`, `lonlat`,
+island stands in where GEBCO cannot be read. Over Tasmania, once the columns
+are finer than 500 m (GEBCO's cells are about 460 m), the land comes from the
+state's 2 m DEM (Mineral Resources Tasmania, The LIST, CC BY 3.0 AU), a COG on
+Source Cooperative in MGA zone 55, read in place through the same
+`planWindow` and `gridSampler` as below (`js/dem-load.js`), with GEBCO for the
+sea and past its edges. Hash keys: `lon`, `lat`, `ext` (km), `n`, `crs` (`array`, `lonlat`,
 `laea`), `vs` (m, 0 automatic), `vx`, `cube`, `water`, `edges`, `src`
-(`gebco`, `synth`), `tops` (`classes`, `esri`, `esritex`: imagery textured over the tops), `spin`, `sides` (`layers`,
+(`gebco`, with finer regional DEMs; `gebco0`, GEBCO alone; `synth`), `tops` (`classes`, `esri`, `esritex`: imagery textured over the tops), `spin`, `sides` (`layers`,
 `colour`, `none`: the sides as dirt and stone, one colour `sc` in hex, or not
 drawn, which the .vox follows), `sc`, `cam`.
 
 ### Your own elevation
 
-The page reads GEBCO only, but the voxel functions in `src/core/voxels.js`
+The page reads GEBCO and one regional DEM, but the voxel functions in `src/core/voxels.js`
 (exported as `voxels` from `src/core/index.js`, `playproj/core` as a package)
 take elevation from anywhere, in any CRS. `planWindow` finds the window and
 overview of a grid that a block needs, `gridSampler` reads heights from that
@@ -1210,6 +1215,7 @@ cutaway.html (sondage)                 Cutaway: a section and block diagram thro
 voxels.html, js/voxels.js              Voxels: GEBCO topography as voxel columns, three cell systems, MagicaVoxel export
 
 js/data.js          loads the coastlines in data/
+js/dem-load.js      opens a projected elevation COG (UTM or MGA) and reads the window a block needs
 js/basemap-load.js  fetches the basemaps in the browser and makes their canvases
 js/download.js      hands a file to the browser as a download
 js/basemap-ui.js    basemap picker and cell GeoTIFF button for the cells pages

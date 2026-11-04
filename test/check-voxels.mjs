@@ -178,5 +178,22 @@ for (const crs of ["laea", "lonlat", "array"]) {
   check(peak > 1800 && f(10, 45) < peak - 500 && rim < -1500, `synthetic island peak ${peak}, crater ${f(10, 45)}, edge ${rim}`);
 }
 
+// zone CRS codes against proj4 (MGA 55 on GRS80, UTM 33N on WGS84), and
+// the fallback sampler
+{
+  const mga = V.zoneForward(28355), m20 = V.zoneForward(7855), utm = V.zoneForward(32633);
+  const pm = proj4("EPSG:4326", "+proj=utm +zone=55 +south +ellps=GRS80 +units=m +no_defs");
+  const pu = proj4("EPSG:4326", "+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs");
+  for (const [lon, lat] of [[147.237, -42.896], [145.95, -41.68], [144.1, -40.7]]) {
+    const [x, y] = mga(lon, lat), [px, py] = pm.forward([lon, lat]);
+    check(Math.hypot(x - px, y - py) < 1e-3 && m20(lon, lat)[0] === x, `MGA 55 at ${lon},${lat}: ${x},${y} vs ${px},${py}`);
+  }
+  const [x, y] = utm(14.5, 48.2), [px, py] = pu.forward([14.5, 48.2]);
+  check(Math.hypot(x - px, y - py) < 1e-3, "UTM 33N");
+  check(V.zoneForward(3857) === null && V.zoneForward(4326) === null, "other codes are not zones");
+  const f = V.fallbackSampler((lon) => (lon > 0 ? 5 : NaN), () => -7);
+  check(f(1, 0) === 5 && f(-1, 0) === -7, "fallback sampler");
+}
+
 if (fails) { console.log(`${fails} voxel checks failed`); process.exit(1); }
 console.log("voxels: laea vs proj4, grids, means, quantising and .vox all agree");
