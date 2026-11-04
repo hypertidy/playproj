@@ -55,6 +55,12 @@
         <label><input id="edges" type="checkbox"> Edges</label>
         <label><input id="spin" type="checkbox"> Spin</label>
       </div>
+      <label class="row" for="sides"><span>Sides</span><input id="sc" type="color" aria-label="Side colour"></label>
+      <select id="sides" class="wide">
+        <option value="layers">Layers (dirt, stone, rock)</option>
+        <option value="colour">One colour</option>
+        <option value="none">Hidden (the tops alone)</option>
+      </select>
       <p class="hint">Cubes sets the exaggeration so each voxel is drawn as tall as it is wide.</p>
     </section>
 
@@ -71,7 +77,8 @@
       <label class="row" for="tops"><span>Tops</span></label>
       <select id="tops" class="wide">
         <option value="classes">Coloured by height</option>
-        <option value="esri">Esri World Imagery</option>
+        <option value="esri">Esri World Imagery, a colour a column</option>
+        <option value="esritex">Esri World Imagery, textured</option>
       </select>
       <p id="status" class="status" role="status"></p>
     </section>
@@ -110,15 +117,19 @@
         <p>Surfaces are coloured by height and latitude (sand, grass, rock, snow above a snow line that falls
           toward the poles, ice past the polar circles), with dirt under the grass and stone below.
           <b>Tops</b> can instead take Esri World Imagery: each land column's top face is the mean colour of
-          the imagery over its footprint, read from Web Mercator tiles at the zoom that suits.
+          the imagery over its footprint, read from Web Mercator tiles at the zoom that suits; textured, the
+          imagery itself is laid over the tops at about 1024 pixels across the block (the .vox keeps the
+          mean colours).
           <b>Download .vox</b> writes the block as a MagicaVoxel model (version 150 format: SIZE, XYZI and RGBA
-          chunks), the shell of each column with its sea, up to 256 voxels on a side; imagery tops go in as a
+          chunks), the shell of each column with its sea, up to 256 voxels on a side (with <b>Sides</b> hidden, the
+          tops alone; in one colour, that colour under the tops); imagery tops go in as a
           6 x 6 x 6 colour cube after the classes, the 255 colours a .vox palette allows.</p>
         <p>Hash keys: <code>lon</code>, <code>lat</code>, <code>ext</code> (width in km), <code>n</code>
           (columns across), <code>crs</code> (<code>array</code>, <code>lonlat</code>, <code>laea</code>),
           <code>vs</code> (voxel height in m, 0 for automatic), <code>vx</code>, <code>cube</code>,
-          <code>water</code>, <code>edges</code>, <code>spin</code>, <code>src</code>, <code>tops</code> (<code>classes</code>,
-          <code>esri</code>), <code>cam</code>.</p>
+          <code>water</code>, <code>edges</code>, <code>spin</code>, <code>sides</code> (<code>layers</code>,
+          <code>colour</code>, <code>none</code>), <code>sc</code> (side colour, hex), <code>src</code>, <code>tops</code> (<code>classes</code>,
+          <code>esri</code>, <code>esritex</code>), <code>cam</code>.</p>
         <ul class="credits">
           <li>Elevation from the GEBCO 2026 Grid (GEBCO Compilation Group), from
             <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>, read with

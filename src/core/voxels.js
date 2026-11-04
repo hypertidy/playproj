@@ -74,7 +74,7 @@ export function columnGrid(lon0, lat0, ext, n, crs = "laea") {
         });
       }
     const [clon, clat] = P.inverse(0, 0);
-    return { crs, ni: n, nj: n, cellM: c, cellDeg: null, cols, centre: [clon, clat] };
+    return { crs, ni: n, nj: n, cellM: c, cellDeg: null, cols, centre: [clon, clat], toLonLat: (x, y) => P.inverse(x, y) };
   }
   const box = groundBox(lon0, lat0, ext);
   const cd = (box.east - box.west) / n, nj = Math.max(1, Math.round((box.north - box.south) / cd));
@@ -90,7 +90,14 @@ export function columnGrid(lon0, lat0, ext, n, crs = "laea") {
       cols.push({ i, j, lon, lat, ...col, pts: (s) => spread(s, (u, v) => [lon + (u - 0.5) * cd, lat + (v - 0.5) * cd]) });
     }
   }
-  return { crs, ni: n, nj, cellM: m * cl0, cellDeg: cd, cols, centre: [lon0, lat0] };
+  // scene metres back to lon/lat, the inverse of each layout above
+  const toLonLat = crs === "array"
+    ? (x, y) => [box.west + (x / (m * cl0) + n / 2) * cd, south + (y / (m * cl0) + nj / 2) * cd]
+    : (x, y) => {
+      const lat = lat0 + y / R / D2R;
+      return [lon0 + x / (R * Math.max(1e-6, Math.cos(lat * D2R))) / D2R, lat];
+    };
+  return { crs, ni: n, nj, cellM: m * cl0, cellDeg: cd, cols, centre: [lon0, lat0], toLonLat };
 }
 
 function spread(s, f) {
@@ -241,6 +248,32 @@ export function columnColours(grid, win, s = 2) {
   return { rgb, has };
 }
 
+// The block's footprint in scene metres, { x0, y0, x1, y1 }, round all
+// its columns.
+export function footprint(grid) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const c of grid.cols) {
+    x0 = Math.min(x0, c.x - c.wx / 2); x1 = Math.max(x1, c.x + c.wx / 2);
+    y0 = Math.min(y0, c.y - c.wy / 2); y1 = Math.max(y1, c.y + c.wy / 2);
+  }
+  return { x0, y0, x1, y1 };
+}
+
+// An RGBA texture W x H of an imagery window over the block's footprint,
+// row 0 at the north, through grid.toLonLat.
+export function topTexture(grid, win, W = 1024, H = W) {
+  const f = footprint(grid), out = new Uint8ClampedArray(W * H * 4);
+  for (let j = 0; j < H; j++) {
+    const y = f.y1 - ((j + 0.5) / H) * (f.y1 - f.y0);
+    for (let i = 0; i < W; i++) {
+      const [lon, lat] = grid.toLonLat(f.x0 + ((i + 0.5) / W) * (f.x1 - f.x0), y);
+      const k = (j * W + i) * 4;
+      if (sampleWindow(win, lon, lat, out, k)) out[k + 3] = 255;
+    }
+  }
+  return { width: W, height: H, data: out, box: f };
+}
+
 // ------------------------------------------------------------ voxels
 
 // Palette, index 1 up as in a .vox file. Each column's surface class comes
@@ -264,8 +297,11 @@ export const CLASS = Object.fromEntries(PALETTE.slice(1).map((p, k) => [p.key, k
 // the classes: index CUBE + 36 r + 6 g + b, levels 0, 51, .. 255.
 export const CUBE = PALETTE.length;
 export const cubeIndex = (r, g, b) => CUBE + 36 * Math.round(r / 51) + 6 * Math.round(g / 51) + Math.round(b / 51);
-function paletteRgb(c) {
+// and one colour for the sides, when they are all one colour
+export const SIDE = CUBE + 216;
+function paletteRgb(c, side) {
   if (c < CUBE) return PALETTE[c] ? PALETTE[c].rgb : null;
+  if (c === SIDE) return side || null;
   const k = c - CUBE;
   return k < 216 ? [51 * Math.floor(k / 36), 51 * (Math.floor(k / 6) % 6), 51 * (k % 6)] : null;
 }
@@ -329,9 +365,11 @@ export function shellFloor(top, ni, nj, base) {
 // A MagicaVoxel .vox file (version 150) of the block: x east, y north,
 // z up, the shell of each column with its layers' classes, and the sea as
 // water where water is set. With tops ({ rgb, has } from columnColours),
-// a land column's top voxel takes its colour from the cube. Throws where
-// the block is over 256 voxels on a side, the format's limit.
-export function writeVox(q, ni, nj, surface, { water = true, tops = null } = {}) {
+// a land column's top voxel takes its colour from the cube. sides is
+// "layers" (the classes under the top), "colour" (every voxel under the
+// top in sideRgb) or "none" (the top voxel alone, and the sea's surface).
+// Throws where the block is over 256 voxels on a side, the format's limit.
+export function writeVox(q, ni, nj, surface, { water = true, tops = null, sides = "layers", sideRgb = [128, 128, 128] } = {}) {
   const { top, base } = q, nz = Math.max(q.hi, 0) - base;
   if (ni > 256 || nj > 256 || nz > 256)
     throw new Error(`the block is ${ni} x ${nj} x ${nz} voxels, and a .vox model stops at 256 on a side`);
@@ -341,12 +379,13 @@ export function writeVox(q, ni, nj, surface, { water = true, tops = null } = {})
       const k = j * ni + i;
       const img = tops && tops.has[k] && top[k] > 0
         ? cubeIndex(tops.rgb[3 * k], tops.rgb[3 * k + 1], tops.rgb[3 * k + 2]) : 0;
-      for (let t = floor[k]; t < top[k]; t++) {
+      const from = sides === "none" ? Math.max(floor[k], top[k] - 1) : floor[k];
+      for (let t = from; t < top[k]; t++) {
         const d = top[k] - 1 - t;
-        vox.push(i, j, t - base, d === 0 && img ? img : layerClass(surface[k], d));
+        vox.push(i, j, t - base, d === 0 && img ? img : d > 0 && sides === "colour" ? SIDE : layerClass(surface[k], d));
       }
       if (water && !(q.missing && q.missing[k])) for (let t = top[k]; t < 0; t++) {
-        const edge = i === 0 || j === 0 || i === ni - 1 || j === nj - 1;
+        const edge = sides !== "none" && (i === 0 || j === 0 || i === ni - 1 || j === nj - 1);
         if (t === -1 || edge) vox.push(i, j, t - base, CLASS.water);
       }
     }
@@ -364,7 +403,7 @@ export function writeVox(q, ni, nj, surface, { water = true, tops = null } = {})
   u8.set(vox, o); o += vox.length;
   id("RGBA"); i32(rgba); i32(0);
   for (let c = 1; c <= 256; c++) {
-    const p = paletteRgb(c);
+    const p = paletteRgb(c, sides === "colour" ? sideRgb : null);
     const [r, g, b] = p || [0, 0, 0];
     u8[o++] = r; u8[o++] = g; u8[o++] = b; u8[o++] = p ? 255 : 0;
   }

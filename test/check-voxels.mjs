@@ -139,6 +139,38 @@ for (const [lon0, lat0] of [[86.9, 28], [167, -77.5], [-155.5, 19.6], [0, 90], [
   check(!r.voxels.some((v) => v[0] === 0), "an empty column writes no voxels");
 }
 
+// scene metres back to lon/lat, for every layout, and a texture over the
+// footprint
+for (const crs of ["laea", "lonlat", "array"]) {
+  const g = V.columnGrid(167, -77.5, 90000, 32, crs);
+  let worst = 0;
+  for (const c of [g.cols[0], g.cols[g.cols.length >> 1], g.cols[g.cols.length - 1]]) {
+    const [lon, lat] = g.toLonLat(c.x, c.y), [l2, p2] = c.pts(1)[0];
+    worst = Math.max(worst, Math.abs(lon - l2), Math.abs(lat - p2));
+  }
+  check(worst < 1e-9, `${crs}: toLonLat at column centres off by ${worst}`);
+}
+{
+  const g = V.columnGrid(150, -40, 40000, 8, "laea"), b = V.groundBox(150, -40, 60000), W = 32;
+  const data = new Uint8ClampedArray(W * W * 4);
+  for (let k = 0; k < W * W; k++) { data[4 * k] = (k % W) * 8; data[4 * k + 3] = 255; }
+  const t = V.topTexture(g, { width: W, height: W, data, west: b.west, north: b.north, dx: (b.east - b.west) / W, dy: (b.north - b.south) / W, global: false }, 16);
+  check(t.data[3] === 255 && t.data[0] < t.data[15 * 4], "texture covers the footprint, west to east");
+}
+
+// sides: one colour under the tops, or the tops alone
+{
+  const g = V.columnGrid(0, 0, 30000, 12, "laea");
+  const z = Float32Array.from(g.cols, (c) => 600 + 400 * Math.sin(c.x / 5000));
+  const q = V.quantise(z, 100), surface = Uint8Array.from(z, (v) => V.surfaceClass(v, 0));
+  const one = V.readVox(V.writeVox(q, g.ni, g.nj, surface, { sides: "colour", sideRgb: [10, 20, 30] }).bytes);
+  const under = one.voxels.filter((v) => v[2] < q.top[v[1] * g.ni + v[0]] - 1 - q.base);
+  check(under.length > 0 && under.every((v) => v[3] === V.SIDE), "every voxel under a top is the side colour");
+  check([10, 20, 30].every((c, i) => one.palette[(V.SIDE - 1) * 4 + i] === c), "the side colour is in the palette");
+  const none = V.readVox(V.writeVox(q, g.ni, g.nj, surface, { sides: "none" }).bytes);
+  check(none.voxels.length === g.ni * g.nj && none.voxels.every((v) => v[2] === q.top[v[1] * g.ni + v[0]] - 1 - q.base), "hidden sides write the tops alone");
+}
+
 // the synthetic island: sea floor at the edge, a crater in the peak
 {
   const w = V.syntheticWindow(10, 45, 60000, 128), f = V.sampler(w);
