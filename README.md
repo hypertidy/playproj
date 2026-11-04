@@ -1050,7 +1050,9 @@ height colours: each land column's top face is the imagery's mean colour over
 its footprint (a 6 x 6 x 6 colour cube in the .vox palette). A synthetic
 island stands in where GEBCO cannot be read. Hash keys: `lon`, `lat`, `ext` (km), `n`, `crs` (`array`, `lonlat`,
 `laea`), `vs` (m, 0 automatic), `vx`, `cube`, `water`, `edges`, `src`
-(`gebco`, `synth`), `tops` (`classes`, `esri`), `spin`, `cam`.
+(`gebco`, `synth`), `tops` (`classes`, `esri`, `esritex`: imagery textured over the tops), `spin`, `sides` (`layers`,
+`colour`, `none`: the sides as dirt and stone, one colour `sc` in hex, or not
+drawn, which the .vox follows), `sc`, `cam`.
 
 ### Your own elevation
 

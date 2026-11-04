@@ -39,11 +39,12 @@ const PLACES = [
 
 const defaults = {
   lon: PLACES[0].lon, lat: PLACES[0].lat, ext: PLACES[0].ext, n: 96, crs: "laea",
-  vs: 0, vx: 4, cube: 1, water: 1, edges: 1, spin: 0, src: "gebco", tops: "classes", cam: null
+  vs: 0, vx: 4, cube: 1, water: 1, edges: 1, spin: 0, src: "gebco", tops: "classes", sides: "layers", sc: "6e6258", cam: null
 };
 const state = { ...defaults };
 function readHash() {
-  readParams(state, defaults, { crs: oneOf(Object.keys(V.CRS), "laea"), src: oneOf(["gebco", "synth"], "gebco"), tops: oneOf(["classes", "esri"], "classes") });
+  readParams(state, defaults, { crs: oneOf(Object.keys(V.CRS), "laea"), src: oneOf(["gebco", "synth"], "gebco"), tops: oneOf(["classes", "esri", "esritex"], "classes"),
+    sides: oneOf(["layers", "colour", "none"], "layers"), sc: (raw) => (/^[0-9a-f]{6}$/i.test(raw) ? raw.toLowerCase() : undefined) });
   state.lat = Math.max(-85, Math.min(85, state.lat));
   state.lon = ((state.lon + 540) % 360) - 180;
   state.ext = Math.max(5, Math.min(3000, state.ext));
@@ -62,7 +63,8 @@ controls.autoRotateSpeed = 1.2;
 const box = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
 
 const pal = V.PALETTE.map((p) => new THREE.Color(p ? `rgb(${p.rgb.join(",")})` : "#000"));
-const uniforms = { uPal: { value: pal }, uEdges: { value: 1 }, uImg: { value: 0 } };
+const uniforms = { uPal: { value: pal }, uEdges: { value: 1 }, uImg: { value: 0 }, uSides: { value: 0 }, uSideCol: { value: new THREE.Color() },
+  uTex: { value: null }, uTexBox: { value: new THREE.Vector4(0, 0, 1, 1) } };
 
 const VERT = /* glsl */ `
   attribute vec2 aSpan;
@@ -75,7 +77,9 @@ const VERT = /* glsl */ `
   varying vec3 vN;
   varying vec2 vUv;
   varying vec2 vCol;
+  varying vec2 vPos;
   void main() {
+    vPos = (instanceMatrix * vec4(position, 1.0)).xz;
     vLayer = mix(aSpan.x, aSpan.y, position.y);
     vTop = aSpan.y;
     vClass = aClass;
@@ -92,6 +96,11 @@ const FRAG_COMMON = /* glsl */ `
   uniform vec3 uPal[${pal.length}];
   uniform float uEdges;
   uniform float uImg;
+  uniform float uSides;
+  uniform vec3 uSideCol;
+  uniform sampler2D uTex;
+  uniform vec4 uTexBox;
+  varying vec2 vPos;
   varying vec3 vRgb;
   varying float vLayer;
   varying float vTop;
@@ -137,7 +146,15 @@ const solidMat = new THREE.ShaderMaterial({
     }
     vec3 col = palette(c) * faceShade();
     // imagery on the land's top faces (aRgb.r < 0 where there is none)
-    if (uImg > 0.5 && vN.y > 0.5 && d < 0.5 && vRgb.r >= 0.0) col = vRgb;
+    // imagery on the land's top faces (aRgb.r < 0 where there is none): the
+    // column's mean colour, or the imagery itself as a texture over the block
+    if (uImg > 0.5 && vN.y > 0.5 && d < 0.5 && vRgb.r >= 0.0)
+      col = uImg > 1.5 ? texture2D(uTex, (vPos - uTexBox.xy) / uTexBox.zw).rgb : vRgb;
+    // sides (and bottoms): the layers, one colour, or not drawn
+    if (vN.y < 0.5) {
+      if (uSides > 1.5) discard;
+      if (uSides > 0.5) col = uSideCol * faceShade();
+    }
     col *= 0.94 + 0.12 * hash(vec3(floor(vCol * 997.0), floor(vLayer)));
     col *= 1.0 - 0.32 * uEdges * edgeLine();
     gl_FragColor = vec4(col, 1.0);
@@ -202,8 +219,8 @@ async function windowFor(cellDeg) {
 }
 
 // Esri imagery over the block, about two pixels a column, kept likewise.
-async function imageryFor(cellDeg) {
-  const res = cellDeg / 2, lev = Math.round(Math.log2(res * 3600));
+async function imageryFor(res) {
+  const lev = Math.round(Math.log2(res * 3600));
   const k = `esri:${state.lon},${state.lat},${state.ext},${lev}`;
   if (!cache.has(k)) {
     const b = V.groundBox(state.lon, state.lat, state.ext * 1000 * 1.45);
@@ -215,6 +232,7 @@ async function imageryFor(cellDeg) {
 }
 
 const status = (s) => { $("status").textContent = s; };
+const TEX = 1024;   // texels on a side, for imagery textured on the tops
 
 // ---------------------------------------------------------------- build
 
@@ -231,11 +249,15 @@ async function build() {
   }
   if (my !== job) return;
   let tops = null, imgNote = "";
-  if (state.tops === "esri") {
+  let tex = null;
+  if (state.tops !== "classes") {
     try {
-      const img = await imageryFor(cellDeg);
+      // a texture wants about a pixel a texel, the mean colour two a column
+      const textured = state.tops === "esritex";
+      const img = await imageryFor(textured ? Math.min(cellDeg / 2, ext / TEX / (V.R * Math.PI / 180)) : cellDeg / 2);
       if (my !== job) return;
       tops = V.columnColours(grid, img, 2);
+      if (textured) tex = V.topTexture(grid, img, TEX);
       if (img.note) imgNote = img.note;
     } catch (e) { imgNote = `the imagery did not load (${e.message})`; }
   }
@@ -258,7 +280,7 @@ async function build() {
   const P = V.laea(grid.centre[0], grid.centre[1]);
   grid.cols.forEach((c, k) => { surface[k] = V.surfaceClass(z[k], c.lat !== undefined ? c.lat : P.inverse(c.x, c.y)[1]); });
   const exag = state.cube ? grid.cellM / step : state.vx;
-  built = { grid, z, q, surface, step, exag, win, s, srcM, lo, hi, tops, raised, most };
+  built = { grid, z, q, surface, step, exag, win, s, srcM, lo, hi, tops, tex, raised, most };
   draw();
   readout();
   locator();
@@ -271,7 +293,7 @@ function autoStep(relief) {
 }
 
 function draw() {
-  const { grid, q, surface, step, exag, tops } = built;
+  const { grid, q, surface, step, exag, tops, tex } = built;
   const S = 2 / (state.ext * 1000), vh = step * exag * S;
   const { cols } = grid, { top, base } = q;
   dispose(solid); dispose(water);
@@ -301,7 +323,19 @@ function draw() {
     water.renderOrder = 1;
   }
   uniforms.uEdges.value = state.edges ? 1 : 0;
-  uniforms.uImg.value = tops ? 1 : 0;
+  uniforms.uImg.value = tex ? 2 : tops ? 1 : 0;
+  if (uniforms.uTex.value) uniforms.uTex.value.dispose();
+  uniforms.uTex.value = null;
+  if (tex) {
+    const t = new THREE.DataTexture(tex.data, tex.width, tex.height, THREE.RGBAFormat);
+    t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter;
+    t.needsUpdate = true;
+    uniforms.uTex.value = t;
+    const b = tex.box;
+    uniforms.uTexBox.value.set(b.x0 * S, -b.y1 * S, (b.x1 - b.x0) * S, (b.y1 - b.y0) * S);
+  }
+  uniforms.uSides.value = { layers: 0, colour: 1, none: 2 }[state.sides];
+  uniforms.uSideCol.value.set("#" + state.sc);
 }
 
 // ---------------------------------------------------------------- readout
@@ -370,6 +404,8 @@ function syncControls() {
   $("ext").value = Math.log10(state.ext); $("ext-out").textContent = `${+state.ext.toFixed(state.ext < 100 ? 1 : 0)} km`;
   $("src").value = state.src;
   $("tops").value = state.tops;
+  $("sides").value = state.sides;
+  $("sc").value = "#" + state.sc; $("sc").hidden = state.sides !== "colour";
 }
 
 function changed({ rebuild = true, view = false } = {}) {
@@ -397,6 +433,8 @@ $("edges").addEventListener("change", (e) => { state.edges = e.target.checked ? 
 $("spin").addEventListener("change", (e) => { state.spin = e.target.checked ? 1 : 0; writeHash(); syncControls(); });
 $("src").addEventListener("change", (e) => { state.src = e.target.value; changed(); });
 $("tops").addEventListener("change", (e) => { state.tops = e.target.value; changed(); });
+$("sides").addEventListener("change", (e) => { state.sides = e.target.value; changed({ rebuild: false }); });
+$("sc").addEventListener("input", (e) => { state.sc = e.target.value.slice(1); changed({ rebuild: false }); });
 $("ext").addEventListener("change", (e) => { state.ext = +(10 ** +e.target.value).toFixed(1); changed(); });
 $("ext").addEventListener("input", (e) => { $("ext-out").textContent = `${+(10 ** +e.target.value).toFixed(1)} km`; });
 $("lonlat").addEventListener("change", (e) => {
@@ -426,7 +464,10 @@ $("sweep").addEventListener("click", () => {
 $("save-vox").addEventListener("click", () => {
   if (!built) return;
   try {
-    const { bytes, count, size } = V.writeVox(built.q, built.grid.ni, built.grid.nj, built.surface, { water: !!state.water, tops: built.tops });
+    const { bytes, count, size } = V.writeVox(built.q, built.grid.ni, built.grid.nj, built.surface, {
+      water: !!state.water, tops: built.tops, sides: state.sides,
+      sideRgb: [0, 2, 4].map((o) => parseInt(state.sc.slice(o, o + 2), 16))
+    });
     const name = (PLACES.find((p) => p.key === $("place").value) || { key: "voxels" }).key;
     saveBlob(new Blob([bytes], { type: "application/octet-stream" }), `${name}-${state.crs}-${state.n}.vox`);
     $("vox-status").textContent = `${size.join(" x ")} voxels, ${count.toLocaleString("en")} written (the shell of each column).`;
