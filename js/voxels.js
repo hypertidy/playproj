@@ -48,7 +48,7 @@ function readHash() {
   state.lat = Math.max(-85, Math.min(85, state.lat));
   state.lon = ((state.lon + 540) % 360) - 180;
   state.ext = Math.max(5, Math.min(3000, state.ext));
-  state.n = Math.max(8, Math.min(256, Math.round(state.n)));
+  state.n = Math.max(8, Math.min(512, Math.round(state.n)));
   state.vs = Math.max(0, Math.min(1000, state.vs));
   state.vx = Math.max(1, Math.min(100, state.vx));
 }
@@ -218,13 +218,14 @@ async function windowFor(cellDeg) {
   return cache.get(k);
 }
 
-// Esri imagery over the block, about two pixels a column, kept likewise.
-async function imageryFor(res) {
+// Esri imagery over the block at res degrees a pixel, kept likewise; a
+// texture may take up to 196 tiles (14 x 14, 3584 pixels a side).
+async function imageryFor(res, textured) {
   const lev = Math.round(Math.log2(res * 3600));
-  const k = `esri:${state.lon},${state.lat},${state.ext},${lev}`;
+  const k = `esri:${state.lon},${state.lat},${state.ext},${lev},${textured ? 1 : 0}`;
   if (!cache.has(k)) {
-    const b = V.groundBox(state.lon, state.lat, state.ext * 1000 * 1.45);
-    const p = readWindow("esri", b, res, status);
+    const b = V.groundBox(state.lon, state.lat, state.ext * 1000 * 1.1);
+    const p = readWindow("esri", b, res, status, { maxTiles: textured ? 196 : 64 });
     p.catch(() => cache.delete(k));
     cache.set(k, p);
   }
@@ -232,7 +233,7 @@ async function imageryFor(res) {
 }
 
 const status = (s) => { $("status").textContent = s; };
-const TEX = 1024;   // texels on a side, for imagery textured on the tops
+const TEX = 2048;   // texels on a side, for imagery textured on the tops
 
 // ---------------------------------------------------------------- build
 
@@ -254,7 +255,7 @@ async function build() {
     try {
       // a texture wants about a pixel a texel, the mean colour two a column
       const textured = state.tops === "esritex";
-      const img = await imageryFor(textured ? Math.min(cellDeg / 2, ext / TEX / (V.R * Math.PI / 180)) : cellDeg / 2);
+      const img = await imageryFor(textured ? Math.min(cellDeg / 2, ext / TEX / (V.R * Math.PI / 180)) : cellDeg / 2, textured);
       if (my !== job) return;
       tops = V.columnColours(grid, img, 2);
       if (textured) tex = V.topTexture(grid, img, TEX);
@@ -448,10 +449,10 @@ $("lonlat").addEventListener("change", (e) => {
 $("reset-view").addEventListener("click", () => { state.cam = null; stage.setCamera(DEFAULT_CAM); writeHash(); });
 
 let sweep = 0;
-function stopSweep() { clearTimeout(sweep); sweep = 0; $("sweep").textContent = "Sweep 8 to 256"; }
+function stopSweep() { clearTimeout(sweep); sweep = 0; $("sweep").textContent = "Sweep 8 to 512"; }
 $("sweep").addEventListener("click", () => {
   if (sweep) return stopSweep();
-  const ns = [8, 16, 32, 64, 128, 256];
+  const ns = [8, 16, 32, 64, 128, 256, 512];
   let i = 0;
   $("sweep").textContent = "Stop";
   const next = () => {

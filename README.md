@@ -1032,7 +1032,7 @@ elevation over its footprint, rounded to whole voxels of one height and
 stacked from a common floor, then drawn as one instanced box per column with
 its layers coloured and edged in the shader (Minecraft's face shading: grass,
 dirt and stone; rock, snow and ice by height and latitude; sea floor and a
-translucent sea). Columns across, 8 to 256, is the resolution; Sweep steps
+translucent sea). Columns across, 8 to 512, is the resolution; Sweep steps
 through the powers of two, which is what a stack of overviews does to the
 same ground. GEBCO is read in place at the level of its own overviews that
 suits the columns, and the readout says which and how many samples each

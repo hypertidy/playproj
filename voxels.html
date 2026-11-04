@@ -35,9 +35,9 @@
       <label class="row" for="place"><span>Place</span></label>
       <select id="place" class="wide" aria-label="A place worth a look"></select>
       <label class="row" for="n"><span>Columns across</span><output id="n-out"></output></label>
-      <input id="n" type="range" min="8" max="256" step="1" aria-label="Columns across the block">
+      <input id="n" type="range" min="8" max="512" step="1" aria-label="Columns across the block">
       <div class="buttons">
-        <button id="sweep" type="button">Sweep 8 to 256</button>
+        <button id="sweep" type="button">Sweep 8 to 512</button>
         <button id="reset-view" type="button">Reset view</button>
       </div>
     </section>
@@ -118,7 +118,7 @@
           toward the poles, ice past the polar circles), with dirt under the grass and stone below.
           <b>Tops</b> can instead take Esri World Imagery: each land column's top face is the mean colour of
           the imagery over its footprint, read from Web Mercator tiles at the zoom that suits; textured, the
-          imagery itself is laid over the tops at about 1024 pixels across the block (the .vox keeps the
+          imagery itself is laid over the tops at about 2048 pixels across the block (the .vox keeps the
           mean colours).
           <b>Download .vox</b> writes the block as a MagicaVoxel model (version 150 format: SIZE, XYZI and RGBA
           chunks), the shell of each column with its sea, up to 256 voxels on a side (with <b>Sides</b> hidden, the
