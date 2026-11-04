@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Voxels</title>
+<meta name="description" content="Topography as voxels: GEBCO elevation cut into columns at a chosen resolution, in lon/lat cells or square metres, stacked in whole voxels, and saved as a MagicaVoxel file.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/voxels.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <canvas id="locator" class="locator" width="168" height="168" aria-label="Where the block is on the Earth"></canvas>
+    <a id="open-full" class="open-full" href="./voxels.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html">Peeling the orange</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./penguin.html">Penguin datum</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a><a href="./fourd.html">Time and depth</a><a href="./cutaway.html">Cutaway</a><a href="./voxels.html" aria-current="page">Voxels</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="place"><span>Place</span></label>
+      <select id="place" class="wide" aria-label="A place worth a look"></select>
+      <label class="row" for="n"><span>Columns across</span><output id="n-out"></output></label>
+      <input id="n" type="range" min="8" max="256" step="1" aria-label="Columns across the block">
+      <div class="buttons">
+        <button id="sweep" type="button">Sweep 8 to 256</button>
+        <button id="reset-view" type="button">Reset view</button>
+      </div>
+    </section>
+
+    <section>
+      <label class="row" for="crs"><span>Cells</span></label>
+      <select id="crs" class="wide"></select>
+      <label class="row" for="vs"><span>Voxel height</span><output id="vs-out"></output></label>
+      <input id="vs" type="range" min="0" max="3" step="0.01" aria-label="Voxel height, as a power of ten metres (far left: automatic)">
+      <label class="row" for="vx"><span>Vertical exaggeration</span><output id="vx-out"></output></label>
+      <input id="vx" type="range" min="0" max="2" step="0.01" aria-label="Vertical exaggeration, as a power of ten">
+      <div class="toggles">
+        <label><input id="cube" type="checkbox"> Cubes</label>
+        <label><input id="water" type="checkbox"> Water</label>
+        <label><input id="edges" type="checkbox"> Edges</label>
+      </div>
+      <p class="hint">Cubes sets the exaggeration so each voxel is drawn as tall as it is wide.</p>
+    </section>
+
+    <section>
+      <label class="row" for="lonlat"><span>Centre (lon, lat)</span></label>
+      <input id="lonlat" type="text" class="wide" spellcheck="false" aria-label="Centre longitude and latitude, in degrees">
+      <label class="row" for="ext"><span>Width</span><output id="ext-out"></output></label>
+      <input id="ext" type="range" min="0.7" max="3.5" step="0.01" aria-label="Width of the block, as a power of ten kilometres">
+      <label class="row" for="src"><span>Elevation</span></label>
+      <select id="src" class="wide">
+        <option value="gebco">GEBCO 2026 (read in place)</option>
+        <option value="synth">A synthetic island (no download)</option>
+      </select>
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+      <div class="buttons">
+        <button id="save-vox" type="button">Download .vox</button>
+      </div>
+      <p id="vox-status" class="status" role="status"></p>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A <b>voxel</b> is a pixel with depth: one box of a 3D grid. Voxel maps (Minecraft, MagicaVoxel,
+          and lately whole cities in three.js) build ground out of them. Here the ground is the GEBCO 2026
+          elevation grid, land and sea floor, cut into <b>columns</b>, each the mean elevation over its
+          footprint, rounded to a whole number of voxels and stacked from a common floor.</p>
+        <p><b>Columns across</b> is the resolution. Sliding it, or <b>Sweep</b>, is what a stack of
+          overviews does to the same ground: each halving merges four columns into one. The readout names the
+          GEBCO level read (the file carries its own overviews, 15 arc seconds and coarser) and how many
+          samples each column averages. Past the source's own cell size, more columns add no detail: they
+          repeat the same ground in smaller pieces.</p>
+        <p>A voxel is only a cube in some coordinate system. <b>Cells</b> picks it. Lon/lat cells drawn square
+          is the array as stored: equal steps of degrees, the way GEBCO is. At their true size on the ground
+          the same cells narrow from east to west away from the equator (by the cosine of latitude), so the rows
+          step in at the edges and the block leans toward the pole; at Ross Island a cell is nearly five times
+          taller than wide. Square cells in metres resample the ground onto a Lambert azimuthal equal-area grid
+          about the centre, where every column has the same footprint: the voxels are cubes on the ground.</p>
+        <p>The vertical is its own choice. At true scale a voxel 500 m wide and 100 m tall is a slab, and
+          most terrain is flatter than it looks on maps; <b>Cubes</b> exaggerates the heights by the ratio of
+          cell to voxel height, so the blocks read as cubes and the readout says by how much. Heights are
+          GEBCO's, metres above mean sea level (so above the geoid, see the <a href="./geoid.html">Geoid</a>
+          page), and <b>Water</b> fills the sea to zero.</p>
+        <p>Surfaces are coloured by height and latitude (sand, grass, rock, snow above a snow line that falls
+          toward the poles, ice past the polar circles), with dirt under the grass and stone below.
+          <b>Download .vox</b> writes the block as a MagicaVoxel model (version 150 format: SIZE, XYZI and RGBA
+          chunks), the shell of each column with its sea, up to 256 voxels on a side.</p>
+        <p>Hash keys: <code>lon</code>, <code>lat</code>, <code>ext</code> (width in km), <code>n</code>
+          (columns across), <code>crs</code> (<code>array</code>, <code>lonlat</code>, <code>laea</code>),
+          <code>vs</code> (voxel height in m, 0 for automatic), <code>vx</code>, <code>cube</code>,
+          <code>water</code>, <code>edges</code>, <code>src</code>, <code>cam</code>.</p>
+        <ul class="credits">
+          <li>Elevation from the GEBCO 2026 Grid (GEBCO Compilation Group), from
+            <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>, read with
+            <a href="https://geotiffjs.github.io/">geotiff.js</a>.</li>
+          <li>The look follows <a href="https://ephtracy.github.io/">MagicaVoxel</a> and Minecraft; the
+            nudge came from Piotr Migda&#322;'s <a href="https://p.migdal.pl/warsaw-vibe-voxel/">Warsaw in
+            voxels</a>, via <a href="https://googlemapsmania.blogspot.com/2026/11/the-era-of-voxel-map-has-arrived.html">Maps Mania</a>.</li>
+          <li>The .vox layout from the <a href="https://github.com/ephtracy/voxel-model">voxel-model</a>
+            format notes; drawn with <a href="https://threejs.org/">three.js</a>; coastlines from
+            <a href="https://www.naturalearthdata.com/">Natural Earth</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

@@ -59,3 +59,4 @@ export * as mosaic from "./mosaic.js";
 
 export * as palette from "./palette.js";
 export * as meshframe from "./meshframe.js";
+export * as voxels from "./voxels.js";
