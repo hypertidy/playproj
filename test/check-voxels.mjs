@@ -111,6 +111,34 @@ for (const [lon0, lat0] of [[86.9, 28], [167, -77.5], [-155.5, 19.6], [0, 90], [
   check([0, 1, 2].every((c) => Math.abs(r.palette[(ci - 1) * 4 + c] - [200, 100, 50][c]) <= 26), "the cube colour is within half a step");
 }
 
+// a grid in another CRS: UTM 55S at 30 m, a plane in metres, read through
+// gridSampler at a window planWindow picks (with a 2 x overview)
+{
+  const P = proj4("EPSG:4326", "+proj=utm +zone=55 +south +datum=WGS84 +units=m +no_defs");
+  const fwd = (lon, lat) => P.forward([lon, lat]);
+  const src = { nx: 4000, ny: 4000, x0: 450000, y0: 5300000, dx: 30, dy: -30, levels: [1, 2, 4] };
+  const lon = 147.0, lat = -43.3, ext = 20000;
+  const pl = V.planWindow(src, fwd, V.blockOutline(lon, lat, ext), ext / 64, lat);
+  check(pl && pl.factor === 4 && pl.step === 1, `plan picks the 120 m overview for 312 m columns: ${JSON.stringify(pl)}`);
+  const pf = V.planWindow(src, fwd, V.blockOutline(lon, lat, ext), ext / 256, lat);
+  check(pf.factor === 1, `plan picks 30 m for 78 m columns (factor ${pf.factor})`);
+  const plane = (x, y) => 0.01 * (x - 500000) + 0.02 * (5300000 - y);
+  const elev = new Float32Array(pl.width * pl.height);
+  for (let j = 0; j < pl.height; j++) for (let i = 0; i < pl.width; i++)
+    elev[j * pl.width + i] = plane(pl.x0 + (i + 0.5) * pl.dx, pl.y0 + (j + 0.5) * pl.dy);
+  elev[0] = -9999;
+  const f = V.gridSampler({ elev, width: pl.width, height: pl.height, x0: pl.x0, y0: pl.y0, dx: pl.dx, dy: pl.dy, nodata: -9999 }, fwd);
+  const [x, y] = fwd(lon, lat);
+  check(Math.abs(f(lon, lat) - plane(x, y)) < 1e-2, `gridSampler on a plane: ${f(lon, lat)} vs ${plane(x, y)}`);
+  check(Number.isNaN(f(lon + 5, lat)), "off the window is NaN");
+  check(Number.isNaN(V.gridSampler({ elev, width: pl.width, height: pl.height, x0: pl.x0, y0: pl.y0, dx: pl.dx, dy: pl.dy, nodata: -9999 }, fwd)(...P.inverse([pl.x0 + pl.dx / 2, pl.y0 + pl.dy / 2]))), "nodata is NaN");
+  check(V.planWindow(src, fwd, V.blockOutline(10, 50, ext), 300, 50) === null, "a block off the grid has no window");
+  const q = V.quantise(Float32Array.from([NaN, -250, 120]), 100);
+  check(q.missing[0] === 1 && q.top[0] === q.base && q.lo === -2 && q.water === 2, `NaN columns are empty: ${q.top.join()} ${q.water}`);
+  const r = V.readVox(V.writeVox(q, 3, 1, Uint8Array.from([1, 2, 4])).bytes);
+  check(!r.voxels.some((v) => v[0] === 0), "an empty column writes no voxels");
+}
+
 // the synthetic island: sea floor at the edge, a crater in the peak
 {
   const w = V.syntheticWindow(10, 45, 60000, 128), f = V.sampler(w);

@@ -122,19 +122,86 @@ export function sampler(win) {
   };
 }
 
+// Bilinear values from a window of a grid in any CRS: { elev, width,
+// height, x0, y0 (the window's outer corner), dx, dy (signed cell steps),
+// nodata } with fwd(lon, lat) -> [x, y] in the grid's CRS (or null). NaN
+// off the window, at nodata, or where a neighbour is missing.
+export function gridSampler(win, fwd) {
+  const { elev, width: W, height: H, x0, y0, dx, dy, nodata } = win;
+  const at = (i, j) => {
+    const v = elev[Math.max(0, Math.min(H - 1, j)) * W + Math.max(0, Math.min(W - 1, i))];
+    return v === nodata ? NaN : v;
+  };
+  return (lon, lat) => {
+    const q = fwd(lon, lat);
+    if (!q) return NaN;
+    const fx = (q[0] - x0) / dx - 0.5, fy = (q[1] - y0) / dy - 0.5;
+    if (!(fx >= -0.5 && fy >= -0.5 && fx <= W - 0.5 && fy <= H - 0.5)) return NaN;
+    const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
+    return (at(i, j) * (1 - u) + at(i + 1, j) * u) * (1 - v) + (at(i, j + 1) * (1 - u) + at(i + 1, j + 1) * u) * v;
+  };
+}
+
+// The window of a source grid { nx, ny, x0, dx, y0, dy, levels: [factor,
+// ...] (1 first, then each overview's step in full cells), angular } that
+// covers pts (lon/lat points round the block) through fwd, at the coarsest
+// level whose cells are at most half a column (cellM metres), coarser
+// while over max cells on a side; where even the coarsest is too big, a
+// stride within it. Pixel ranges are in the level's own cells, clipped to
+// the grid; null where the block misses the grid.
+export function planWindow(src, fwd, pts, cellM, lat0 = 0, max = 2048) {
+  let xa = Infinity, xb = -Infinity, ya = Infinity, yb = -Infinity;
+  for (const [lon, lat] of pts) {
+    const q = fwd(lon, lat);
+    if (!q || !isFinite(q[0]) || !isFinite(q[1])) continue;
+    const fi = (q[0] - src.x0) / src.dx, fj = (q[1] - src.y0) / src.dy;
+    xa = Math.min(xa, fi); xb = Math.max(xb, fi); ya = Math.min(ya, fj); yb = Math.max(yb, fj);
+  }
+  if (!(xb > 0 && yb > 0 && xa < src.nx && ya < src.ny)) return null;
+  const metres = src.angular ? D2R * R * Math.max(0.05, Math.cos(lat0 * D2R)) : 1;
+  const cell = (f) => Math.min(Math.abs(src.dx), Math.abs(src.dy)) * f * metres;
+  const levels = src.levels || [1];
+  let k = 0;
+  for (let i = 0; i < levels.length; i++) if (cell(levels[i]) <= cellM / 2) k = i;
+  const span = (f) => Math.max(xb - xa, yb - ya) / f;
+  while (k < levels.length - 1 && span(levels[k]) > max) k++;
+  const f = levels[k], step = Math.max(1, Math.ceil(span(f) / max));
+  const lw = Math.ceil(src.nx / f), lh = Math.ceil(src.ny / f);
+  const i0 = Math.max(0, Math.floor(xa / f) - 1), i1 = Math.min(lw, Math.ceil(xb / f) + 1);
+  const j0 = Math.max(0, Math.floor(ya / f) - 1), j1 = Math.min(lh, Math.ceil(yb / f) + 1);
+  return {
+    level: k, factor: f, step, i0, i1, j0, j1,
+    width: Math.ceil((i1 - i0) / step), height: Math.ceil((j1 - j0) / step),
+    x0: src.x0 + i0 * f * src.dx, y0: src.y0 + j0 * f * src.dy, dx: src.dx * f * step, dy: src.dy * f * step,
+    cellM: cell(f * step)
+  };
+}
+
+// Points round a block (its outline and a cross through it), lon/lat.
+export function blockOutline(lon0, lat0, ext, crs = "laea", n = 16) {
+  const g = columnGrid(lon0, lat0, ext, n, crs), out = [];
+  for (const c of g.cols) {
+    const edge = c.i === 0 || c.j === 0 || c.i === g.ni - 1 || c.j === g.nj - 1 || c.i === g.ni >> 1 || c.j === g.nj >> 1;
+    if (edge) out.push(...c.pts(2));
+  }
+  return out;
+}
+
 // The mean elevation of each column: s x s bilinear samples over the
 // footprint, s enough to reach the source's own cells (srcM metres) along
 // the footprint's longer side (north to south, for lon/lat cells), up
-// to 6.
+// to 6. Missing samples (NaN) are left out; a column with none is NaN.
 export function columnMeans(grid, sample, srcM) {
   const side = grid.cellDeg ? grid.cellDeg * D2R * R : grid.cellM;
   const s = Math.max(1, Math.min(6, Math.ceil(side / Math.max(1, srcM))));
   const z = new Float32Array(grid.cols.length);
   grid.cols.forEach((c, k) => {
-    const pts = c.pts(s);
-    let t = 0;
-    for (const [lon, lat] of pts) t += sample(lon, lat);
-    z[k] = t / pts.length;
+    let t = 0, m = 0;
+    for (const [lon, lat] of c.pts(s)) {
+      const v = sample(lon, lat);
+      if (v === v) { t += v; m++; }
+    }
+    z[k] = m ? t / m : NaN;
   });
   return { z, s };
 }
@@ -226,18 +293,24 @@ export function layerClass(surface, d) {
 // Whole voxels: top[k] = round(z / step), the column filling layers
 // base .. top - 1 (layer t spans t step .. (t + 1) step metres), and the
 // sea, where top < 0, filling top .. -1. base is two layers under the
-// lowest top, so the block has a floor.
+// lowest top, so the block has a floor. A column with no elevation (NaN)
+// is empty: top = base, and missing[k] = 1.
 export function quantise(z, step) {
-  const top = new Int32Array(z.length);
+  const top = new Int32Array(z.length), missing = new Uint8Array(z.length);
   let lo = Infinity, hi = -Infinity;
   for (let k = 0; k < z.length; k++) {
+    if (!(z[k] === z[k])) { missing[k] = 1; continue; }
     top[k] = Math.round(z[k] / step);
     lo = Math.min(lo, top[k]); hi = Math.max(hi, top[k]);
   }
+  if (lo === Infinity) lo = hi = 0;
   const base = lo - 2;
   let solid = 0, water = 0;
-  for (let k = 0; k < z.length; k++) { solid += top[k] - base; water += Math.max(0, -top[k]); }
-  return { top, base, lo, hi: Math.max(hi, 0), solid, water };
+  for (let k = 0; k < z.length; k++) {
+    if (missing[k]) { top[k] = base; continue; }
+    solid += top[k] - base; water += Math.max(0, -top[k]);
+  }
+  return { top, base, lo, hi: Math.max(hi, 0), solid, water, missing };
 }
 
 // Voxels a viewer can see: from the lowest neighbouring top (or the floor
@@ -272,7 +345,7 @@ export function writeVox(q, ni, nj, surface, { water = true, tops = null } = {})
         const d = top[k] - 1 - t;
         vox.push(i, j, t - base, d === 0 && img ? img : layerClass(surface[k], d));
       }
-      if (water) for (let t = top[k]; t < 0; t++) {
+      if (water && !(q.missing && q.missing[k])) for (let t = top[k]; t < 0; t++) {
         const edge = i === 0 || j === 0 || i === ni - 1 || j === nj - 1;
         if (t === -1 || edge) vox.push(i, j, t - base, CLASS.water);
       }
