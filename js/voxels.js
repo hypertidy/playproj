@@ -26,14 +26,20 @@ const PLACES = [
   { key: "erebus", name: "Ross Island and Mount Erebus", lon: 167.0, lat: -77.55, ext: 90 },
   { key: "iceland", name: "Iceland", lon: -18.6, lat: 64.95, ext: 560 },
   { key: "mariana", name: "Challenger Deep", lon: 142.2, lat: 11.35, ext: 300 },
-  { key: "alps", name: "Mont Blanc", lon: 6.865, lat: 45.833, ext: 50 }
+  { key: "alps", name: "Mont Blanc", lon: 6.865, lat: 45.833, ext: 50 },
+  { key: "macquarie", name: "Macquarie Island", lon: 158.86, lat: -54.62, ext: 50 },
+  { key: "heard", name: "Heard Island and Big Ben", lon: 73.45, lat: -53.08, ext: 60 },
+  { key: "scullin", name: "Scullin Monolith", lon: 66.72, lat: -67.79, ext: 30 },
+  { key: "concordia", name: "Concordia Station, Dome C", lon: 123.35, lat: -75.1, ext: 200 },
+  { key: "seamounts", name: "Tasmanian seamounts", lon: 147.1, lat: -44.3, ext: 60 },
+  { key: "galapagos", name: "Galapagos Islands", lon: -90.6, lat: -0.55, ext: 320 }
 ];
 
 // ---------------------------------------------------------------- state
 
 const defaults = {
   lon: PLACES[0].lon, lat: PLACES[0].lat, ext: PLACES[0].ext, n: 96, crs: "laea",
-  vs: 0, vx: 4, cube: 1, water: 1, edges: 1, src: "gebco", tops: "classes", cam: null
+  vs: 0, vx: 4, cube: 1, water: 1, edges: 1, spin: 0, src: "gebco", tops: "classes", cam: null
 };
 const state = { ...defaults };
 function readHash() {
@@ -52,6 +58,7 @@ const writeHash = hashWriter(state, defaults, { digits: 4 });
 const stage = makeStage($("three"), { bg: 0x8fb8de, fov: 35, onCamera: (c) => { state.cam = c; writeHash(); } });
 const { scene, camera, controls, renderer } = stage;
 const DEFAULT_CAM = [2.1, 1.9, 2.9, 0, -0.1, 0];
+controls.autoRotateSpeed = 1.2;
 const box = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
 
 const pal = V.PALETTE.map((p) => new THREE.Color(p ? `rgb(${p.rgb.join(",")})` : "#000"));
@@ -237,14 +244,21 @@ async function build() {
   const srcM = win.dy * (V.R * Math.PI / 180);
   const { z, s } = V.columnMeans(grid, V.sampler(win), srcM);
   let lo = Infinity, hi = -Infinity;
-  for (const v of z) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
-  const step = state.vs > 0 ? state.vs : autoStep(hi - Math.min(lo, 0));
+  for (const v of z) if (v === v) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  // the block runs from its lowest column (or sea floor) to its highest (or
+  // the sea), in at most 400 layers, and drawn as cubes no taller than one
+  // and a half times its width; a set height is raised to keep to that
+  const relief = Math.max(hi, 0) - lo;
+  const most = state.cube ? Math.min(400, Math.round(1.5 * state.n)) : 400;
+  const least = autoStep((relief * 40) / most);
+  const step = Math.max(state.vs > 0 ? state.vs : autoStep(relief), least);
+  const raised = state.vs > 0 && step > state.vs;
   const q = V.quantise(z, step);
   const surface = new Uint8Array(z.length);
   const P = V.laea(grid.centre[0], grid.centre[1]);
   grid.cols.forEach((c, k) => { surface[k] = V.surfaceClass(z[k], c.lat !== undefined ? c.lat : P.inverse(c.x, c.y)[1]); });
   const exag = state.cube ? grid.cellM / step : state.vx;
-  built = { grid, z, q, surface, step, exag, win, s, srcM, lo, hi, tops };
+  built = { grid, z, q, surface, step, exag, win, s, srcM, lo, hi, tops, raised, most };
   draw();
   readout();
   locator();
@@ -297,7 +311,7 @@ const fmtLL = (lon, lat) => `${Math.abs(lat).toFixed(3)}${DEG}${lat < 0 ? "S" : 
 const arcsec = (d) => { const s = d * 3600; return s >= 60 ? `${+(s / 60).toFixed(2)} arc minutes` : `${+s.toFixed(1)} arc seconds`; };
 
 function readout() {
-  const { grid, q, step, exag, win, s, srcM, lo, hi } = built;
+  const { grid, q, step, exag, win, s, srcM, lo, hi, raised, most } = built;
   const c = grid.cols, mid = c[(grid.nj >> 1) * grid.ni + (grid.ni >> 1)];
   const foot = grid.crs === "array"
     ? `${arcsec(grid.cellDeg)} square (drawn ${fmtM(mid.wx)} wide)`
@@ -314,7 +328,7 @@ function readout() {
     ["Columns", `${grid.ni} x ${grid.nj} = ${(grid.ni * grid.nj).toLocaleString("en")}`],
     ["Footprint", foot],
     ["Each column", finer ? "finer than the source: neighbours share its cells" : `the mean of ${s * s} sample${s > 1 ? "s" : ""}`],
-    ["Voxel height", `${fmtM(step)}${state.vs ? "" : " (automatic)"}`],
+    ["Voxel height", `${fmtM(step)}${raised ? ` (raised from ${fmtM(state.vs)}, to keep the block in ${most} layers)` : state.vs ? "" : " (automatic)"}`],
     ["Drawn", exag > 1.005 ? `heights x ${exag.toFixed(exag < 10 ? 1 : 0)}` : "true scale"],
     ["Elevation", `${Math.round(lo).toLocaleString("en")} to ${Math.round(hi).toLocaleString("en")} m`],
     ["Layers", `${q.lo} to ${q.hi} (${q.hi - q.base} with the floor)`],
@@ -350,6 +364,8 @@ function syncControls() {
   $("vx").value = Math.log10(state.vx); $("vx").disabled = !!state.cube;
   $("vx-out").textContent = state.cube ? "for cubes" : `x ${state.vx.toFixed(state.vx < 10 ? 1 : 0)}`;
   $("cube").checked = !!state.cube; $("water").checked = !!state.water; $("edges").checked = !!state.edges;
+  $("spin").checked = !!state.spin;
+  controls.autoRotate = !!state.spin;
   $("lonlat").value = `${+state.lon.toFixed(4)}, ${+state.lat.toFixed(4)}`;
   $("ext").value = Math.log10(state.ext); $("ext-out").textContent = `${+state.ext.toFixed(state.ext < 100 ? 1 : 0)} km`;
   $("src").value = state.src;
@@ -378,6 +394,7 @@ $("vx").addEventListener("input", (e) => { state.vx = +(10 ** +e.target.value).t
 $("cube").addEventListener("change", (e) => { state.cube = e.target.checked ? 1 : 0; changed(); });
 $("water").addEventListener("change", (e) => { state.water = e.target.checked ? 1 : 0; changed({ rebuild: false }); });
 $("edges").addEventListener("change", (e) => { state.edges = e.target.checked ? 1 : 0; changed({ rebuild: false }); });
+$("spin").addEventListener("change", (e) => { state.spin = e.target.checked ? 1 : 0; writeHash(); syncControls(); });
 $("src").addEventListener("change", (e) => { state.src = e.target.value; changed(); });
 $("tops").addEventListener("change", (e) => { state.tops = e.target.value; changed(); });
 $("ext").addEventListener("change", (e) => { state.ext = +(10 ** +e.target.value).toFixed(1); changed(); });

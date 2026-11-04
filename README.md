@@ -1050,7 +1050,56 @@ height colours: each land column's top face is the imagery's mean colour over
 its footprint (a 6 x 6 x 6 colour cube in the .vox palette). A synthetic
 island stands in where GEBCO cannot be read. Hash keys: `lon`, `lat`, `ext` (km), `n`, `crs` (`array`, `lonlat`,
 `laea`), `vs` (m, 0 automatic), `vx`, `cube`, `water`, `edges`, `src`
-(`gebco`, `synth`), `tops` (`classes`, `esri`), `cam`.
+(`gebco`, `synth`), `tops` (`classes`, `esri`), `spin`, `cam`.
+
+### Your own elevation
+
+The page reads GEBCO only, but the voxel functions in `src/core/voxels.js`
+(exported as `voxels` from `src/core/index.js`, `playproj/core` as a package)
+take elevation from anywhere, in any CRS. `planWindow` finds the window and
+overview of a grid that a block needs, `gridSampler` reads heights from that
+window through a lon/lat to CRS function, and the rest builds the columns and
+writes a MagicaVoxel file. With geotiff.js and proj4js in Node, for a COG in
+UTM:
+
+```js
+import fs from "fs";
+import { fromUrl } from "geotiff";
+import proj4 from "proj4";
+import { voxels as V } from "playproj/core";
+
+// a COG in UTM zone 55 south (EPSG:32755), heights in metres
+const tiff = await fromUrl("https://example.org/dem-utm55s.tif");
+const full = await tiff.getImage();
+const [x0, y0] = full.getOrigin(), [dx, dy] = full.getResolution();
+const levels = [];
+for (let i = 0; i < await tiff.getImageCount(); i++) levels.push(await tiff.getImage(i));
+const src = { nx: full.getWidth(), ny: full.getHeight(), x0, y0, dx, dy, levels: levels.map((im) => full.getWidth() / im.getWidth()) };
+
+// lon/lat to the COG's CRS
+const P = proj4("EPSG:4326", "+proj=utm +zone=55 +south +datum=WGS84 +units=m +no_defs");
+const fwd = (lon, lat) => P.forward([lon, lat]);
+
+// a 40 km block on kunanyi / Mount Wellington, 128 columns of square metres
+const lon = 147.24, lat = -42.9, ext = 40000, n = 128;
+const plan = V.planWindow(src, fwd, V.blockOutline(lon, lat, ext), ext / n, lat);
+const [band] = await levels[plan.level].readRasters({ window: [plan.i0, plan.j0, plan.i1, plan.j1], samples: [0] });
+const sample = V.gridSampler({ elev: band, width: plan.width, height: plan.height,
+  x0: plan.x0, y0: plan.y0, dx: plan.dx, dy: plan.dy, nodata: full.getGDALNoData() }, fwd);
+
+const grid = V.columnGrid(lon, lat, ext, n, "laea");
+const { z } = V.columnMeans(grid, sample, plan.cellM);
+const q = V.quantise(z, 25);   // 25 m voxels
+const surface = Uint8Array.from(grid.cols, (c, k) => V.surfaceClass(z[k], lat));
+const vox = V.writeVox(q, grid.ni, grid.nj, surface);
+fs.writeFileSync("kunanyi.vox", vox.bytes);
+console.log(vox.size, vox.count, "voxels; level", plan.level);
+```
+
+A Zarr array works the same way: its grid's outer corner and cell steps for
+`x0`, `y0`, `dx`, `dy` (`levels: [1]`, or one per multiscale level), and the
+window read with zarrita's `zarr.get` and `zarr.slice(j0, j1)`, `zarr.slice(i0, i1)`.
+Columns where the source has no data come out empty.
 
 ## Share and embed
 
@@ -1209,7 +1258,7 @@ src/core/polarstere.js            ellipsoidal polar stereographic (EPSG:3031, 93
 src/core/seaice.js                NSIDC Sea Ice Index grid, values and daily file addresses
 src/core/track.js                 ship tracks from underway CSV or parquet rows; Nuyina voyages; place, heading, distance run
 src/core/rhumb.js                 rhumb lines, geodesics and great circles, the whole loxodrome, composite sailing
-src/core/voxels.js                voxel columns over lon/lat or equal-area cells, column means, quantising, .vox files
+src/core/voxels.js                voxel columns over lon/lat or equal-area cells, any-CRS windows and sampling, column means, quantising, .vox files
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
