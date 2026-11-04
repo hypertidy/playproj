@@ -67,6 +67,11 @@
         <option value="gebco">GEBCO 2026 (read in place)</option>
         <option value="synth">A synthetic island (no download)</option>
       </select>
+      <label class="row" for="tops"><span>Tops</span></label>
+      <select id="tops" class="wide">
+        <option value="classes">Coloured by height</option>
+        <option value="esri">Esri World Imagery</option>
+      </select>
       <p id="status" class="status" role="status"></p>
     </section>
 
@@ -103,16 +108,22 @@
           page), and <b>Water</b> fills the sea to zero.</p>
         <p>Surfaces are coloured by height and latitude (sand, grass, rock, snow above a snow line that falls
           toward the poles, ice past the polar circles), with dirt under the grass and stone below.
+          <b>Tops</b> can instead take Esri World Imagery: each land column's top face is the mean colour of
+          the imagery over its footprint, read from Web Mercator tiles at the zoom that suits.
           <b>Download .vox</b> writes the block as a MagicaVoxel model (version 150 format: SIZE, XYZI and RGBA
-          chunks), the shell of each column with its sea, up to 256 voxels on a side.</p>
+          chunks), the shell of each column with its sea, up to 256 voxels on a side; imagery tops go in as a
+          6 x 6 x 6 colour cube after the classes, the 255 colours a .vox palette allows.</p>
         <p>Hash keys: <code>lon</code>, <code>lat</code>, <code>ext</code> (width in km), <code>n</code>
           (columns across), <code>crs</code> (<code>array</code>, <code>lonlat</code>, <code>laea</code>),
           <code>vs</code> (voxel height in m, 0 for automatic), <code>vx</code>, <code>cube</code>,
-          <code>water</code>, <code>edges</code>, <code>src</code>, <code>cam</code>.</p>
+          <code>water</code>, <code>edges</code>, <code>src</code>, <code>tops</code> (<code>classes</code>,
+          <code>esri</code>), <code>cam</code>.</p>
         <ul class="credits">
           <li>Elevation from the GEBCO 2026 Grid (GEBCO Compilation Group), from
             <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>, read with
             <a href="https://geotiffjs.github.io/">geotiff.js</a>.</li>
+          <li>Imagery from Esri World Imagery (Esri, Maxar, Earthstar Geographics, and the GIS User
+            Community).</li>
           <li>The look follows <a href="https://ephtracy.github.io/">MagicaVoxel</a> and Minecraft; the
             nudge came from Piotr Migda&#322;'s <a href="https://p.migdal.pl/warsaw-vibe-voxel/">Warsaw in
             voxels</a>, via <a href="https://googlemapsmania.blogspot.com/2026/11/the-era-of-voxel-map-has-arrived.html">Maps Mania</a>.</li>

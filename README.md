@@ -1045,10 +1045,12 @@ equal-area grid about the centre. Voxel height is automatic (about forty
 layers of relief) or set, and Cubes exaggerates the heights so each voxel is
 drawn as tall as it is wide. Download .vox writes the block as a MagicaVoxel
 model (version 150: SIZE, XYZI, RGBA), the visible shell of each column, up
-to 256 voxels on a side. A synthetic island stands in where GEBCO cannot be
-read. Hash keys: `lon`, `lat`, `ext` (km), `n`, `crs` (`array`, `lonlat`,
+to 256 voxels on a side. Tops can take Esri World Imagery instead of the
+height colours: each land column's top face is the imagery's mean colour over
+its footprint (a 6 x 6 x 6 colour cube in the .vox palette). A synthetic
+island stands in where GEBCO cannot be read. Hash keys: `lon`, `lat`, `ext` (km), `n`, `crs` (`array`, `lonlat`,
 `laea`), `vs` (m, 0 automatic), `vx`, `cube`, `water`, `edges`, `src`
-(`gebco`, `synth`), `cam`.
+(`gebco`, `synth`), `tops` (`classes`, `esri`), `cam`.
 
 ## Share and embed
 

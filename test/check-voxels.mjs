@@ -93,6 +93,24 @@ for (const [lon0, lat0] of [[86.9, 28], [167, -77.5], [-155.5, 19.6], [0, 90], [
   check(threw, "a block over 256 tall is refused");
 }
 
+// imagery tops: a column's mean colour from an RGBA window, and its top
+// voxel coloured from the cube in a .vox
+{
+  const g = V.columnGrid(150, -40, 40000, 8, "lonlat");
+  const W = 64, H = 64, data = new Uint8ClampedArray(W * H * 4);
+  for (let k = 0; k < W * H; k++) { data[4 * k] = 200; data[4 * k + 1] = 100; data[4 * k + 2] = 50; data[4 * k + 3] = 255; }
+  const b = V.groundBox(150, -40, 60000);
+  const win = { width: W, height: H, data, west: b.west, north: b.north, dx: (b.east - b.west) / W, dy: (b.north - b.south) / H, global: false };
+  const tops = V.columnColours(g, win, 2);
+  check(tops.has.every((h) => h === 1) && tops.rgb[0] === 200 && tops.rgb[1] === 100 && tops.rgb[2] === 50, "column colours from a flat window");
+  const z = Float32Array.from(g.cols, (c, k) => (k % 3 ? 300 : -300));
+  const q = V.quantise(z, 100), surface = Uint8Array.from(z, (v) => V.surfaceClass(v, -40));
+  const r = V.readVox(V.writeVox(q, g.ni, g.nj, surface, { tops }).bytes);
+  const ci = V.cubeIndex(200, 100, 50), land = q.top.filter((t) => t > 0).length;
+  check(r.voxels.filter((v) => v[3] === ci).length === land, "every land top voxel takes the imagery colour");
+  check([0, 1, 2].every((c) => Math.abs(r.palette[(ci - 1) * 4 + c] - [200, 100, 50][c]) <= 26), "the cube colour is within half a step");
+}
+
 // the synthetic island: sea floor at the edge, a crater in the peak
 {
   const w = V.syntheticWindow(10, 45, 60000, 128), f = V.sampler(w);
