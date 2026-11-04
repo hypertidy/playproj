@@ -129,3 +129,10 @@ export async function readWindow(id, box, res, status = () => {}) {
 export function warpCanvas(world, W, H, inv) {
   return withCanvas({ width: W, height: H, data: warpPixels(world, W, H, inv) }).canvas;
 }
+
+// GEBCO elevations over a lon/lat box at about res degrees per cell (or
+// finer), from the file's own overviews: { elev, width, height, west,
+// north, dx, dy } as readGebcoWindow gives it.
+export async function readElevation(box, res, status = () => {}) {
+  return readGebcoWindow(await gebcoLevels(sources.gebco, status), box, res, status);
+}

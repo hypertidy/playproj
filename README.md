@@ -1024,6 +1024,32 @@ exaggeration from 1, true scale, to 500 on a log slider; 0 automatic), `ice` (`s
 `rema`, `gebco`, `unc`, `cam`. A preset brings its own width, side, curve
 and site unless the hash names them.
 
+## Voxels
+
+`voxels.html` builds topography out of voxels. A square of ground (a preset,
+or any centre and width) is cut into columns, each the mean GEBCO 2026
+elevation over its footprint, rounded to whole voxels of one height and
+stacked from a common floor, then drawn as one instanced box per column with
+its layers coloured and edged in the shader (Minecraft's face shading: grass,
+dirt and stone; rock, snow and ice by height and latitude; sea floor and a
+translucent sea). Columns across, 8 to 256, is the resolution; Sweep steps
+through the powers of two, which is what a stack of overviews does to the
+same ground. GEBCO is read in place at the level of its own overviews that
+suits the columns, and the readout says which and how many samples each
+column averages.
+
+Cells sets what a voxel is square in: lon/lat cells drawn square (the array
+as stored), lon/lat cells at their true size on the ground (narrower east to
+west by the cosine of latitude), or square metres on a Lambert azimuthal
+equal-area grid about the centre. Voxel height is automatic (about forty
+layers of relief) or set, and Cubes exaggerates the heights so each voxel is
+drawn as tall as it is wide. Download .vox writes the block as a MagicaVoxel
+model (version 150: SIZE, XYZI, RGBA), the visible shell of each column, up
+to 256 voxels on a side. A synthetic island stands in where GEBCO cannot be
+read. Hash keys: `lon`, `lat`, `ext` (km), `n`, `crs` (`array`, `lonlat`,
+`laea`), `vs` (m, 0 automatic), `vx`, `cube`, `water`, `edges`, `src`
+(`gebco`, `synth`), `cam`.
+
 ## Share and embed
 
 The view state lives in the URL hash, so a link reproduces what you see:
@@ -1128,6 +1154,7 @@ rhumb.html, js/rhumb.js                Rhumb lines: rhumb line and great circle 
 frame.html, js/frame.js                Frame: any scenespec mesh in its CRS, distortion, graticule, unfolded onto the ellipsoid
 fourd.html (sondage)                   Time and depth: time series of sea ice, SST and an ocean model on one globe
 cutaway.html (sondage)                 Cutaway: a section and block diagram through Antarctic ice, bed and sea
+voxels.html, js/voxels.js              Voxels: GEBCO topography as voxel columns, three cell systems, MagicaVoxel export
 
 js/data.js          loads the coastlines in data/
 js/basemap-load.js  fetches the basemaps in the browser and makes their canvases
@@ -1180,6 +1207,7 @@ src/core/polarstere.js            ellipsoidal polar stereographic (EPSG:3031, 93
 src/core/seaice.js                NSIDC Sea Ice Index grid, values and daily file addresses
 src/core/track.js                 ship tracks from underway CSV or parquet rows; Nuyina voyages; place, heading, distance run
 src/core/rhumb.js                 rhumb lines, geodesics and great circles, the whole loxodrome, composite sailing
+src/core/voxels.js                voxel columns over lon/lat or equal-area cells, column means, quantising, .vox files
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
@@ -1232,6 +1260,7 @@ grid, the overlap plan and level choice, and reading tracks from GeoServer CSV a
 `test/check-penguin.mjs` checks the penguin's rotation against PROJ's ob_tran, and the lon/lat table's areas and volume against the mesh.
 `test/check-sight.mjs` checks the viewshed and the cast shadow against marching every line of sight.
 `test/check-peel.mjs` checks the gore flattenings against PROJ, what each keeps, and the spiral peel against its curvature and the Euler spiral.
+`test/check-voxels.mjs` checks the voxel grids' equal-area projection against proj4js, column means, quantising and a .vox file read back.
 `test/check-rhumb.mjs` checks rhumb line and geodesic lengths and courses against PROJ, and composite sailing.
 `test/check-structure.mjs` checks the tile and overview readers against
 GDAL, tifffile and zarr-python. `test/check-storecrs.mjs` checks CF grid mappings against PROJ, cell areas
