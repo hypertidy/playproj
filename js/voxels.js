@@ -12,6 +12,7 @@ import { loadCoastline } from "./data.js";
 import { readElevation, readWindow } from "./basemap-load.js";
 import { sources } from "../src/core/basemap.js";
 import { saveBlob } from "./download.js";
+import { openDem, readDemWindow } from "./dem-load.js";
 import { makeStage, readParams, hashWriter, shareLinks, oneOf, drawLocator } from "../src/scene/index.js";
 
 const $ = (id) => document.getElementById(id);
@@ -23,6 +24,8 @@ const PLACES = [
   { key: "canyon", name: "Grand Canyon", lon: -112.15, lat: 36.15, ext: 60 },
   { key: "kilimanjaro", name: "Kilimanjaro", lon: 37.355, lat: -3.067, ext: 70 },
   { key: "tasmania", name: "Tasmania", lon: 146.6, lat: -42.0, ext: 420 },
+  { key: "kunanyi", name: "kunanyi / Mount Wellington", lon: 147.237, lat: -42.896, ext: 12 },
+  { key: "cradle", name: "Cradle Mountain", lon: 145.951, lat: -41.684, ext: 14 },
   { key: "erebus", name: "Ross Island and Mount Erebus", lon: 167.0, lat: -77.55, ext: 90 },
   { key: "iceland", name: "Iceland", lon: -18.6, lat: 64.95, ext: 560 },
   { key: "mariana", name: "Challenger Deep", lon: 142.2, lat: 11.35, ext: 300 },
@@ -35,6 +38,17 @@ const PLACES = [
   { key: "galapagos", name: "Galapagos Islands", lon: -90.6, lat: -0.55, ext: 320 }
 ];
 
+// Finer DEMs read where a block is over them and its columns are finer
+// than "below" metres (GEBCO's cells are about 460 m), GEBCO round them.
+const REGIONAL = [
+  {
+    key: "tas", name: "Tasmania 2 m DEM",
+    url: "https://data.source.coop/alexgleith/tasmania-dem-2m/Tasmania_Statewide_2m_DEM_14-08-2021.tif",
+    box: { west: 143.5, east: 148.6, south: -43.9, north: -39.3 }, below: 500,
+    credit: 'Tasmania 2 m DEM, Mineral Resources Tasmania, The LIST &copy; State of Tasmania (CC BY 3.0 AU), from <a href="https://source.coop/alexgleith/tasmania-dem-2m">Source Cooperative</a>'
+  }
+];
+
 // ---------------------------------------------------------------- state
 
 const defaults = {
@@ -43,7 +57,7 @@ const defaults = {
 };
 const state = { ...defaults };
 function readHash() {
-  readParams(state, defaults, { crs: oneOf(Object.keys(V.CRS), "laea"), src: oneOf(["gebco", "synth"], "gebco"), tops: oneOf(["classes", "esri", "esritex"], "classes"),
+  readParams(state, defaults, { crs: oneOf(Object.keys(V.CRS), "laea"), src: oneOf(["gebco", "gebco0", "synth"], "gebco"), tops: oneOf(["classes", "esri", "esritex"], "classes"),
     sides: oneOf(["layers", "colour", "none"], "layers"), sc: (raw) => (/^[0-9a-f]{6}$/i.test(raw) ? raw.toLowerCase() : undefined) });
   state.lat = Math.max(-85, Math.min(85, state.lat));
   state.lon = ((state.lon + 540) % 360) - 180;
@@ -218,6 +232,27 @@ async function windowFor(cellDeg) {
   return cache.get(k);
 }
 
+// The regional DEM under the block, when there is one and its columns are
+// finer than GEBCO can give: { reg, win, dem } or null.
+function regionalFor(grid) {
+  if (state.src !== "gebco") return null;
+  const b = V.groundBox(state.lon, state.lat, state.ext * 1000);
+  const reg = REGIONAL.find((r) => grid.cellM < r.below && b.west < r.box.east && b.east > r.box.west && b.south < r.box.north && b.north > r.box.south);
+  if (!reg) return null;
+  const k = `${reg.key}:${state.lon},${state.lat},${state.ext},${state.n},${state.crs}`;
+  if (!cache.has(k)) {
+    const p = (async () => {
+      const dem = await openDem(reg.url, status);
+      const pts = V.blockOutline(state.lon, state.lat, state.ext * 1000, state.crs);
+      const win = await readDemWindow(dem, pts, grid.cellM, state.lat, status);
+      return win && { reg, win, dem };
+    })();
+    p.catch(() => cache.delete(k));
+    cache.set(k, p);
+  }
+  return cache.get(k);
+}
+
 // Esri imagery over the block at res degrees a pixel, kept likewise; a
 // texture may take up to 196 tiles (14 x 14, 3584 pixels a side).
 async function imageryFor(res, textured) {
@@ -249,6 +284,9 @@ async function build() {
     return;
   }
   if (my !== job) return;
+  let fine = null, fineNote = "";
+  try { fine = await regionalFor(grid); } catch (e) { fineNote = `the finer DEM did not load (${e.message}), so this is GEBCO alone`; }
+  if (my !== job) return;
   let tops = null, imgNote = "";
   let tex = null;
   if (state.tops !== "classes") {
@@ -263,9 +301,13 @@ async function build() {
     } catch (e) { imgNote = `the imagery did not load (${e.message})`; }
   }
   if (my !== job) return;
-  status(imgNote ? `Esri imagery: ${imgNote}.` : "");
-  const srcM = win.dy * (V.R * Math.PI / 180);
-  const { z, s } = V.columnMeans(grid, V.sampler(win), srcM);
+  status([fineNote, imgNote && `Esri imagery: ${imgNote}`].filter(Boolean).join(". ") + (fineNote || imgNote ? "." : ""));
+  // the regional DEM where it has ground, GEBCO elsewhere (its sea, and
+  // off its edges)
+  const gebcoM = win.dy * (V.R * Math.PI / 180);
+  const srcM = fine ? Math.min(gebcoM, fine.win.cellM) : gebcoM;
+  const sample = fine ? V.fallbackSampler(V.gridSampler(fine.win, fine.dem.fwd), V.sampler(win)) : V.sampler(win);
+  const { z, s } = V.columnMeans(grid, sample, srcM);
   let lo = Infinity, hi = -Infinity;
   for (const v of z) if (v === v) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
   // the block runs from its lowest column (or sea floor) to its highest (or
@@ -281,7 +323,7 @@ async function build() {
   const P = V.laea(grid.centre[0], grid.centre[1]);
   grid.cols.forEach((c, k) => { surface[k] = V.surfaceClass(z[k], c.lat !== undefined ? c.lat : P.inverse(c.x, c.y)[1]); });
   const exag = state.cube ? grid.cellM / step : state.vx;
-  built = { grid, z, q, surface, step, exag, win, s, srcM, lo, hi, tops, tex, raised, most };
+  built = { grid, z, q, surface, step, exag, win, s, srcM, gebcoM, fine, lo, hi, tops, tex, raised, most };
   draw();
   readout();
   locator();
@@ -346,7 +388,7 @@ const fmtLL = (lon, lat) => `${Math.abs(lat).toFixed(3)}${DEG}${lat < 0 ? "S" : 
 const arcsec = (d) => { const s = d * 3600; return s >= 60 ? `${+(s / 60).toFixed(2)} arc minutes` : `${+s.toFixed(1)} arc seconds`; };
 
 function readout() {
-  const { grid, q, step, exag, win, s, srcM, lo, hi, raised, most } = built;
+  const { grid, q, step, exag, win, s, srcM, gebcoM, fine, lo, hi, raised, most } = built;
   const c = grid.cols, mid = c[(grid.nj >> 1) * grid.ni + (grid.ni >> 1)];
   const foot = grid.crs === "array"
     ? `${arcsec(grid.cellDeg)} square (drawn ${fmtM(mid.wx)} wide)`
@@ -355,7 +397,7 @@ function readout() {
       : `${fmtM(grid.cellM)} square`;
   const finer = grid.cellM < srcM * 0.95;
   const srcLine = win.label === "GEBCO 2026"
-    ? `GEBCO 2026 at ${arcsec(win.dy)} (${fmtM(srcM)})`
+    ? (fine ? `${fine.reg.name} at ${fmtM(fine.win.cellM)} on land, ` : "") + `GEBCO 2026 at ${arcsec(win.dy)} (${fmtM(gebcoM)})${fine ? " round it" : ""}`
     : `synthetic island, ${fmtM(srcM)} cells`;
   const rows = [
     ["Centre", fmtLL(state.lon, state.lat)],
@@ -370,7 +412,7 @@ function readout() {
     ["Voxels", `${q.solid.toLocaleString("en")} ground${q.water ? `, ${q.water.toLocaleString("en")} water` : ""}`]
   ];
   $("out").innerHTML = rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("");
-  $("credit").innerHTML = (win.label === "GEBCO 2026"
+  $("credit").innerHTML = (fine ? `${fine.reg.credit}; ` : "") + (win.label === "GEBCO 2026"
     ? 'GEBCO Compilation Group (2026) GEBCO 2026 Grid, from <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>'
     : "A synthetic island") + (built.tops ? `; ${sources.esri.credit}` : "");
 }

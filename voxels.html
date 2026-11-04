@@ -71,7 +71,8 @@
       <input id="ext" type="range" min="0.7" max="3.5" step="0.01" aria-label="Width of the block, as a power of ten kilometres">
       <label class="row" for="src"><span>Elevation</span></label>
       <select id="src" class="wide">
-        <option value="gebco">GEBCO 2026 (read in place)</option>
+        <option value="gebco">GEBCO 2026, finer DEMs where there are</option>
+        <option value="gebco0">GEBCO 2026 alone</option>
         <option value="synth">A synthetic island (no download)</option>
       </select>
       <label class="row" for="tops"><span>Tops</span></label>
@@ -114,6 +115,11 @@
           cell to voxel height, so the blocks read as cubes and the readout says by how much. Heights are
           GEBCO's, metres above mean sea level (so above the geoid, see the <a href="./geoid.html">Geoid</a>
           page), and <b>Water</b> fills the sea to zero.</p>
+        <p>GEBCO stops at about 460 m. Over Tasmania, once the columns are finer than 500 m, the land comes
+          from the state's 2 m DEM instead, a cloud-optimised GeoTIFF in MGA zone 55 read in place like GEBCO:
+          only the window under the block, from the overview that gives about two cells a column (try
+          <b>kunanyi</b> or <b>Cradle Mountain</b> at 512 across). GEBCO fills the sea and anything off the
+          DEM's edge, and <b>GEBCO 2026 alone</b> turns it off.</p>
         <p>Surfaces are coloured by height and latitude (sand, grass, rock, snow above a snow line that falls
           toward the poles, ice past the polar circles), with dirt under the grass and stone below.
           <b>Tops</b> can instead take Esri World Imagery: each land column's top face is the mean colour of
@@ -128,12 +134,16 @@
           (columns across), <code>crs</code> (<code>array</code>, <code>lonlat</code>, <code>laea</code>),
           <code>vs</code> (voxel height in m, 0 for automatic), <code>vx</code>, <code>cube</code>,
           <code>water</code>, <code>edges</code>, <code>spin</code>, <code>sides</code> (<code>layers</code>,
-          <code>colour</code>, <code>none</code>), <code>sc</code> (side colour, hex), <code>src</code>, <code>tops</code> (<code>classes</code>,
+          <code>colour</code>, <code>none</code>), <code>sc</code> (side colour, hex), <code>src</code> (<code>gebco</code>,
+          <code>gebco0</code>, <code>synth</code>), <code>tops</code> (<code>classes</code>,
           <code>esri</code>, <code>esritex</code>), <code>cam</code>.</p>
         <ul class="credits">
           <li>Elevation from the GEBCO 2026 Grid (GEBCO Compilation Group), from
             <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>, read with
             <a href="https://geotiffjs.github.io/">geotiff.js</a>.</li>
+          <li>Tasmania 2 m DEM, Mineral Resources Tasmania, The LIST &copy; State of Tasmania
+            (CC BY 3.0 AU), as a cloud-optimised copy on
+            <a href="https://source.coop/alexgleith/tasmania-dem-2m">Source Cooperative</a>.</li>
           <li>Imagery from Esri World Imagery (Esri, Maxar, Earthstar Geographics, and the GIS User
             Community).</li>
           <li>The look follows <a href="https://ephtracy.github.io/">MagicaVoxel</a> and Minecraft; the
