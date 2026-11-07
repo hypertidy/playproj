@@ -10,6 +10,11 @@ This continues the 2016 post
 and the R package `pproj` that tried to generalise it (now in
 [`legacy/pproj`](legacy/pproj)).
 
+**For exploration and illustration only.** playproj is a sketchbook for
+looking at spatial data and how it is built. Nothing in it is survey,
+engineering, planning or regulatory data, and its pictures are not evidence
+for a submission or a decision: go to the primary sources for that.
+
 ## What is here
 
 The first page covers the azimuthal perspective family. One slider moves the
@@ -1109,6 +1114,10 @@ window read with zarrita's `zarr.get` and `zarr.slice(j0, j1)`, `zarr.slice(i0, 
 Columns where the source has no data come out empty.
 
 ## Story
+
+For illustration only: the Story page uses typical densities, public DEMs and
+imagery of their own dates, and figures as reported; it is not survey,
+engineering or planning data. Every story's caption and saved picture says so.
 
 `story.html` sets a block down on real ground, for the one picture a story
 often needs: how big a thing would be, standing there. The default is ten
