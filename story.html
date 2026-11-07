@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Story</title>
+<meta name="description" content="A block set down on real ground: the Tasmania 2 m DEM or GEBCO as a draped terrain mesh with Esri World Imagery, and a box of storeys standing on the lowest ground under it.">
+<link rel="stylesheet" href="css/app.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/story.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <canvas id="locator" class="locator" width="168" height="168" aria-label="Where the ground is on the Earth"></canvas>
+    <a id="open-full" class="open-full" href="./story.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit"></p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html">Peeling the orange</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./penguin.html">Penguin datum</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a><a href="./fourd.html">Time and depth</a><a href="./cutaway.html">Cutaway</a><a href="./voxels.html">Voxels</a><a href="./story.html" aria-current="page">Story</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="place"><span>Place</span></label>
+      <select id="place" class="wide" aria-label="A place to set the block down"></select>
+      <div class="buttons">
+        <button id="to-block" type="button">Look at the block</button>
+        <button id="whole" type="button">Whole square</button>
+        <button id="save-png" type="button">Save picture</button>
+      </div>
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section>
+      <label class="row" for="st"><span>Storeys</span></label>
+      <input id="st" type="number" class="wide" min="1" max="200" step="1" aria-label="Storeys">
+      <label class="row" for="sh"><span>Storey height (m)</span></label>
+      <input id="sh" type="number" class="wide" min="1" max="20" step="0.1" aria-label="Storey height in metres">
+      <label class="row" for="bw"><span>Width east to west (m)</span></label>
+      <input id="bw" type="number" class="wide" min="1" max="2000" step="1" aria-label="Width in metres">
+      <label class="row" for="bd"><span>Depth north to south (m)</span></label>
+      <input id="bd" type="number" class="wide" min="1" max="2000" step="1" aria-label="Depth in metres">
+      <label class="row" for="rot"><span>Turned</span><output id="rot-out"></output></label>
+      <input id="rot" type="range" min="0" max="359" step="1" aria-label="Turn, degrees clockwise from north">
+      <label class="row" for="blockll"><span>Block at (lon, lat)</span><input id="bc" type="color" aria-label="Block colour"></label>
+      <input id="blockll" type="text" class="wide" spellcheck="false" aria-label="Block longitude and latitude, in degrees">
+      <div class="toggles">
+        <label><input id="shadow" type="checkbox"> Shadow</label>
+      </div>
+      <div class="buttons">
+        <button id="cube" type="button">Ten storeys, a 30 m cube</button>
+      </div>
+      <p class="hint">Double-click the ground to move the block there.</p>
+    </section>
+
+    <section>
+      <label class="row" for="lonlat"><span>Centre (lon, lat)</span></label>
+      <input id="lonlat" type="text" class="wide" spellcheck="false" aria-label="Centre longitude and latitude, in degrees">
+      <label class="row" for="ext"><span>Width</span><output id="ext-out"></output></label>
+      <input id="ext" type="range" min="-0.7" max="1.7" step="0.01" aria-label="Width of the square, as a power of ten kilometres">
+      <label class="row" for="n"><span>Cells across</span><output id="n-out"></output></label>
+      <input id="n" type="range" min="16" max="768" step="16" aria-label="Mesh cells across the square">
+      <label class="row" for="src"><span>Elevation</span></label>
+      <select id="src" class="wide">
+        <option value="dem">Tasmania 2 m DEM, GEBCO round it</option>
+        <option value="gebco">GEBCO 2026 alone (about 460 m cells)</option>
+      </select>
+      <label class="row" for="img"><span>Drape</span></label>
+      <select id="img" class="wide">
+        <option value="esri">Esri World Imagery</option>
+        <option value="relief">Shaded relief (no imagery)</option>
+      </select>
+      <label class="row" for="vx"><span>Vertical exaggeration</span><output id="vx-out"></output></label>
+      <input id="vx" type="range" min="0" max="1" step="0.01" aria-label="Vertical exaggeration, as a power of ten">
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A story often comes down to one picture: how big a thing would be, standing <i>there</i>. This
+          page sets a block down on real ground. The default is ten storeys of 3 m on a 30 m square, a
+          30 m cube, in McRobies Gully in Hobart, the valley under kunanyi's foothills that holds the
+          city's tip.</p>
+        <p>The <b>ground</b> is a square of terrain, a regular mesh in metres on a Lambert azimuthal
+          equal-area plane about its centre, so the block, the ground and the distances share one scale.
+          Its heights come from the Tasmania 2 m DEM, a cloud-optimised GeoTIFF in MGA zone 55 read in
+          place: only the window under the square, from the overview that gives about two cells a mesh
+          cell. GEBCO 2026 fills the sea and anything off the DEM's edge. <b>Drape</b> lays Esri World
+          Imagery over it, read from Web Mercator tiles at the zoom that gives about 2048 pixels across
+          the square.</p>
+        <p><b>GEBCO 2026 alone</b> shows why the finer DEM matters. GEBCO's cells are 15 arc seconds,
+          about 460 m north to south at Hobart, wider than the whole gully: the valley and its spurs vanish
+          into a gentle tilt, and the block stands on ground that is not there. The readout always gives
+          GEBCO's height under the block, for the comparison. Away from Tasmania, Copernicus GLO-30 (30 m,
+          global) is the next step down from GEBCO; it is not read here yet.</p>
+        <p>The <b>block</b> stands on the lowest ground under its footprint, so no corner floats and the
+          uphill side is cut into the slope, as a building's would be; the readout says how far the
+          ground climbs across it. Storey lines and windows are drawn at true storey height. Heights are
+          metres above mean sea level, the same for the block and the ground, and the exaggeration, when
+          set, stretches both.</p>
+        <p>Hash keys: <code>lon</code>, <code>lat</code>, <code>ext</code> (width in km), <code>n</code>
+          (cells across), <code>src</code> (<code>dem</code>, <code>gebco</code>), <code>img</code>
+          (<code>esri</code>, <code>relief</code>), <code>vx</code>, <code>ox</code>, <code>oy</code>
+          (the block, lon and lat), <code>st</code> (storeys), <code>sh</code> (storey height, m),
+          <code>bw</code>, <code>bd</code> (width and depth, m), <code>rot</code> (degrees clockwise),
+          <code>bc</code> (colour, hex), <code>shadow</code>, <code>cam</code>.</p>
+        <ul class="credits">
+          <li>Tasmania 2 m DEM, Mineral Resources Tasmania, The LIST &copy; State of Tasmania
+            (CC BY 3.0 AU), as a cloud-optimised copy on
+            <a href="https://source.coop/alexgleith/tasmania-dem-2m">Source Cooperative</a>.</li>
+          <li>Elevation from the GEBCO 2026 Grid (GEBCO Compilation Group), from
+            <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>, read with
+            <a href="https://geotiffjs.github.io/">geotiff.js</a>.</li>
+          <li>Imagery from Esri World Imagery (Esri, Maxar, Earthstar Geographics, and the GIS User
+            Community).</li>
+          <li>Drawn with <a href="https://threejs.org/">three.js</a>; coastlines from
+            <a href="https://www.naturalearthdata.com/">Natural Earth</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

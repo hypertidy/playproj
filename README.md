@@ -1108,6 +1108,28 @@ A Zarr array works the same way: its grid's outer corner and cell steps for
 window read with zarrita's `zarr.get` and `zarr.slice(j0, j1)`, `zarr.slice(i0, i1)`.
 Columns where the source has no data come out empty.
 
+## Story
+
+`story.html` sets a block down on real ground, for the one picture a story
+often needs: how big a thing would be, standing there. The default is ten
+storeys of 3 m on a 30 m square (a 30 m cube) in McRobies Gully, Hobart.
+
+The ground is a square of terrain drawn as a regular mesh in metres on a
+Lambert azimuthal equal-area plane about its centre (`terrainGrid` in
+`src/core/story.js`), its heights from the Tasmania 2 m DEM read in place
+(the window under the square, at the overview that suits), GEBCO 2026 round
+it, and draped with Esri World Imagery. "GEBCO 2026 alone" shows why the finer
+DEM matters: GEBCO's 460 m cells are wider than the gully, which flattens to a
+tilted plane. The block stands on the lowest ground under its footprint
+(`seat`), so no corner floats; storey lines and windows are drawn at true
+storey height, and a double-click on the ground moves it. Save picture writes
+the view as a PNG.
+
+Hash keys: `lon`, `lat`, `ext` (km), `n` (cells across), `src` (`dem`,
+`gebco`), `img` (`esri`, `relief`), `vx`, `ox`, `oy` (the block), `st`
+(storeys), `sh` (storey height, m), `bw`, `bd` (width and depth, m), `rot`
+(degrees clockwise from north), `bc` (colour, hex), `shadow`, `cam`.
+
 ## Share and embed
 
 The view state lives in the URL hash, so a link reproduces what you see:
@@ -1213,6 +1235,7 @@ frame.html, js/frame.js                Frame: any scenespec mesh in its CRS, dis
 fourd.html (sondage)                   Time and depth: time series of sea ice, SST and an ocean model on one globe
 cutaway.html (sondage)                 Cutaway: a section and block diagram through Antarctic ice, bed and sea
 voxels.html, js/voxels.js              Voxels: GEBCO topography as voxel columns, three cell systems, MagicaVoxel export
+story.html, js/story.js                Story: a block of storeys set down on draped terrain (2 m DEM or GEBCO, Esri imagery)
 
 js/data.js          loads the coastlines in data/
 js/dem-load.js      opens a projected elevation COG (UTM or MGA) and reads the window a block needs
@@ -1267,6 +1290,7 @@ src/core/seaice.js                NSIDC Sea Ice Index grid, values and daily fil
 src/core/track.js                 ship tracks from underway CSV or parquet rows; Nuyina voyages; place, heading, distance run
 src/core/rhumb.js                 rhumb lines, geodesics and great circles, the whole loxodrome, composite sailing
 src/core/voxels.js                voxel columns over lon/lat or equal-area cells, any-CRS windows and sampling, column means, quantising, .vox files
+src/core/story.js                 story scenes: a terrain grid on an equal-area plane, its heights and triangles, where a block stands
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
