@@ -72,7 +72,9 @@ async function loadGebco(src, status) {
 // ------------------------------------------------------------------ Esri
 
 // Tiles x0..x1, y0..y1 at zoom z drawn into one canvas; RGBA rows back.
-async function mosaic(src, z, x0, x1, y0, y1) {
+// With lenient, a tile that fails is left empty (a cache that covers one
+// region, say) rather than failing the whole mosaic.
+async function mosaic(src, z, x0, x1, y0, y1, lenient = false) {
   const n = 2 ** z, merc = document.createElement("canvas");
   merc.width = (x1 - x0 + 1) * 256; merc.height = (y1 - y0 + 1) * 256;
   const mctx = merc.getContext("2d");
@@ -83,7 +85,7 @@ async function mosaic(src, z, x0, x1, y0, y1) {
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => { mctx.drawImage(img, (x - x0) * 256, (y - y0) * 256); resolve(); };
-        img.onerror = () => reject(new Error("Esri imagery tiles did not load"));
+        img.onerror = () => (lenient ? resolve() : reject(new Error(`${src.label} tiles did not load`)));
         img.src = src.url.replace("{z}", z).replace("{y}", y).replace("{x}", ((x % n) + n) % n);
       }));
   await Promise.all(jobs);
@@ -136,4 +138,21 @@ export function warpCanvas(world, W, H, inv) {
 // north, dx, dy } as readGebcoWindow gives it.
 export async function readElevation(box, res, status = () => {}) {
   return readGebcoWindow(await gebcoLevels(sources.gebco, status), box, res, status);
+}
+
+// A tile window from a Web Mercator source (sources.list, say) over a lon/lat
+// box at about res degrees a pixel, without its global image: tiles the
+// source does not have are left empty. Throws when no tile at all loads,
+// which is what a server without CORS looks like from a page.
+export async function readTiles(id, box, res, status = () => {}, { maxTiles } = {}) {
+  const src = sources[id];
+  const plan = esriPlan(box, res, src, maxTiles);
+  if (!plan) throw new Error("the box is too large for this source's tiles");
+  const { z, tx0, tx1, ty0, ty1 } = plan;
+  status(`Loading ${(tx1 - tx0 + 1) * (ty1 - ty0 + 1)} ${src.label} tiles at zoom ${z}...`);
+  const m = await mosaic(src, z, tx0, tx1, ty0, ty1, true);
+  let any = false;
+  for (let k = 3; k < m.length; k += 4) if (m[k]) { any = true; break; }
+  if (!any) throw new Error(`no ${src.label} tiles loaded (offline, outside its coverage, or blocked by CORS)`);
+  return withCanvas(esriWindow(m, plan, box));
 }

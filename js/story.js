@@ -10,7 +10,7 @@
 import * as THREE from "three";
 import * as V from "../src/core/voxels.js";
 import * as St from "../src/core/story.js";
-import { readElevation, readWindow } from "./basemap-load.js";
+import { readElevation, readWindow, readTiles } from "./basemap-load.js";
 import { sources } from "../src/core/basemap.js";
 import { openDem, readDemWindow } from "./dem-load.js";
 import { loadCoastline } from "./data.js";
@@ -47,7 +47,7 @@ const defaults = {
 const state = { ...defaults };
 const hex = (raw) => (/^[0-9a-f]{6}$/i.test(raw) ? raw.toLowerCase() : undefined);
 function readHash() {
-  readParams(state, defaults, { src: oneOf(["dem", "gebco"], "dem"), img: oneOf(["esri", "relief"], "esri"), bc: hex });
+  readParams(state, defaults, { src: oneOf(["dem", "gebco"], "dem"), img: oneOf(["esri", "list", "relief"], "esri"), bc: hex });
   state.lat = Math.max(-85, Math.min(85, state.lat));
   state.lon = ((state.lon + 540) % 360) - 180;
   state.ext = Math.max(0.2, Math.min(50, state.ext));
@@ -147,7 +147,9 @@ const skirtMat = new THREE.MeshLambertMaterial({ color: 0x6e6258 });
 const cache = new Map();
 let coast = null;
 const status = (s) => { $("status").textContent = s; };
-const TEX = 2048;
+// texels across the square: more for the LIST orthophoto, which goes to
+// about 0.2 m at zoom 19
+const TEX = { esri: 2048, list: 4096 };
 
 function once(k, f) {
   if (!cache.has(k)) {
@@ -178,10 +180,11 @@ function demFor(cellM) {
   });
 }
 
-function imageryFor() {
-  const ext = state.ext * 1000, res = ext / TEX / (V.R * D2R);
-  return once(`esri:${state.lon},${state.lat},${state.ext}`, () =>
-    readWindow("esri", V.groundBox(state.lon, state.lat, ext * 1.1), res, status, { maxTiles: 196 }));
+function imageryFor(kind) {
+  const ext = state.ext * 1000, res = ext / TEX[kind] / (V.R * D2R), box = V.groundBox(state.lon, state.lat, ext * 1.1);
+  return once(`${kind}:${state.lon},${state.lat},${state.ext}`, () => kind === "list"
+    ? readTiles("list", box, res, status, { maxTiles: 256 })
+    : readWindow("esri", box, res, status, { maxTiles: 196 }));
 }
 
 // ---------------------------------------------------------------- build
@@ -201,10 +204,14 @@ async function build() {
   let fine = null;
   try { fine = await demFor(grid.cellM); } catch (e) { notes.push(`the 2 m DEM did not load (${e.message}), so this is GEBCO alone`); }
   if (my !== job) return;
-  let img = null;
-  if (state.img === "esri") {
+  let img = null, drape = state.img;
+  if (drape === "list") {
+    // the state orthophoto, or Esri where it does not load
+    try { img = await imageryFor("list"); } catch (e) { notes.push(`the LIST orthophoto did not load (${e.message}), so this is Esri`); drape = "esri"; }
+  }
+  if (drape === "esri" && !img) {
     try {
-      img = await imageryFor();
+      img = await imageryFor("esri");
       if (img.note) notes.push(`Esri imagery: ${img.note}`);
     } catch (e) { notes.push(`the imagery did not load (${e.message})`); }
   }
@@ -216,9 +223,9 @@ async function build() {
   let tex = null;
   if (img) {
     const flat = { cols: [{ x: 0, y: 0, wx: ext, wy: ext }], toLonLat: (x, y) => grid.P.inverse(x, y) };
-    tex = V.topTexture(flat, img, TEX);
+    tex = V.topTexture(flat, img, TEX[drape]);
   }
-  built = { grid, h, sample, gebcoSample, gebco, fine, tex };
+  built = { grid, h, sample, gebcoSample, gebco, fine, tex, drape };
   drawGround();
   placeBlock();
   readout();
@@ -345,7 +352,7 @@ function readout() {
   $("out").innerHTML = rows.filter(Boolean).map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("");
   $("credit").innerHTML = [fine && fine.reg.credit,
     'GEBCO Compilation Group (2026) GEBCO 2026 Grid, from <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>',
-    built.tex && sources.esri.credit].filter(Boolean).join("; ");
+    built.tex && sources[built.drape].credit].filter(Boolean).join("; ");
 }
 
 function locator() {

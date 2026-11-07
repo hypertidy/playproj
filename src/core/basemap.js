@@ -21,6 +21,15 @@ export const sources = {
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     zoom: 3,
     credit: "Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community"
+  },
+  // Tasmania's state orthophoto mosaic: a Web Mercator tile cache like
+  // Esri's, read as windows only (no global image), to zoom 19
+  list: {
+    label: "LIST Tasmania orthophoto",
+    url: "https://services.thelist.tas.gov.au/arcgis/rest/services/Basemaps/Orthophoto/MapServer/tile/{z}/{y}/{x}",
+    zoom: 3, maxZoom: 19,
+    box: { west: 143.5, east: 148.6, south: -43.9, north: -39.3 },
+    credit: 'Imagery: Tasmania orthophoto, <a href="https://www.thelist.tas.gov.au/">the LIST</a> &copy; State of Tasmania (CC BY-NC-ND 3.0 AU)'
   }
 };
 
@@ -213,7 +222,7 @@ const tyOf = (lat) => (1 - Math.log(Math.tan(Math.PI / 4 + clamp(lat, -MERC_LIM,
 // can run past n across the antimeridian), or null where the global
 // image's zoom is as deep as the read can go.
 export function esriPlan(box, res, src = sources.esri, maxTiles = ESRI_MAX_TILES) {
-  let z = clamp(Math.ceil(Math.log2(360 / (256 * res))), src.zoom, ESRI_MAX_ZOOM), n, tx0, tx1, ty0, ty1;
+  let z = clamp(Math.ceil(Math.log2(360 / (256 * res))), src.zoom, src.maxZoom || ESRI_MAX_ZOOM), n, tx0, tx1, ty0, ty1;
   for (;; z--) {
     n = 2 ** z;
     tx0 = Math.floor(((box.west + 180) / 360) * n); tx1 = Math.floor(((box.east + 180) / 360) * n - 1e-9);
@@ -242,7 +251,7 @@ export function esriWindow(m, plan, box) {
     if (row < 0 || row >= rows * 256) continue;
     for (let i = 0; i < width; i++) {
       const s = (row * width + i) * 4, k = (j * width + i) * 4;
-      data[k] = m[s]; data[k + 1] = m[s + 1]; data[k + 2] = m[s + 2]; data[k + 3] = 255;
+      data[k] = m[s]; data[k + 1] = m[s + 1]; data[k + 2] = m[s + 2]; data[k + 3] = m[s + 3];
     }
   }
   return { width, height, data, west: -180 + (tx0 / n) * 360, north: top, dx, dy, global: false };
