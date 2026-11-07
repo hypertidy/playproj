@@ -27,6 +27,9 @@ const PLACES = [
   { key: "cradle", name: "Cradle Mountain and Dove Lake", lon: 145.951, lat: -41.668, ext: 4, ox: 145.9615, oy: -41.6545 }
 ];
 
+// Every story carries this, on the page and in a saved picture.
+const CAVEAT = "For illustration only: typical densities and reported figures, not survey, engineering or planning data.";
+
 // Stories: a quantity set down somewhere, with what it is and where the
 // number comes from. Each sets the place, the block and the caption.
 const MP = { lon: 147.3375, lat: -42.8797 };   // the Macquarie Point site, cleared for the stadium
@@ -431,7 +434,7 @@ function quantityLine() {
   const shape = state.shape === "cube" ? `a cube ${fmtM(b.height)} on a side`
     : state.shape === "pit" ? `a pit ${fmtM(b.height)} deep over ${fmtM(b.bw)} x ${fmtM(b.bd)}`
       : `a slab ${fmtM(b.height)} high on ${fmtM(b.bw)} x ${fmtM(b.bd)}`;
-  return `${amount}: ${shape}`;
+  return `${amount}: ${shape}. <i>${CAVEAT}</i>`;
 }
 
 // the story's caption over the view, and in a saved picture
@@ -440,7 +443,7 @@ function caption() {
   const el = $("caption");
   if (!t) { el.hidden = true; return; }
   el.hidden = false;
-  el.innerHTML = `<b>${t.name}</b><br>${t.text}<br><span class="src">${t.src ? `<a href="${t.src}" target="_blank" rel="noopener">${t.srcName}</a>` : t.srcName}</span>`;
+  el.innerHTML = `<b>${t.name}</b><br>${t.text}<br><span class="src">${t.src ? `<a href="${t.src}" target="_blank" rel="noopener">${t.srcName}</a>` : t.srcName}</span><br><span class="caveat">${CAVEAT}</span>`;
 }
 
 function locator() {
@@ -541,7 +544,7 @@ $("save-png").addEventListener("click", () => {
   const g = c.getContext("2d");
   g.drawImage(src, 0, 0);
   const t = STORIES.find((x) => x.key === state.story);
-  if (t) drawCaption(g, c.width, [t.name, t.text, t.srcName + (t.src ? ` (${t.src})` : "")]);
+  if (t) drawCaption(g, c.width, [t.name, t.text, t.srcName + (t.src ? ` (${t.src})` : ""), CAVEAT]);
   const a = document.createElement("a");
   a.href = c.toDataURL("image/png");
   a.download = `story-${(PLACES.find((p) => p.key === $("place").value) || { key: "ground" }).key}.png`;
@@ -549,7 +552,7 @@ $("save-png").addEventListener("click", () => {
 });
 
 // the caption in a box at the top left, wrapped to about half the width
-function drawCaption(g, W, [title, text, src]) {
+function drawCaption(g, W, [title, text, src, caveat]) {
   const k = W / 1000, pad = 14 * k, maxW = Math.min(W * 0.55, 560 * k);
   const wrap = (str, font) => {
     g.font = font;
@@ -563,7 +566,7 @@ function drawCaption(g, W, [title, text, src]) {
     return out;
   };
   const fT = `600 ${18 * k}px system-ui, sans-serif`, fB = `${14 * k}px system-ui, sans-serif`, fS = `${11 * k}px system-ui, sans-serif`;
-  const lines = [...wrap(title, fT).map((l) => [l, fT, 24 * k]), ...wrap(text, fB).map((l) => [l, fB, 19 * k]), ...wrap(src, fS).map((l) => [l, fS, 16 * k])];
+  const lines = [...wrap(title, fT).map((l) => [l, fT, 24 * k]), ...wrap(text, fB).map((l) => [l, fB, 19 * k]), ...wrap(src, fS).map((l) => [l, fS, 16 * k]), ...wrap(caveat, fS).map((l) => [l, fS, 16 * k])];
   const h = lines.reduce((a, l) => a + l[2], 0) + 2 * pad;
   g.fillStyle = "rgba(13, 23, 38, 0.82)";
   g.fillRect(pad, pad, maxW + 2 * pad, h);
