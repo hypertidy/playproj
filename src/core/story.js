@@ -89,3 +89,35 @@ export function seat(sample, P, x, y, w, d, rot = 0, k = 9) {
 export function blockHeight(storeys, storeyM) {
   return Math.max(0, storeys) * Math.max(0, storeyM);
 }
+
+// ------------------------------------------------------------ quantities
+
+// Bulk densities in tonnes a cubic metre, typical values to turn a tonnage
+// into a volume (a story should say which it used: soil in place is denser
+// than the same soil loose in a truck).
+export const MATERIALS = {
+  soil: { name: "Soil, in place", t: 1.8, rgb: "8a6a4a" },
+  loose: { name: "Soil, loose (dug out)", t: 1.5, rgb: "9c7b55" },
+  waste: { name: "Mixed waste, compacted in a landfill", t: 0.8, rgb: "8d8a7c" },
+  water: { name: "Fresh water", t: 1.0, rgb: "3f7fb8" },
+  seawater: { name: "Sea water", t: 1.025, rgb: "2f6a9a" },
+  ice: { name: "Glacial ice", t: 0.917, rgb: "dcecf5" },
+  concrete: { name: "Concrete", t: 2.4, rgb: "b9b5ad" },
+  sand: { name: "Dry sand", t: 1.6, rgb: "d8c08a" },
+  co2: { name: "CO2 gas, 15 C at sea-level pressure", t: 0.00187, rgb: "c9c9c9" },
+  gold: { name: "Gold", t: 19.3, rgb: "d4af37" }
+};
+
+// Cubic metres of amount in unit ("m3", or "t" of material).
+export function volumeOf(amount, unit, material) {
+  if (unit === "m3") return amount;
+  const m = MATERIALS[material];
+  return m ? amount / m.t : NaN;
+}
+
+// A volume as a block: a cube; a slab (or heap) standing on a w x d
+// footprint; or a pit dug down into one. { w, d, h, pit }.
+export function shapeFor(volume, shape, w, d) {
+  if (shape === "cube") { const s = Math.cbrt(volume); return { w: s, d: s, h: s, pit: false }; }
+  return { w, d, h: volume / (w * d), pit: shape === "pit" };
+}

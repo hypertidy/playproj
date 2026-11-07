@@ -65,5 +65,16 @@ const check = (ok, msg) => { if (!ok) { fails++; console.log("FAIL " + msg); } }
   check(St.blockHeight(10, 3) === 30, "ten storeys of 3 m");
 }
 
+// quantities: 50,000 t of soil in place is about a 30 m cube; a tonne of
+// CO2 gas about an 8 m one; a pit over a 200 m square holds its volume
+{
+  const v = St.volumeOf(50000, "t", "soil");
+  check(Math.abs(v - 27777.78) < 0.01 && Math.abs(St.shapeFor(v, "cube").h - 30.29) < 0.01, `soil cube ${v}`);
+  check(Math.abs(St.shapeFor(St.volumeOf(1, "t", "co2"), "cube").w - 8.12) < 0.01, "a tonne of CO2");
+  const p = St.shapeFor(St.volumeOf(298000, "t", "soil"), "pit", 200, 200);
+  check(p.pit && Math.abs(p.w * p.d * p.h - 298000 / 1.8) < 1e-6, "pit holds the volume");
+  check(St.volumeOf(5, "m3", "anything") === 5 && Number.isNaN(St.volumeOf(5, "t", "unobtainium")), "units");
+}
+
 if (fails) { console.log(`${fails} story checks failed`); process.exit(1); }
 console.log("story: terrain grid, heights, triangles, footprints and seats all agree");
