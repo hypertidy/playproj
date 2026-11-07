@@ -27,6 +27,50 @@ const PLACES = [
   { key: "cradle", name: "Cradle Mountain and Dove Lake", lon: 145.951, lat: -41.668, ext: 4, ox: 145.9615, oy: -41.6545 }
 ];
 
+// Stories: a quantity set down somewhere, with what it is and where the
+// number comes from. Each sets the place, the block and the caption.
+const MP = { lon: 147.3375, lat: -42.8797 };   // the Macquarie Point site, cleared for the stadium
+const STORIES = [
+  {
+    key: "mp-tip", name: "Macquarie Point soil at the tip",
+    place: "mcrobies", q: 50000, qu: "t", mat: "soil", shape: "cube",
+    text: "About 50,000 t of clean fill and Class 2 contaminated soil from the Macquarie Point stadium site, trucked to the McRobies Gully tip at about 1,325 t a week. As soil in place (1.8 t/m3) that is a cube about 30 m on a side: ten storeys.",
+    src: "https://www.newsbeep.com/au/955846/", srcName: "reported 7 November 2026"
+  },
+  {
+    key: "mp-all", name: "All of Macquarie Point's contaminated soil",
+    lon: MP.lon, lat: MP.lat, ext: 1.5, ox: MP.lon, oy: MP.lat, q: 298000, qu: "t", mat: "soil", shape: "cube",
+    text: "Up to 298,000 t of contaminated material under the Macquarie Point stadium site (the EPA's estimate of June 2026), as one cube of soil in place (1.8 t/m3) standing on the site.",
+    src: "https://tasgreensmps.org/parliament/speeches/excavation-and-removal-of-contaminated-soil-at-macquarie-point/", srcName: "EPA figures quoted in the Legislative Council, August 2026"
+  },
+  {
+    key: "mp-pit", name: "The same, scraped out of Macquarie Point",
+    lon: MP.lon, lat: MP.lat, ext: 1.5, ox: MP.lon, oy: MP.lat, q: 298000, qu: "t", mat: "soil", shape: "pit", bw: 200, bd: 200,
+    text: "The same 298,000 t (about 166,000 m3 of soil in place) as a hole: dug out evenly over a 200 m square of the site it is about 4 m deep. The square is for scale, not the stadium's footprint.",
+    src: "https://tasgreensmps.org/parliament/speeches/excavation-and-removal-of-contaminated-soil-at-macquarie-point/", srcName: "EPA figures quoted in the Legislative Council, August 2026"
+  },
+  {
+    key: "tip-year", name: "A year at the tip's limit",
+    place: "mcrobies", q: 85000, qu: "t", mat: "waste", shape: "cube",
+    text: "McRobies Gully may take up to 85,000 t a year. As mixed waste compacted in a landfill (about 0.8 t/m3, a typical figure) a year at the limit is a cube about 47 m on a side.",
+    src: "https://www.newsbeep.com/au/955846/", srcName: "regulatory limit as reported 7 November 2026"
+  },
+  {
+    key: "co2", name: "A tonne of CO2 on Sullivans Cove",
+    place: "cove", q: 1, qu: "t", mat: "co2", shape: "cube",
+    text: "One tonne of carbon dioxide as a gas at 15 C and sea-level pressure (1.87 kg/m3) fills about 535 m3: a cube about 8 m on a side.",
+    src: "", srcName: "ideal gas density"
+  }
+];
+
+// the state a story sets
+function storyState(t) {
+  const p = t.place ? PLACES.find((x) => x.key === t.place) : t;
+  const out = { lon: p.lon, lat: p.lat, ext: p.ext, ox: p.ox, oy: p.oy, q: t.q, qu: t.qu, mat: t.mat, shape: t.shape, rot: 0 };
+  if (t.bw) Object.assign(out, { bw: t.bw, bd: t.bd });
+  return out;
+}
+
 // as voxels.js: finer DEMs where the ground is over them
 const REGIONAL = [
   {
@@ -42,12 +86,20 @@ const REGIONAL = [
 const P0 = PLACES[0];
 const defaults = {
   lon: P0.lon, lat: P0.lat, ext: P0.ext, n: 384, src: "dem", img: "esri", vx: 1,
-  ox: P0.ox, oy: P0.oy, st: 10, sh: 3, bw: 30, bd: 30, rot: 0, bc: "e9e4d8", shadow: 1, cam: null
+  ox: P0.ox, oy: P0.oy, st: 10, sh: 3, bw: 30, bd: 30, rot: 0, bc: "e9e4d8", shadow: 1,
+  q: 0, qu: "t", mat: "soil", shape: "cube", story: "", cam: null
 };
 const state = { ...defaults };
 const hex = (raw) => (/^[0-9a-f]{6}$/i.test(raw) ? raw.toLowerCase() : undefined);
 function readHash() {
-  readParams(state, defaults, { src: oneOf(["dem", "gebco"], "dem"), img: oneOf(["esri", "list", "relief"], "esri"), bc: hex });
+  const h = readParams(state, defaults, { src: oneOf(["dem", "gebco"], "dem"), img: oneOf(["esri", "list", "relief"], "esri"), bc: hex,
+    qu: oneOf(["t", "m3"], "t"), mat: oneOf(Object.keys(St.MATERIALS), "soil"), shape: oneOf(["cube", "slab", "pit"], "cube"),
+    story: oneOf(["", ...STORIES.map((t) => t.key)], "") });
+  // a story in the link brings its own place and quantity, under any key
+  // the link also names
+  const t = STORIES.find((x) => x.key === state.story);
+  if (t) for (const [k, v] of Object.entries(storyState(t))) if (!h.has(k)) state[k] = v;
+  state.q = Math.max(0, Math.min(1e12, state.q));
   state.lat = Math.max(-85, Math.min(85, state.lat));
   state.lon = ((state.lon + 540) % 360) - 180;
   state.ext = Math.max(0.2, Math.min(50, state.ext));
@@ -85,7 +137,7 @@ scene.add(sun, sun.target);
 // its own metres (uSize) so the bands stay at true storey height
 const blockUniforms = {
   uSize: { value: new THREE.Vector3(30, 30, 30) }, uStorey: { value: 3 }, uCol: { value: new THREE.Color() },
-  uSun: { value: SUN.clone() }
+  uSun: { value: SUN.clone() }, uPlain: { value: 0 }, uAlpha: { value: 1 }
 };
 const blockMat = new THREE.ShaderMaterial({
   uniforms: blockUniforms,
@@ -105,12 +157,14 @@ const blockMat = new THREE.ShaderMaterial({
     uniform float uStorey;
     uniform vec3 uCol;
     uniform vec3 uSun;
+    uniform float uPlain;
+    uniform float uAlpha;
     varying vec3 vLocal;
     varying vec3 vN;
     varying vec3 vObjN;
     void main() {
       vec3 col = uCol;
-      if (vObjN.y < 0.5 && vObjN.y > -0.5) {
+      if (uPlain < 0.5 && vObjN.y < 0.5 && vObjN.y > -0.5) {
         // along the face, in metres, and up it in storeys
         float along = abs(vObjN.x) > 0.5 ? vLocal.z : vLocal.x;
         float s = vLocal.y / uStorey, f = fract(s);
@@ -124,7 +178,7 @@ const blockMat = new THREE.ShaderMaterial({
         col *= 1.0 - 0.35 * line;
       }
       float light = 0.45 + 0.55 * max(dot(normalize(vN), uSun), 0.0);
-      gl_FragColor = vec4(col * light, 1.0);
+      gl_FragColor = vec4(col * light, uAlpha);
       #include <colorspace_fragment>
     }`
 });
@@ -311,17 +365,28 @@ function blockXY() { return built.grid.P.forward(state.ox, state.oy); }
 function placeBlock() {
   if (!built) return;
   const s = S(), [x, y] = blockXY();
-  const height = St.blockHeight(state.st, state.sh);
-  const sit = St.seat(built.sample, built.grid.P, x, y, state.bw, state.bd, state.rot) || { min: 0, max: 0, mean: 0 };
-  const gsit = St.seat(built.gebcoSample, built.grid.P, x, y, state.bw, state.bd, state.rot);
-  built.seat = sit; built.gseat = gsit; built.height = height;
-  block.scale.set(state.bw * s, Math.max(1e-6, height * state.vx * s), state.bd * s);
-  block.position.set(x * s, yOf(sit.min), -y * s);
+  // a quantity sets the block's shape; otherwise it is storeys
+  const qty = state.q > 0 ? St.shapeFor(St.volumeOf(state.q, state.qu, state.mat), state.shape, state.bw, state.bd) : null;
+  const bw = qty ? qty.w : state.bw, bd = qty ? qty.d : state.bd;
+  const height = qty ? qty.h : St.blockHeight(state.st, state.sh);
+  const sit = St.seat(built.sample, built.grid.P, x, y, bw, bd, state.rot) || { min: 0, max: 0, mean: 0 };
+  const gsit = St.seat(built.gebcoSample, built.grid.P, x, y, bw, bd, state.rot);
+  built.seat = sit; built.gseat = gsit; built.height = height; built.qty = qty; built.bw = bw; built.bd = bd;
+  // a pit hangs down from the highest ground over its footprint, and shows
+  // through the ground over it
+  const pit = qty && qty.pit, base = pit ? sit.max - height : sit.min;
+  block.scale.set(bw * s, Math.max(1e-6, height * state.vx * s), bd * s);
+  block.position.set(x * s, yOf(base), -y * s);
   block.rotation.y = -state.rot * D2R;
-  blockUniforms.uSize.value.set(state.bw, height, state.bd);
+  blockUniforms.uSize.value.set(bw, height, bd);
   blockUniforms.uStorey.value = state.sh;
-  blockUniforms.uCol.value.set("#" + state.bc);
-  const top = yOf(sit.min + height);
+  blockUniforms.uPlain.value = qty ? 1 : 0;
+  blockUniforms.uAlpha.value = pit ? 0.6 : 1;
+  blockMat.transparent = !!pit; blockMat.depthTest = !pit; blockMat.depthWrite = !pit;
+  block.renderOrder = pit ? 2 : 0;
+  block.castShadow = !pit;
+  blockUniforms.uCol.value.set("#" + (qty ? (pit ? "d2342a" : St.MATERIALS[state.mat].rgb) : state.bc));
+  const top = yOf(pit ? sit.max : sit.min + height);
   pin.position.set(x * s, top, -y * s);
   pin.scale.set(1, 0.06, 1);
   sun.castShadow = !!state.shadow;
@@ -335,7 +400,7 @@ const fmtLL = (lon, lat) => `${Math.abs(lat).toFixed(4)}${DEG}${lat < 0 ? "S" : 
 
 function readout() {
   if (!built) return;
-  const { grid, h, gebco, fine, seat, gseat, height } = built;
+  const { grid, h, gebco, fine, seat, gseat, height, qty } = built;
   const gebcoM = gebco.dy * V.R * D2R;
   const src = fine
     ? `${fine.reg.name}, read at ${fmtM(fine.win.cellM)}${h.missing ? ", GEBCO where it has none" : ""}`
@@ -344,15 +409,38 @@ function readout() {
     ["Ground", `${fmtM(grid.ext)} square at ${fmtLL(state.lon, state.lat)}, ${state.n} x ${state.n} cells of ${fmtM(grid.cellM)}`],
     ["Elevation", src],
     ["Relief", `${Math.round(h.lo)} to ${Math.round(h.hi)} m${state.vx !== 1 ? `, drawn x ${state.vx}` : ", true scale"}`],
-    ["Block", `${state.st} storeys of ${fmtM(state.sh)} = ${fmtM(height)} tall, ${fmtM(state.bw)} x ${fmtM(state.bd)}${state.rot ? `, turned ${Math.round(state.rot)}${DEG}` : ""}`],
+    qty ? ["Quantity", quantityLine()]
+      : ["Block", `${state.st} storeys of ${fmtM(state.sh)} = ${fmtM(height)} tall, ${fmtM(state.bw)} x ${fmtM(state.bd)}${state.rot ? `, turned ${Math.round(state.rot)}${DEG}` : ""}`],
     ["At", fmtLL(state.ox, state.oy)],
-    ["Stands on", `${Math.round(seat.min)} m (the ground under it climbs ${fmtM(seat.max - seat.min)}); roof at ${Math.round(seat.min + height)} m`],
+    qty && qty.pit
+      ? ["Dug from", `${Math.round(seat.max)} m down to ${Math.round(seat.max - height)} m (the ground over it falls ${fmtM(seat.max - seat.min)})`]
+      : ["Stands on", `${Math.round(seat.min)} m (the ground under it climbs ${fmtM(seat.max - seat.min)}); ${qty ? "top" : "roof"} at ${Math.round(seat.min + height)} m`],
     fine && ["GEBCO here", gseat ? `${Math.round(gseat.mean)} m, ${fmtM(Math.abs(seat.mean - gseat.mean))} ${seat.mean > gseat.mean ? "below" : "above"} the ground drawn` : "none"]
   ];
   $("out").innerHTML = rows.filter(Boolean).map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("");
+  caption();
   $("credit").innerHTML = [fine && fine.reg.credit,
     'GEBCO Compilation Group (2026) GEBCO 2026 Grid, from <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>',
     built.tex && sources[built.drape].credit].filter(Boolean).join("; ");
+}
+
+const fmtN = (v) => (v >= 100 ? Math.round(v).toLocaleString("en") : String(+v.toPrecision(3)));
+function quantityLine() {
+  const m = St.MATERIALS[state.mat], v = St.volumeOf(state.q, state.qu, state.mat), b = built;
+  const amount = state.qu === "t" ? `${fmtN(state.q)} t of ${m.name.toLowerCase()} (${m.t} t/m3) = ${fmtN(v)} m3` : `${fmtN(v)} m3`;
+  const shape = state.shape === "cube" ? `a cube ${fmtM(b.height)} on a side`
+    : state.shape === "pit" ? `a pit ${fmtM(b.height)} deep over ${fmtM(b.bw)} x ${fmtM(b.bd)}`
+      : `a slab ${fmtM(b.height)} high on ${fmtM(b.bw)} x ${fmtM(b.bd)}`;
+  return `${amount}: ${shape}`;
+}
+
+// the story's caption over the view, and in a saved picture
+function caption() {
+  const t = STORIES.find((x) => x.key === state.story);
+  const el = $("caption");
+  if (!t) { el.hidden = true; return; }
+  el.hidden = false;
+  el.innerHTML = `<b>${t.name}</b><br>${t.text}<br><span class="src">${t.src ? `<a href="${t.src}" target="_blank" rel="noopener">${t.srcName}</a>` : t.srcName}</span>`;
 }
 
 function locator() {
@@ -388,6 +476,9 @@ function syncControls() {
   $("rot").value = state.rot; $("rot-out").textContent = `${Math.round(state.rot)}${DEG}`;
   $("bc").value = "#" + state.bc; $("shadow").checked = !!state.shadow;
   $("blockll").value = `${+state.ox.toFixed(5)}, ${+state.oy.toFixed(5)}`;
+  $("story").value = state.story;
+  $("q").value = state.q || ""; $("qu").value = state.qu; $("mat").value = state.mat; $("shape").value = state.shape;
+  $("mat").disabled = state.qu !== "t";
 }
 
 function changed({ rebuild = true, ground = false } = {}) {
@@ -395,6 +486,20 @@ function changed({ rebuild = true, ground = false } = {}) {
   if (rebuild) build();
   else if (built) { if (ground) drawGround(); placeBlock(); readout(); }
 }
+
+$("story").innerHTML = '<option value="">None, my own</option>' + STORIES.map((t) => `<option value="${t.key}">${t.name}</option>`).join("");
+$("mat").innerHTML = Object.entries(St.MATERIALS).map(([k, m]) => `<option value="${k}">${m.name}, ${m.t} t/m3</option>`).join("");
+$("story").addEventListener("change", (e) => {
+  const t = STORIES.find((x) => x.key === e.target.value);
+  state.story = t ? t.key : "";
+  if (t) {
+    Object.assign(state, storyState(t), { cam: null });
+    stage.setCamera(WHOLE);
+    changed();
+  } else changed({ rebuild: false });
+});
+$("q").addEventListener("change", (e) => { const v = +e.target.value; state.q = isFinite(v) && v > 0 ? v : 0; state.story = ""; changed({ rebuild: false }); });
+for (const k of ["qu", "mat", "shape"]) $(k).addEventListener("change", (e) => { state[k] = e.target.value; state.story = ""; changed({ rebuild: false }); });
 
 $("place").innerHTML = '<option value="">Somewhere else</option>' + PLACES.map((p) => `<option value="${p.key}">${p.name}</option>`).join("");
 $("place").addEventListener("change", (e) => {
@@ -426,16 +531,46 @@ for (const k of ["st", "sh", "bw", "bd"]) $(k).addEventListener("change", (e) =>
 $("rot").addEventListener("input", (e) => { state.rot = +e.target.value; changed({ rebuild: false }); });
 $("bc").addEventListener("input", (e) => { state.bc = e.target.value.slice(1); changed({ rebuild: false }); });
 $("shadow").addEventListener("change", (e) => { state.shadow = e.target.checked ? 1 : 0; changed({ rebuild: false }); });
-$("cube").addEventListener("click", () => { Object.assign(state, { st: 10, sh: 3, bw: 30, bd: 30, rot: 0 }); changed({ rebuild: false }); });
+$("cube").addEventListener("click", () => { Object.assign(state, { st: 10, sh: 3, bw: 30, bd: 30, rot: 0, q: 0, story: "" }); changed({ rebuild: false }); });
 $("to-block").addEventListener("click", lookAtBlock);
 $("whole").addEventListener("click", () => { state.cam = null; stage.setCamera(WHOLE); writeHash(); });
 $("save-png").addEventListener("click", () => {
   renderer.render(scene, camera);
+  const src = renderer.domElement, c = document.createElement("canvas");
+  c.width = src.width; c.height = src.height;
+  const g = c.getContext("2d");
+  g.drawImage(src, 0, 0);
+  const t = STORIES.find((x) => x.key === state.story);
+  if (t) drawCaption(g, c.width, [t.name, t.text, t.srcName + (t.src ? ` (${t.src})` : "")]);
   const a = document.createElement("a");
-  a.href = renderer.domElement.toDataURL("image/png");
+  a.href = c.toDataURL("image/png");
   a.download = `story-${(PLACES.find((p) => p.key === $("place").value) || { key: "ground" }).key}.png`;
   a.click();
 });
+
+// the caption in a box at the top left, wrapped to about half the width
+function drawCaption(g, W, [title, text, src]) {
+  const k = W / 1000, pad = 14 * k, maxW = Math.min(W * 0.55, 560 * k);
+  const wrap = (str, font) => {
+    g.font = font;
+    const out = [];
+    let line = "";
+    for (const w of str.split(" ")) {
+      const next = line ? line + " " + w : w;
+      if (g.measureText(next).width > maxW && line) { out.push(line); line = w; } else line = next;
+    }
+    if (line) out.push(line);
+    return out;
+  };
+  const fT = `600 ${18 * k}px system-ui, sans-serif`, fB = `${14 * k}px system-ui, sans-serif`, fS = `${11 * k}px system-ui, sans-serif`;
+  const lines = [...wrap(title, fT).map((l) => [l, fT, 24 * k]), ...wrap(text, fB).map((l) => [l, fB, 19 * k]), ...wrap(src, fS).map((l) => [l, fS, 16 * k])];
+  const h = lines.reduce((a, l) => a + l[2], 0) + 2 * pad;
+  g.fillStyle = "rgba(13, 23, 38, 0.82)";
+  g.fillRect(pad, pad, maxW + 2 * pad, h);
+  let y = 2 * pad;
+  g.fillStyle = "#f2f5f9"; g.textBaseline = "top";
+  for (const [l, f, lh] of lines) { g.font = f; g.fillText(l, 2 * pad, y); y += lh; }
+}
 
 // double-click the ground: the block moves there
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();

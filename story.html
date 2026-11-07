@@ -22,6 +22,7 @@
     <div id="three"></div>
     <canvas id="locator" class="locator" width="168" height="168" aria-label="Where the ground is on the Earth"></canvas>
     <a id="open-full" class="open-full" href="./story.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <div id="caption" class="story-caption" hidden></div>
     <p id="credit" class="credit"></p>
   </main>
 
@@ -40,6 +41,26 @@
         <button id="save-png" type="button">Save picture</button>
       </div>
       <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section>
+      <label class="row" for="story"><span>Story</span></label>
+      <select id="story" class="wide" aria-label="A story: a quantity set down somewhere"></select>
+      <label class="row" for="q"><span>How much</span></label>
+      <div class="qty-row">
+        <input id="q" type="number" min="0" step="any" placeholder="none: storeys below" aria-label="Amount">
+        <select id="qu" aria-label="Unit"><option value="t">tonnes</option><option value="m3">cubic metres</option></select>
+      </div>
+      <label class="row" for="mat"><span>Of</span></label>
+      <select id="mat" class="wide" aria-label="Material, with its bulk density"></select>
+      <label class="row" for="shape"><span>As</span></label>
+      <select id="shape" class="wide" aria-label="Shape">
+        <option value="cube">A cube</option>
+        <option value="slab">A slab on the footprint below</option>
+        <option value="pit">A pit dug into the footprint below</option>
+      </select>
+      <p class="hint">A quantity turns tonnes into cubic metres through the material's density, then into a block on the
+        ground. Clear it to go back to storeys.</p>
     </section>
 
     <section>
@@ -117,12 +138,20 @@
           ground climbs across it. Storey lines and windows are drawn at true storey height. Heights are
           metres above mean sea level, the same for the block and the ground, and the exaggeration, when
           set, stretches both.</p>
+        <p><b>How much</b> answers the other story question: what does this many tonnes look like? A tonnage
+          becomes a volume through a bulk density (typical values, listed with each material; soil in place is
+          denser than the same soil loose in a truck), and the volume becomes a cube, a slab of a given footprint,
+          or a pit dug into it, drawn through the ground so it can be seen. <b>Story</b> holds examples, each with
+          where its number comes from: soil from the Macquarie Point stadium site, as the cube it makes at the
+          McRobies Gully tip and as the hole it leaves; a year at the tip's limit; a tonne of CO2.</p>
         <p>Hash keys: <code>lon</code>, <code>lat</code>, <code>ext</code> (width in km), <code>n</code>
           (cells across), <code>src</code> (<code>dem</code>, <code>gebco</code>), <code>img</code>
           (<code>esri</code>, <code>list</code>, <code>relief</code>), <code>vx</code>, <code>ox</code>, <code>oy</code>
           (the block, lon and lat), <code>st</code> (storeys), <code>sh</code> (storey height, m),
           <code>bw</code>, <code>bd</code> (width and depth, m), <code>rot</code> (degrees clockwise),
-          <code>bc</code> (colour, hex), <code>shadow</code>, <code>cam</code>.</p>
+          <code>bc</code> (colour, hex), <code>shadow</code>, <code>q</code> (how much, 0 for storeys),
+          <code>qu</code> (<code>t</code>, <code>m3</code>), <code>mat</code> (material), <code>shape</code>
+          (<code>cube</code>, <code>slab</code>, <code>pit</code>), <code>story</code>, <code>cam</code>.</p>
         <ul class="credits">
           <li>Tasmania 2 m DEM, Mineral Resources Tasmania, The LIST &copy; State of Tasmania
             (CC BY 3.0 AU), as a cloud-optimised copy on

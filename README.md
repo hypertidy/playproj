@@ -1126,10 +1126,19 @@ tilted plane. The block stands on the lowest ground under its footprint
 storey height, and a double-click on the ground moves it. Save picture writes
 the view as a PNG.
 
+How much: a quantity (tonnes of a material with a typical bulk density, or
+cubic metres) becomes a cube, a slab on a footprint, or a pit dug into it
+(`MATERIALS`, `volumeOf`, `shapeFor` in `src/core/story.js`). Stories are
+presets with a caption and their source: Macquarie Point stadium soil as the
+cube it makes at the McRobies Gully tip and as the hole it leaves, a year at
+the tip's limit, a tonne of CO2. Save picture writes the caption into the PNG.
+
 Hash keys: `lon`, `lat`, `ext` (km), `n` (cells across), `src` (`dem`,
 `gebco`), `img` (`esri`, `list`, `relief`), `vx`, `ox`, `oy` (the block), `st`
 (storeys), `sh` (storey height, m), `bw`, `bd` (width and depth, m), `rot`
-(degrees clockwise from north), `bc` (colour, hex), `shadow`, `cam`.
+(degrees clockwise from north), `bc` (colour, hex), `shadow`, `q` (how much,
+0 for storeys), `qu` (`t`, `m3`), `mat`, `shape` (`cube`, `slab`, `pit`),
+`story` (a preset; keys the link also names win), `cam`.
 
 ## Share and embed
 
