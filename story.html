@@ -79,6 +79,7 @@
       <label class="row" for="img"><span>Drape</span></label>
       <select id="img" class="wide">
         <option value="esri">Esri World Imagery</option>
+        <option value="list">LIST Tasmania orthophoto (Esri where it fails)</option>
         <option value="relief">Shaded relief (no imagery)</option>
       </select>
       <label class="row" for="vx"><span>Vertical exaggeration</span><output id="vx-out"></output></label>
@@ -102,7 +103,10 @@
           place: only the window under the square, from the overview that gives about two cells a mesh
           cell. GEBCO 2026 fills the sea and anything off the DEM's edge. <b>Drape</b> lays Esri World
           Imagery over it, read from Web Mercator tiles at the zoom that gives about 2048 pixels across
-          the square.</p>
+          the square, or the LIST's Tasmania orthophoto mosaic (the state's own aerial imagery, a tile cache
+          to zoom 19, about 0.2 m a pixel at Hobart) at about 4096 across. Where the LIST tiles do not load
+          (outside Tasmania, or a browser the server will not share them with) the page says so and uses
+          Esri.</p>
         <p><b>GEBCO 2026 alone</b> shows why the finer DEM matters. GEBCO's cells are 15 arc seconds,
           about 460 m north to south at Hobart, wider than the whole gully: the valley and its spurs vanish
           into a gentle tilt, and the block stands on ground that is not there. The readout always gives
@@ -115,7 +119,7 @@
           set, stretches both.</p>
         <p>Hash keys: <code>lon</code>, <code>lat</code>, <code>ext</code> (width in km), <code>n</code>
           (cells across), <code>src</code> (<code>dem</code>, <code>gebco</code>), <code>img</code>
-          (<code>esri</code>, <code>relief</code>), <code>vx</code>, <code>ox</code>, <code>oy</code>
+          (<code>esri</code>, <code>list</code>, <code>relief</code>), <code>vx</code>, <code>ox</code>, <code>oy</code>
           (the block, lon and lat), <code>st</code> (storeys), <code>sh</code> (storey height, m),
           <code>bw</code>, <code>bd</code> (width and depth, m), <code>rot</code> (degrees clockwise),
           <code>bc</code> (colour, hex), <code>shadow</code>, <code>cam</code>.</p>
@@ -126,6 +130,8 @@
           <li>Elevation from the GEBCO 2026 Grid (GEBCO Compilation Group), from
             <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>, read with
             <a href="https://geotiffjs.github.io/">geotiff.js</a>.</li>
+          <li>Tasmania orthophoto from <a href="https://www.thelist.tas.gov.au/">the LIST</a> &copy; State of
+            Tasmania (CC BY-NC-ND 3.0 AU).</li>
           <li>Imagery from Esri World Imagery (Esri, Maxar, Earthstar Geographics, and the GIS User
             Community).</li>
           <li>Drawn with <a href="https://threejs.org/">three.js</a>; coastlines from

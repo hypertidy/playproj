@@ -1118,7 +1118,8 @@ The ground is a square of terrain drawn as a regular mesh in metres on a
 Lambert azimuthal equal-area plane about its centre (`terrainGrid` in
 `src/core/story.js`), its heights from the Tasmania 2 m DEM read in place
 (the window under the square, at the overview that suits), GEBCO 2026 round
-it, and draped with Esri World Imagery. "GEBCO 2026 alone" shows why the finer
+it, and draped with Esri World Imagery or the LIST's Tasmania orthophoto
+(tiles to zoom 19, falling back to Esri where they do not load). "GEBCO 2026 alone" shows why the finer
 DEM matters: GEBCO's 460 m cells are wider than the gully, which flattens to a
 tilted plane. The block stands on the lowest ground under its footprint
 (`seat`), so no corner floats; storey lines and windows are drawn at true
@@ -1126,7 +1127,7 @@ storey height, and a double-click on the ground moves it. Save picture writes
 the view as a PNG.
 
 Hash keys: `lon`, `lat`, `ext` (km), `n` (cells across), `src` (`dem`,
-`gebco`), `img` (`esri`, `relief`), `vx`, `ox`, `oy` (the block), `st`
+`gebco`), `img` (`esri`, `list`, `relief`), `vx`, `ox`, `oy` (the block), `st`
 (storeys), `sh` (storey height, m), `bw`, `bd` (width and depth, m), `rot`
 (degrees clockwise from north), `bc` (colour, hex), `shadow`, `cam`.
 
