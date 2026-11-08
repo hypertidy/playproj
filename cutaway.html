@@ -16,7 +16,7 @@
 }
 </script>
 <!-- the page is sondage's (https://github.com/allboa/sondage), pinned to one commit -->
-<script type="module" src="https://cdn.jsdelivr.net/gh/allboa/sondage@81db2bfd7b8ac8e13c404006ef83fa55746e3398/js/cutaway-page.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/gh/allboa/sondage@e825364d41e60c2d9d264bd001353a9acbb92242/js/cutaway-page.js"></script>
 </head>
 <body class="cutaway">
 <div id="app">
@@ -37,7 +37,14 @@
       <label class="row" for="preset"><span>Line</span></label>
       <select id="preset" aria-label="A line worth a look"></select>
       <canvas id="cut-map" width="300" height="300" aria-label="Antarctica from Bedmap3: click twice for a line, A then B" class="cut-map"></canvas>
-      <p id="map-hint" class="hint" role="status">Click twice on the map for a new line: A, then B.</p>
+      <div class="buttons map-zoom">
+        <button id="map-in" type="button" class="small" aria-label="Zoom the map in">+</button>
+        <button id="map-out" type="button" class="small" aria-label="Zoom the map out">-</button>
+        <button id="map-fit" type="button" class="small">Zoom to the line</button>
+        <button id="map-all" type="button" class="small">Whole map</button>
+      </div>
+      <p id="map-at" class="hint map-at" aria-live="off"></p>
+      <p id="map-hint" class="hint" role="status">Click twice on the map for a new line, A then B, or drag an end. Wheel or pinch to zoom, drag to pan.</p>
       <div class="buttons">
         <label>A <input id="a" class="token" type="text" size="14" spellcheck="false" aria-label="A as longitude,latitude"></label>
         <label>B <input id="b" class="token" type="text" size="14" spellcheck="false" aria-label="B as longitude,latitude"></label>
@@ -108,6 +115,11 @@
           its top surfaces are the bed, the ice and the sea from the same grid. With the block on both sides of
           the line, the ice is taken off the right-hand side to show the bed under it (unflooded and not
           rebounded), and the block can be bent over the Earth's curve, for a line across the continent.</p>
+        <p>The map zooms (wheel, pinch or the buttons) and pans (drag) down to a few kilometres across. Zoomed
+          in, it reads Bedmap3's surface, bed and mask again over the view at a finer level, down to the full
+          500 m, so an end can be put on a particular glacier, ridge or ice rise; the readout under the map is the
+          pointer's latitude and longitude. Either end can be dragged to move it, and the A and B boxes take
+          typed longitude,latitude.</p>
         <p>A drill site is a red rod from the bed up through the surface, with the ice thickness, bed and
           their uncertainties read there at Bedmap3's full 500 m. While B is placed on the map, a dashed guide
           runs from A through the site to the map's edge, and the hint says how far the line to the cursor
