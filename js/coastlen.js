@@ -9,17 +9,22 @@
 
 import * as K from "../src/core/coastlen.js";
 import { loadCoastline } from "./data.js";
+import { readElevation } from "./basemap-load.js";
+import { coastRings, landPolygons } from "../src/core/landmesh.js";
+import { PLACES } from "../src/core/track.js";
 import { readParams, hashWriter, oneOf } from "../src/scene/hash.js";
 import { shareLinks } from "../src/scene/share.js";
 
 const d3 = window.d3;
 const $ = (id) => document.getElementById(id);
-const DEG = "\u00b0";
+const DEG = String.fromCharCode(176);
 
 const C = {
-  bg: "#05070d", ocean: "#0b1426", world: "rgba(215,236,255,0.28)", grat: "rgba(140,196,255,0.14)", edge: "rgba(140,196,255,0.4)",
-  ant: "#7fe0ff", antDim: "rgba(127,224,255,0.35)", aus: "#ffb35c", ausDim: "rgba(255,179,92,0.35)", par: "#ff7ab8", sector: "rgba(255,255,255,0.35)",
-  step: "rgba(255,255,255,0.9)", merc: "#ffd34d", truth: "#6ab787", ink: "#dfe7f2", muted: "#8a97ab", axis: "rgba(223,231,242,0.35)", shade: "rgba(140,150,170,0.12)"
+  bg: "#f7f4ec", sea: "#bfe2f0", land: "#eadfc4", landEdge: "rgba(110,90,55,0.7)", ice: "#ffffff", shelf: "#e3edf3",
+  iceEdge: "rgba(80,110,140,0.55)", grat: "rgba(40,70,110,0.28)", edge: "rgba(40,70,110,0.6)",
+  ant: "#c2185b", antDim: "rgba(194,24,91,0.35)", aus: "#d35400", ausDim: "rgba(211,84,0,0.35)", par: "#6a1b9a",
+  sector: "rgba(30,40,60,0.55)", step: "#1d2b3a", halo: "rgba(255,255,255,0.85)", oceanInk: "#1f4e79", landInk: "#5a4a2a",
+  merc: "#e0a400", truth: "#2f6f8f", ink: "#1d2b3a", muted: "#5a6878", axis: "rgba(29,43,58,0.45)", shade: "rgba(90,104,120,0.12)"
 };
 
 // Geoscience Australia, Border lengths (GEODATA Coast 100K 2004): mainland
@@ -28,11 +33,11 @@ const GA_MAINLAND = 35821;
 // ---------------------------------------------------------------- state
 
 const RULERS = K.RULERS;
-const defaults = { ant: "aat", edge: "front", r: 50, lat: -66.5, div: 1, rot: "" };
+const defaults = { ant: "aat", edge: "front", r: 50, lat: -66.5, div: 1, view: "polar", bathy: 1, rot: "" };
 const state = { ...defaults };
 function readHash() {
   readParams(state, defaults, {
-    ant: oneOf(["aat", "all"], "aat"), edge: oneOf(["front", "ground"], "front"),
+    ant: oneOf(["aat", "all"], "aat"), edge: oneOf(["front", "ground"], "front"), view: oneOf(["polar", "globe"], "polar"),
     rot: (s) => (/^-?[\d.]+,-?[\d.]+$/.test(s) ? s : undefined)
   });
   if (!RULERS.includes(state.r)) state.r = RULERS.reduce((a, b) => (Math.abs(Math.log(b / state.r)) < Math.abs(Math.log(a / state.r)) ? b : a));
@@ -46,7 +51,7 @@ const latS = (lat) => `${Math.abs(lat).toFixed(1)}${DEG}${lat < 0 ? "S" : "N"}`;
 
 // ---------------------------------------------------------------- data
 
-let world = null, D = null;
+let land = null, ice = null, elev = null, D = null;
 const cache = new Map();
 const memo = (k, f) => { if (!cache.has(k)) cache.set(k, f()); return cache.get(k); };
 
@@ -80,10 +85,30 @@ function walk(which, r, edge = state.edge, ant = state.ant) {
 }
 
 // ---------------------------------------------------------------- maps
+//
+// Atlas styling: stepped bathymetric tints from GEBCO (pale on the shelf,
+// darker with depth), land in buff, the grounded ice sheet white and the
+// ice shelves a pale blue-grey, ocean names in spaced italic capitals.
 
 const ML = (ls) => ({ type: "MultiLineString", coordinates: ls });
 const parallel = (lat, w = -180, e = 180) => ({ type: "LineString", coordinates: Array.from({ length: 181 }, (_, i) => [w + (e - w) * i / 180, lat]) });
 const meridian = (lon) => ({ type: "LineString", coordinates: [[lon, -60], [lon, -86]] });
+
+// depth (m, negative) to tint: the atlas steps
+const DEPTHS = [
+  [-200, [214, 238, 247]], [-1000, [191, 226, 240]], [-2000, [166, 211, 234]], [-3000, [142, 196, 226]],
+  [-4000, [116, 179, 216]], [-5000, [90, 159, 203]], [-Infinity, [63, 136, 187]]
+];
+const tint = (z) => { for (const [d, c] of DEPTHS) if (z >= d) return c; return DEPTHS[DEPTHS.length - 1][1]; };
+
+// ocean and land names, and the stations
+const OCEANS = [
+  ["SOUTHERN OCEAN", 95, -57], ["SOUTHERN OCEAN", -100, -60], ["SOUTHERN OCEAN", 10, -58],
+  ["INDIAN OCEAN", 80, -30], ["PACIFIC OCEAN", -150, -38], ["TASMAN SEA", 163, -36], ["ATLANTIC OCEAN", -20, -33],
+  ["ROSS SEA", -175, -73], ["WEDDELL SEA", -42, -70]
+];
+const LANDS = [["AUSTRALIA", 134, -25], ["ANTARCTICA", 30, -82]];
+const STATIONS = [PLACES.mawson, PLACES.davis, PLACES.casey, PLACES.hobart, PLACES.macquarie];
 
 let rot = null, drag = null;
 const MAPS = {
@@ -91,18 +116,48 @@ const MAPS = {
     make: (w, h) => {
       const c = state.ant === "all" ? 105 : 110, half = state.ant === "all" ? 179.9 : 85;
       const p = d3.geoMercator().rotate([-c, 0]);
-      return p.fitExtent([[10, 26], [w - 10, h - 10]], { type: "MultiPoint", coordinates: [[c - half, -84], [c + half, -8]] }).clipExtent([[0, 0], [w, h]]);
+      return p.fitExtent([[10, 10], [w - 10, h - 26]], { type: "MultiPoint", coordinates: [[c - half, -84], [c + half, -8]] }).clipExtent([[0, 0], [w, h]]);
     },
-    label: () => {
-      const s = 1 / Math.cos(state.lat * Math.PI / 180);
-      return `Mercator: ${latS(state.lat)} is drawn ${x2(s)} its true length`;
-    }
+    label: () => `Mercator: ${latS(state.lat)} is drawn ${x2(1 / Math.cos(state.lat * Math.PI / 180))} its true length`
   },
   globe: {
-    make: (w, h) => d3.geoOrthographic().rotate(rot || [-110, 52]).fitExtent([[12, 26], [w - 12, h - 12]], { type: "Sphere" }),
-    label: () => "Globe (orthographic): drag to turn"
+    make: (w, h) => {
+      if (state.view === "polar") {
+        // south polar stereographic, 0 degrees up, as EPSG:3031 and the atlas maps have it
+        const p = d3.geoStereographic().rotate([0, 90]).clipAngle(100);
+        return p.fitExtent([[8, 8], [w - 8, h - 26]], parallel(-42)).clipExtent([[0, 0], [w, h]]);
+      }
+      return d3.geoOrthographic().rotate(rot || [-110, 52]).fitExtent([[12, 12], [w - 12, h - 26]], { type: "Sphere" });
+    },
+    label: () => (state.view === "polar" ? "South polar stereographic (as EPSG:3031)" : "Globe (orthographic): drag to turn")
   }
 };
+
+// the bathymetry under a projection, at CSS pixel resolution, cached until
+// the view changes
+const under = {};
+function bathymetry(key, proj, w, h) {
+  if (!elev) return null;
+  const sig = `${w}x${h}|${proj.rotate()}|${proj.scale()}|${proj.translate()}`;
+  if (under[key] && under[key].sig === sig) return under[key].canvas;
+  const W = Math.round(w), H = Math.round(h), img = new ImageData(W, H), d = img.data;
+  const { elev: e, width: EW, height: EH, west, north, dx, dy } = elev;
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const ll = proj.invert([i + 0.5, j + 0.5]);
+    const k = (j * W + i) * 4;
+    if (!ll || !Number.isFinite(ll[0])) continue;
+    let u = Math.floor((((ll[0] - west) % 360) + 360) % 360 / dx);
+    const v = Math.floor((north - ll[1]) / dy);
+    if (v < 0 || v >= EH) { const c = tint(-4000); d[k] = c[0]; d[k + 1] = c[1]; d[k + 2] = c[2]; d[k + 3] = 255; continue; }
+    if (u >= EW) u = EW - 1;
+    const z = e[v * EW + u], c = tint(z > 0 ? -1 : z);
+    d[k] = c[0]; d[k + 1] = c[1]; d[k + 2] = c[2]; d[k + 3] = 255;
+  }
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H; cv.getContext("2d").putImageData(img, 0, 0);
+  under[key] = { sig, canvas: cv };
+  return cv;
+}
 
 function drawMap(key) {
   const cv = $(`m-${key}`), { ctx, w, h } = canvas(cv);
@@ -110,25 +165,73 @@ function drawMap(key) {
   MAPS[key].proj = proj;
   const path = d3.geoPath(proj, ctx);
   const stroke = (g, col, width = 1, dash = []) => { ctx.beginPath(); path(g); ctx.strokeStyle = col; ctx.lineWidth = width; ctx.setLineDash(dash); ctx.stroke(); ctx.setLineDash([]); };
-  ctx.beginPath(); path({ type: "Sphere" }); ctx.fillStyle = C.ocean; ctx.fill();
-  stroke(d3.geoGraticule10(), C.grat);
-  if (world) stroke(world, C.world);
-  if (state.ant === "aat") for (const lon of [45, 136, 142, 160]) stroke(meridian(lon), C.sector, 1, [3, 4]);
+  const fill = (g, col) => { ctx.beginPath(); path(g); ctx.fillStyle = col; ctx.fill("evenodd"); };
+  // the sea: GEBCO tints where they have loaded, else the shelf tint
+  ctx.save(); ctx.beginPath(); path({ type: "Sphere" }); ctx.fillStyle = C.sea; ctx.fill(); ctx.clip();
+  const bg = bathymetry(key, proj, w, h);
+  if (bg) ctx.drawImage(bg, 0, 0, w, h);
+  ctx.restore();
+  // land, then the ice shelves and the grounded ice over Antarctica
+  if (land) { fill(land, C.land); stroke(land, C.landEdge, 0.6); }
+  if (ice) { fill(ice.front, C.shelf); fill(ice.ground, C.ice); stroke(ice.ground, C.iceEdge, 0.5); }
+  stroke(d3.geoGraticule10(), C.grat, 0.6);
+  if (state.ant === "aat") for (const lon of [45, 136, 142, 160]) stroke(meridian(lon), C.sector, 1, [4, 3]);
+  // the coasts measured: the other Antarctic edge thin and dashed
   const other = state.edge === "front" ? "ground" : "front";
   stroke(ML(lines("ant", other)), C.antDim, 1, [2, 3]);
-  stroke(ML(lines("ant")), state.div ? C.antDim : C.ant, state.div ? 3 : 1.6);
-  stroke(ML(lines("aus")), state.div ? C.ausDim : C.aus, state.div ? 3 : 1.6);
-  stroke(parallel(state.lat), C.par, 1.4, [5, 4]);
+  stroke(ML(lines("ant")), state.div ? C.antDim : C.ant, state.div ? 3.2 : 1.8);
+  stroke(ML(lines("aus")), state.div ? C.ausDim : C.aus, state.div ? 3.2 : 1.8);
+  stroke(parallel(state.lat), C.par, 1.4, [6, 4]);
   if (state.div) {
     for (const [which, col] of [["ant", C.ant], ["aus", C.aus]]) {
       const wk = walk(which, state.r);
-      stroke(ML(wk.marks), col, 1.2);
+      stroke(ML(wk.marks), col, 1.3);
       ctx.fillStyle = C.step;
-      if (state.r >= 100) for (const m of wk.marks) for (const p of m) { const q = proj(p); if (q && visible(proj, p)) { ctx.beginPath(); ctx.arc(q[0], q[1], 1.8, 0, 2 * Math.PI); ctx.fill(); } }
+      if (state.r >= 100) for (const m of wk.marks) for (const p of m) { const q = proj(p); if (q && visible(proj, p)) { ctx.beginPath(); ctx.arc(q[0], q[1], 1.9, 0, 2 * Math.PI); ctx.fill(); } }
     }
   }
-  stroke({ type: "Sphere" }, C.edge);
+  names(ctx, proj);
+  stroke({ type: "Sphere" }, C.edge, 1);
   $(`l-${key}`).textContent = MAPS[key].label();
+}
+
+// names, stations first, each left out where it would overlap one already drawn
+function names(ctx, proj) {
+  const at = (lon, lat) => (visible(proj, [lon, lat]) ? proj([lon, lat]) : null);
+  const taken = [], W = ctx.canvas.width / (window.devicePixelRatio || 1);
+  const free = (x0, y0, x1, y1) => {
+    if (x0 < 2 || x1 > W - 2) return false;
+    if (taken.some((t) => x0 < t[2] && x1 > t[0] && y0 < t[3] && y1 > t[1])) return false;
+    taken.push([x0, y0, x1, y1]);
+    return true;
+  };
+  const spaced = (s) => s.split("").join(String.fromCharCode(8201));
+  ctx.textBaseline = "middle";
+  ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left";
+  for (const s of STATIONS) {
+    const p = at(s.lon, s.lat);
+    if (!p) continue;
+    ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(p[0], p[1], 2.6, 0, 2 * Math.PI); ctx.fill();
+    const tw = ctx.measureText(s.name).width;
+    // right of the dot, else left of it
+    for (const [x, y] of [[p[0] + 5, p[1] - 7], [p[0] - 5 - tw, p[1] - 7], [p[0] + 5, p[1] + 8]]) {
+      if (!free(x, y - 6, x + tw, y + 6)) continue;
+      ctx.strokeStyle = C.halo; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.strokeText(s.name, x, y); ctx.fillText(s.name, x, y);
+      break;
+    }
+  }
+  ctx.textAlign = "center";
+  const label = (list, font, col) => {
+    ctx.font = font; ctx.fillStyle = col;
+    for (const [s, lon, lat] of list) {
+      const p = at(lon, lat), t = spaced(s);
+      if (!p) continue;
+      const tw = ctx.measureText(t).width;
+      if (free(p[0] - tw / 2, p[1] - 7, p[0] + tw / 2, p[1] + 7)) ctx.fillText(t, p[0], p[1]);
+    }
+  };
+  label(LANDS, "bold 11px system-ui, sans-serif", C.landInk);
+  label(OCEANS, "italic 11px Georgia, 'Times New Roman', serif", C.oceanInk);
 }
 
 function visible(proj, [lon, lat]) {
@@ -182,7 +285,7 @@ function drawBars() {
     ctx.fillText(`${antName()} / Australia: ${(g.a.t / g.u.t).toFixed(2)} true, ${(g.a.m / g.u.m).toFixed(2)} on Mercator`, left, y);
     y += rowH * 1.6;
   }
-  $("l-bars").textContent = "Lengths: true (green) and as Mercator draws them at its equator scale (yellow)";
+  $("l-bars").textContent = "Lengths: true (blue) and as Mercator draws them at its equator scale (yellow)";
 }
 
 // ---------------------------------------------------------------- plot
@@ -274,6 +377,7 @@ function syncUI() {
   $("ri").value = RULERS.indexOf(state.r); $("ri-out").textContent = `${state.r} km`;
   $("lat").value = state.lat; $("lat-out").textContent = latS(state.lat);
   $("div").checked = !!state.div;
+  $("view").value = state.view; $("bathy").checked = !!state.bathy;
 }
 $("ri").max = RULERS.length - 1;
 $("ant").addEventListener("change", (e) => { state.ant = e.target.value; schedule(); });
@@ -281,10 +385,12 @@ $("edge").addEventListener("change", (e) => { state.edge = e.target.value; sched
 $("ri").addEventListener("input", (e) => { state.r = RULERS[+e.target.value]; schedule(); });
 $("lat").addEventListener("input", (e) => { state.lat = +e.target.value; schedule(); });
 $("div").addEventListener("change", (e) => { state.div = e.target.checked ? 1 : 0; schedule(); });
+$("view").addEventListener("change", (e) => { state.view = e.target.value; schedule(); });
+$("bathy").addEventListener("change", (e) => { state.bathy = e.target.checked ? 1 : 0; loadBathy(); schedule(); });
 
 const gcv = $("m-globe");
 gcv.addEventListener("pointerdown", (e) => {
-  const p = MAPS.globe.proj; if (!p) return;
+  const p = MAPS.globe.proj; if (!p || state.view !== "globe") return;
   drag = { x: e.clientX, y: e.clientY, rot: p.rotate(), k: 180 / (Math.PI * p.scale()) };
   gcv.setPointerCapture(e.pointerId);
 });
@@ -325,8 +431,31 @@ readHash();
 rotFromState();
 syncUI();
 const pairs = (r) => { const o = []; for (let i = 0; i < r.length; i += 2) o.push([r[i], r[i + 1]]); return o; };
-loadCoastline("50m").then((c) => { world = { type: "MultiLineString", coordinates: c.map(pairs) }; schedule(); }).catch(() => {});
+// polygons wound the way d3 wants: the small side inside
+const wind = (r, outer = true) => {
+  const big = d3.geoArea({ type: "Polygon", coordinates: [r] }) > 2 * Math.PI;
+  return big === outer ? r.slice().reverse() : r;
+};
+const closed = (r) => (r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r : [...r, r[0]]);
+loadCoastline("50m").then((c) => {
+  // land from the coastline rings, less Antarctica (drawn from the 10m ice edges)
+  const polys = landPolygons(coastRings(c)).filter((p) => Math.max(...p.outer.filter((_, i) => i % 2)) > -60);
+  land = { type: "MultiPolygon", coordinates: polys.map((p) => [wind(closed(pairs(p.outer))), ...p.holes.map((h) => wind(closed(pairs(h)), false))]) };
+  schedule();
+}).catch(() => {});
 fetch(new URL("../data/coast-south-10m.json", import.meta.url)).then((r) => r.json()).then((j) => {
   D = { aus: K.fromFlat(j.australia), ground: K.fromFlat(j.grounding), front: K.fromFlat(j.front) };
+  ice = { ground: { type: "Polygon", coordinates: [wind(closed(D.ground))] }, front: { type: "Polygon", coordinates: [wind(closed(D.front))] } };
   schedule();
 });
+// GEBCO depths for the tints, south of 5 N at a quarter degree
+let bathyAsked = false;
+function loadBathy() {
+  if (!state.bathy) { elev = null; for (const k of Object.keys(under)) delete under[k]; return; }
+  if (bathyAsked) return;
+  bathyAsked = true;
+  readElevation({ west: -180, east: 180, south: -90, north: 5 }, 0.25)
+    .then((g) => { if (state.bathy) { elev = { ...g, elev: g.elev }; schedule(); } })
+    .catch(() => { bathyAsked = false; });
+}
+loadBathy();

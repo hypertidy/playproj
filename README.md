@@ -844,7 +844,10 @@ by `test/make-coastlen-data.py` from Natural Earth 10m into
 Mercator in `test/check-coastlen.mjs` (fixture from
 `test/make-coastlen-fixture.py`); WGS84 differs by under 0.4 percent. Hash
 keys: `ant` (`aat`, `all`), `edge` (`front`, `ground`), `r`, `lat`, `div`,
-`rot`.
+`view` (`polar`, `globe`), `bathy`, `rot`. The maps take the look of printed
+Antarctic atlas maps: stepped depth tints from GEBCO (read at a quarter
+degree), buff land, the grounded ice sheet white and the ice shelves pale
+blue-grey, with the second map in south polar stereographic.
 
 ## Basemaps and GeoTIFF export
 
