@@ -9,13 +9,20 @@
 <script src="js/mobile.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/dist/d3-geo.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "earcut": "https://cdn.jsdelivr.net/npm/earcut@3.0.2/src/earcut.js"
+  }
+}
+</script>
 <script type="module" src="js/coastlen.js"></script>
 </head>
 <body>
 <div id="app">
   <main id="stage" class="quad">
     <div class="half" data-tab="Mercator"><canvas id="m-merc" class="cells" aria-label="The coasts on Mercator"></canvas><span class="half-label" id="l-merc"></span></div>
-    <div class="half" data-tab="Globe"><canvas id="m-globe" class="cells" aria-label="The coasts on a globe"></canvas><span class="half-label" id="l-globe"></span></div>
+    <div class="half" data-tab="Polar"><canvas id="m-globe" class="cells" aria-label="The coasts on a south polar map or a globe"></canvas><span class="half-label" id="l-globe"></span></div>
     <div class="half" data-tab="Lengths"><canvas id="m-bars" class="cells" aria-label="The lengths compared"></canvas><span class="half-label" id="l-bars"></span></div>
     <div class="half" data-tab="Richardson"><canvas id="m-plot" class="cells" aria-label="Length against ruler, log scales"></canvas><span class="half-label" id="l-plot"></span></div>
     <a id="open-full" class="open-full" href="./coastlen.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
@@ -42,8 +49,14 @@
       <input id="ri" type="range" min="0" max="10" step="1" aria-label="Divider opening, km">
       <label class="row" for="lat"><span>A parallel</span><output id="lat-out"></output></label>
       <input id="lat" type="range" min="-80" max="-10" step="0.5" aria-label="Latitude of the parallel drawn">
+      <label class="row" for="view"><span>Second map</span></label>
+      <select id="view" class="wide" aria-label="The second map">
+        <option value="polar">South polar stereographic</option>
+        <option value="globe">Globe</option>
+      </select>
       <div class="toggles">
         <label><input id="div" type="checkbox"> Divider steps on the maps</label>
+        <label><input id="bathy" type="checkbox"> GEBCO depth tints</label>
       </div>
       <p class="hint">Drag the globe to turn it.</p>
     </section>
@@ -88,7 +101,11 @@
           step as the straight line between its Mercator ends, read at the equator's scale.</p>
         <p>Hash keys: <code>ant</code> (<code>aat</code>, <code>all</code>), <code>edge</code>
           (<code>front</code>, <code>ground</code>), <code>r</code> (ruler, km), <code>lat</code>,
-          <code>div</code>, <code>rot</code> (the globe's centre, lon,lat).</p>
+          <code>div</code>, <code>view</code> (<code>polar</code>, <code>globe</code>), <code>bathy</code>,
+          <code>rot</code> (the globe's centre, lon,lat).</p>
+        <p>The maps are styled after printed Antarctic atlas maps: stepped depth tints (200, 1000, 2000 m and
+          every 1000 m on), read from GEBCO at a quarter degree, buff land, the grounded ice sheet in white and
+          the ice shelves in pale blue-grey.</p>
         <ul class="credits">
           <li>Richardson, L. F. (1961) The problem of contiguity: an appendix to Statistics of Deadly
             Quarrels, <i>General Systems Yearbook</i> 6, 139. Mandelbrot, B. (1967) How long is the coast of
@@ -99,7 +116,8 @@
             (Mercator's scale factor and isometric latitude).</li>
           <li>Coastlines and ice shelves from <a href="https://www.naturalearthdata.com/">Natural Earth</a>
             10m (public domain): the coastline and the Antarctic ice shelf polygons, joined into the ice front
-            by <code>test/make-coastlen-data.py</code>. Maps drawn with
+            by <code>test/make-coastlen-data.py</code>. Depths: GEBCO Compilation Group (2026) GEBCO 2026 Grid,
+            from <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>. Maps drawn with
             <a href="https://github.com/d3/d3-geo">d3-geo</a>.</li>
         </ul>
       </details>
