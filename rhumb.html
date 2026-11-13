@@ -6,6 +6,7 @@
 <title>playproj: Rhumb lines</title>
 <meta name="description" content="Rhumb lines and great circles between two places, on four maps at once: Mercator, where the rhumb line is straight, gnomonic, where the great circle is, a globe, and an azimuthal or polar map. With the composite sailing round a limiting latitude, the navigator's answer to ice.">
 <link rel="stylesheet" href="css/app.css">
+<script src="js/mobile.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/dist/d3-geo.min.js"></script>
 <script type="importmap">
@@ -22,10 +23,10 @@
 <body>
 <div id="app">
   <main id="stage" class="quad">
-    <div class="half"><canvas id="m-globe" class="cells" aria-label="The two lines on a globe"></canvas><span class="half-label" id="l-globe"></span></div>
-    <div class="half"><canvas id="m-merc" class="cells" aria-label="The two lines on Mercator"></canvas><span class="half-label" id="l-merc"></span></div>
-    <div class="half"><canvas id="m-gnom" class="cells" aria-label="The two lines on a gnomonic map"></canvas><span class="half-label" id="l-gnom"></span></div>
-    <div class="half"><canvas id="m-four" class="cells" aria-label="The two lines on an azimuthal or polar map"></canvas><span class="half-label" id="l-four"></span></div>
+    <div class="half" data-tab="Globe"><canvas id="m-globe" class="cells" aria-label="The two lines on a globe"></canvas><span class="half-label" id="l-globe"></span></div>
+    <div class="half" data-tab="Mercator"><canvas id="m-merc" class="cells" aria-label="The two lines on Mercator"></canvas><span class="half-label" id="l-merc"></span></div>
+    <div class="half" data-tab="Gnomonic"><canvas id="m-gnom" class="cells" aria-label="The two lines on a gnomonic map"></canvas><span class="half-label" id="l-gnom"></span></div>
+    <div class="half" data-tab="Azimuthal"><canvas id="m-four" class="cells" aria-label="The two lines on an azimuthal or polar map"></canvas><span class="half-label" id="l-four"></span></div>
     <a id="open-full" class="open-full" href="./rhumb.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
   </main>
 

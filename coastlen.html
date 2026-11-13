@@ -6,6 +6,7 @@
 <title>playproj: Coastline length</title>
 <meta name="description" content="How long is the coast of Antarctica, and of the Australian Antarctic Territory, against Australia's? Across, along the parallel, where Mercator stretches the south by sec(latitude); and around, with Richardson's dividers at rulers from 1 to 2000 km.">
 <link rel="stylesheet" href="css/app.css">
+<script src="js/mobile.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/dist/d3-geo.min.js"></script>
 <script type="module" src="js/coastlen.js"></script>
@@ -13,10 +14,10 @@
 <body>
 <div id="app">
   <main id="stage" class="quad">
-    <div class="half"><canvas id="m-merc" class="cells" aria-label="The coasts on Mercator"></canvas><span class="half-label" id="l-merc"></span></div>
-    <div class="half"><canvas id="m-globe" class="cells" aria-label="The coasts on a globe"></canvas><span class="half-label" id="l-globe"></span></div>
-    <div class="half"><canvas id="m-bars" class="cells" aria-label="The lengths compared"></canvas><span class="half-label" id="l-bars"></span></div>
-    <div class="half"><canvas id="m-plot" class="cells" aria-label="Length against ruler, log scales"></canvas><span class="half-label" id="l-plot"></span></div>
+    <div class="half" data-tab="Mercator"><canvas id="m-merc" class="cells" aria-label="The coasts on Mercator"></canvas><span class="half-label" id="l-merc"></span></div>
+    <div class="half" data-tab="Globe"><canvas id="m-globe" class="cells" aria-label="The coasts on a globe"></canvas><span class="half-label" id="l-globe"></span></div>
+    <div class="half" data-tab="Lengths"><canvas id="m-bars" class="cells" aria-label="The lengths compared"></canvas><span class="half-label" id="l-bars"></span></div>
+    <div class="half" data-tab="Richardson"><canvas id="m-plot" class="cells" aria-label="Length against ruler, log scales"></canvas><span class="half-label" id="l-plot"></span></div>
     <a id="open-full" class="open-full" href="./coastlen.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
   </main>
 
