@@ -252,7 +252,7 @@ body.embed #shapes, body.embed #detail, body.embed label[for="detail"] { display
 #stage.quad > .half:nth-child(even) { border-left: 1px solid var(--line); }
 #stage.quad > .half:nth-child(n+3) { border-top: 1px solid var(--line); }
 @media (max-width: 820px) {
-  #app:has(#stage.quad) { grid-template-rows: auto auto; }
+  body:not(.m-shell) #app:has(#stage.quad) { grid-template-rows: auto auto; }
   #stage.quad { height: auto; grid-template-columns: 1fr; grid-template-rows: repeat(4, min(80vw, 60vh)); }
   #stage.quad > .half:nth-child(even) { border-left: 0; }
   #stage.quad > .half + .half { border-top: 1px solid var(--line); }
@@ -347,3 +347,53 @@ body.cutaway .credit { bottom: auto; top: 6px; }
 .story-caption .caveat { font-style: italic; }
 .qty-row { display: flex; gap: 6px; }
 .qty-row input { flex: 1; min-width: 0; }
+
+/* Phones and narrow windows (js/mobile.js): the view stays put and the panel
+   scrolls under it, a bar between them can be dragged, four-view pages get
+   tabs, and the pages list folds behind a button. Nothing here applies above
+   820px or when embedded (mobile.js does not set body.m-shell there). */
+.m-pages, .m-bar { display: none; }
+@media (max-width: 820px) {
+  header .m-pages { display: inline-block; margin: 0 0 0 10px; vertical-align: 3px; }
+  header h1 { display: inline-block; }
+  header:not(.m-open) nav.pages { display: none; }
+  header.m-open nav.pages { margin-top: 8px; font-size: 14px; }
+  header.m-open nav.pages, header.m-open nav.pages .group { gap: 10px 18px; }
+
+  html:has(body.m-shell), body.m-shell { height: 100%; overflow: hidden; }
+  body.m-shell #app {
+    --m-stage: 56vh;
+    height: 100vh; height: 100dvh;
+    grid-template-columns: 1fr;
+    grid-template-rows: var(--m-stage) auto minmax(0, 1fr);
+  }
+  body.m-shell #app:has(#stage.split) { --m-stage: 62vh; }
+  body.m-shell #stage, body.m-shell #stage.split, body.m-shell #stage.quad { height: auto; min-height: 0; }
+  body.m-shell #panel {
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+    border-top: 0; padding-top: 6px;
+  }
+
+  body.m-shell .m-bar {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 5px 8px 6px; background: var(--panel);
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    touch-action: none; cursor: row-resize; user-select: none; -webkit-user-select: none;
+  }
+  body.m-shell .m-grip { display: block; width: 44px; height: 5px; border-radius: 3px; background: #3a4868; }
+  body.m-shell .m-bar.dragging .m-grip { background: var(--accent); }
+  body.m-shell .m-tablist { display: flex; gap: 4px; width: 100%; }
+  body.m-shell .m-tablist button {
+    flex: 1 1 0; min-width: 0; padding: 5px 4px; font-size: 12px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  body.m-shell .m-tablist button[aria-selected="true"] { border-color: var(--accent); color: var(--accent); }
+
+  /* four views: one at a time, side by side in a strip the tabs scroll */
+  body.m-shell #stage.quad {
+    display: flex; overflow-x: hidden; overflow-y: hidden;
+    grid-template-columns: none; grid-template-rows: none;
+  }
+  body.m-shell #stage.quad > .half { flex: 0 0 100%; height: 100%; }
+  body.m-shell #stage.quad > .half + .half { border-top: 0; border-left: 0; }
+}
