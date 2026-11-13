@@ -825,6 +825,27 @@ rhumb line is PROJ's Mercator inverse of a straight line measured with PROJ's
 geodesics); lines are drawn with d3-geo on the sphere. Hash keys: `alon`,
 `alat`, `blon`, `blat`, `four` (`aeqd`, `polar`), `lox`, `comp`, `lim`.
 
+## Coastline length
+
+`coastlen.html` asks how long the coast of Antarctica (or of the Australian
+Antarctic Territory, 45 to 136 and 142 to 160 degrees E) is against
+Australia's mainland, two ways. Across: the longitude span along the coast's
+mean parallel, R cos(lat) times the span, where Mercator draws R times the
+span, sec(lat) too long (2.5 times on the Antarctic Circle). The AAT spans 109
+degrees to the mainland's 40, which Mercator draws 2.7 times as wide; along
+the parallel it is 1.14 times. Around: Richardson's dividers opened to a
+ruler from 1 to 2000 km, with the fractal dimension D from the slope of log
+length on log ruler between 10 and 500 km (Richardson 1961, Mandelbrot
+1967). Antarctica has two coasts here, the grounding line (Natural Earth's
+coastline) and the ice front, the seaward edge of land and ice shelves, built
+by `test/make-coastlen-data.py` from Natural Earth 10m into
+`data/coast-south-10m.json`. Lengths are on the sphere of mean radius
+(`src/core/coastlen.js`), checked against PROJ geodesics and spherical
+Mercator in `test/check-coastlen.mjs` (fixture from
+`test/make-coastlen-fixture.py`); WGS84 differs by under 0.4 percent. Hash
+keys: `ant` (`aat`, `all`), `edge` (`front`, `ground`), `r`, `lat`, `div`,
+`rot`.
+
 ## Basemaps and GeoTIFF export
 
 The plane can carry a basemap, reprojected pixel by pixel by casting each

@@ -32,6 +32,7 @@ export * as polarstere from "./polarstere.js";
 export * as seaice from "./seaice.js";
 export * as track from "./track.js";
 export * as rhumb from "./rhumb.js";
+export * as coastlen from "./coastlen.js";
 export * as ellipsoid from "./ellipsoid.js";
 export * as geoid from "./geoid.js";
 export * as ortho from "./ortho.js";

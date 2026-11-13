@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Coastline length</title>
+<meta name="description" content="How long is the coast of Antarctica, and of the Australian Antarctic Territory, against Australia's? Across, along the parallel, where Mercator stretches the south by sec(latitude); and around, with Richardson's dividers at rulers from 1 to 2000 km.">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/d3-array@3.2.4/dist/d3-array.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/dist/d3-geo.min.js"></script>
+<script type="module" src="js/coastlen.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage" class="quad">
+    <div class="half"><canvas id="m-merc" class="cells" aria-label="The coasts on Mercator"></canvas><span class="half-label" id="l-merc"></span></div>
+    <div class="half"><canvas id="m-globe" class="cells" aria-label="The coasts on a globe"></canvas><span class="half-label" id="l-globe"></span></div>
+    <div class="half"><canvas id="m-bars" class="cells" aria-label="The lengths compared"></canvas><span class="half-label" id="l-bars"></span></div>
+    <div class="half"><canvas id="m-plot" class="cells" aria-label="Length against ruler, log scales"></canvas><span class="half-label" id="l-plot"></span></div>
+    <a id="open-full" class="open-full" href="./coastlen.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html">Peeling the orange</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./penguin.html">Penguin datum</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./coastlen.html" aria-current="page">Coastline length</a><a href="./frame.html">Frame</a><a href="./fourd.html">Time and depth</a><a href="./cutaway.html">Cutaway</a><a href="./voxels.html">Voxels</a><a href="./story.html">Story</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="ant"><span>Antarctic coast</span></label>
+      <select id="ant" class="wide" aria-label="Which Antarctic coast">
+        <option value="aat">Australian Antarctic Territory</option>
+        <option value="all">All of Antarctica</option>
+      </select>
+      <label class="row" for="edge"><span>Coast at</span></label>
+      <select id="edge" class="wide" aria-label="Which edge of the ice">
+        <option value="front">The ice front (the edge of the ice shelves)</option>
+        <option value="ground">The grounding line (land and grounded ice)</option>
+      </select>
+      <label class="row" for="ri"><span>Ruler</span><output id="ri-out"></output></label>
+      <input id="ri" type="range" min="0" max="10" step="1" aria-label="Divider opening, km">
+      <label class="row" for="lat"><span>A parallel</span><output id="lat-out"></output></label>
+      <input id="lat" type="range" min="-80" max="-10" step="0.5" aria-label="Latitude of the parallel drawn">
+      <div class="toggles">
+        <label><input id="div" type="checkbox"> Divider steps on the maps</label>
+      </div>
+      <p class="hint">Drag the globe to turn it.</p>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>On Mercator the coast of East Antarctica runs right across the bottom of the map, wider than
+          Australia two or three times over. Mercator keeps angles by stretching every parallel to the
+          length of the equator, so at latitude &phi; everything is drawn sec&nbsp;&phi; times too big:
+          1.1 times across the middle of Australia, 2.5 times on the Antarctic Circle, 3 times at 70&deg;S,
+          and without end at the pole. There are two ways to ask how long the coast really is.</p>
+        <p><b>Across.</b> A coast that spans &Delta;&lambda; degrees of longitude at latitude &phi; is
+          about R&nbsp;cos&nbsp;&phi;&nbsp;&Delta;&lambda; across, where Mercator draws
+          R&nbsp;&Delta;&lambda;, the same as at the equator. The territory's sectors take 109&deg; of
+          longitude, two and a half times what Australia's mainland takes, but they sit near 67&deg;S, where
+          a degree of longitude is less than half as long. Across, the two are much the same size.
+          <b>A parallel</b> draws any one parallel with its true and drawn lengths.</p>
+        <p><b>Around.</b> A coastline has no one length. Walk a pair of dividers along it, opened to a
+          ruler r, and count the steps: the shorter the ruler, the more of the bays, capes and glacier
+          tongues it follows, and the longer the coast. Lewis Fry Richardson measured coasts and borders
+          this way and found the length grows as a power of the ruler, L&nbsp;~&nbsp;r<sup>1&minus;D</sup>;
+          Benoit Mandelbrot read D as a fractal dimension (1 for a smooth curve, more for a wigglier one;
+          about 1.25 for the west coast of Britain, 1.02 for South Africa's). The plot is log length against
+          log ruler, with D fitted from the slope between 10 and 500&nbsp;km. Below a few km these
+          coastlines, generalised for maps at 1:10 million, have no more detail to follow and the curve
+          flattens: Geoscience Australia's 35&nbsp;821&nbsp;km for the mainland comes from maps at 1:100&nbsp;000.</p>
+        <p><b>Which coast.</b> Much of Antarctica's edge is floating ice. The <b>grounding line</b> is
+          where land and grounded ice meet the sea or the shelf floating on it; the <b>ice front</b> is the
+          edge a ship meets, the seaward edge of the ice shelves. Under the Ross and Ronne-Filchner shelves
+          the grounding line is near 84&deg;S, where Mercator's stretch is past 10, so the two coasts differ
+          more on Mercator than on the earth.</p>
+        <p>The Australian Antarctic Territory is the sectors 45&deg;E to 136&deg;E and 142&deg;E to
+          160&deg;E, south of 60&deg;S; Adelie Land, between, is claimed by France. Australia here is
+          the mainland, without Tasmania and the islands. Lengths are on the sphere of mean radius
+          (6371.0088&nbsp;km), the divider steps as great-circle arcs; on the WGS84 ellipsoid they differ by
+          well under one percent (<code>test/check-coastlen.mjs</code>). "As Mercator draws it" sums each
+          step as the straight line between its Mercator ends, read at the equator's scale.</p>
+        <p>Hash keys: <code>ant</code> (<code>aat</code>, <code>all</code>), <code>edge</code>
+          (<code>front</code>, <code>ground</code>), <code>r</code> (ruler, km), <code>lat</code>,
+          <code>div</code>, <code>rot</code> (the globe's centre, lon,lat).</p>
+        <ul class="credits">
+          <li>Richardson, L. F. (1961) The problem of contiguity: an appendix to Statistics of Deadly
+            Quarrels, <i>General Systems Yearbook</i> 6, 139. Mandelbrot, B. (1967) How long is the coast of
+            Britain? Statistical self-similarity and fractional dimension, <i>Science</i> 156, 636.</li>
+          <li>Australia's coastline lengths: <a href="https://www.ga.gov.au/scientific-topics/national-location-information/dimensions/border-lengths">Geoscience
+            Australia, Border lengths</a> (GEODATA Coast 100K 2004).</li>
+          <li>Snyder, J. P. (1987) <i>Map Projections: A Working Manual</i>, USGS Professional Paper 1395
+            (Mercator's scale factor and isometric latitude).</li>
+          <li>Coastlines and ice shelves from <a href="https://www.naturalearthdata.com/">Natural Earth</a>
+            10m (public domain): the coastline and the Antarctic ice shelf polygons, joined into the ice front
+            by <code>test/make-coastlen-data.py</code>. Maps drawn with
+            <a href="https://github.com/d3/d3-geo">d3-geo</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
