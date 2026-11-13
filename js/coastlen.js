@@ -128,8 +128,8 @@ const MAPS = {
       if (state.view === "polar") {
         // south polar stereographic with the AAT's middle meridian up
         const p = d3.geoStereographic().rotate([-AAT_MID, 90]).clipAngle(100);
-        // framed on Antarctica out to 60 S, and on the AAT's side out to 40 S
-        const fit = { type: "MultiPoint", coordinates: [...parallel(-60).coordinates, [AAT_MID - 35, -40], [AAT_MID + 35, -40]] };
+        // framed on Antarctica out to 60 S, and on the AAT's side north to 30 S
+        const fit = { type: "MultiPoint", coordinates: [...parallel(-60).coordinates, [AAT_MID - 30, -30], [AAT_MID, -30], [AAT_MID + 30, -30]] };
         return p.fitExtent([[8, 8], [w - 8, h - 26]], fit).clipExtent([[0, 0], [w, h]]);
       }
       return d3.geoOrthographic().rotate(rot || [-110, 52]).fitExtent([[12, 12], [w - 12, h - 26]], { type: "Sphere" });
