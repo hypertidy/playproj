@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Voxel gallery</title>
+<meta name="description" content="A gallery of voxel blocks from the Voxels page: kunanyi from a 2 m DEM, Heard Island with imagery, Mauna Kea at true scale, Challenger Deep, and the cell systems at Ross Island, each live and embeddable.">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  #app.gallery { grid-template-columns: 1fr 380px; }
+  #gstage { position: relative; display: flex; flex-direction: column; min-height: 0; }
+  #frame { flex: 1; width: 100%; border: 0; background: #8fb8de; min-height: 0; }
+  .now { padding: 10px 16px 12px; border-top: 1px solid var(--line); background: var(--panel); }
+  .now h2 { font-size: 16px; margin: 0 0 4px; }
+  .now p { margin: 0 0 8px; color: var(--muted); }
+  .now .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .now .buttons a, .now .buttons button {
+    font: inherit; color: var(--text); background: #1a2338; border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 10px; text-decoration: none; cursor: pointer;
+  }
+  #list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  #list button {
+    display: block; width: 100%; text-align: left; font: inherit; color: var(--text);
+    background: #121a2c; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer;
+  }
+  #list button span { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  #list li.on button { border-color: var(--accent); background: #1a2338; }
+  #list button:hover { border-color: #3a4a68; }
+  @media (max-width: 800px) {
+    #app.gallery { grid-template-columns: 1fr; grid-template-rows: auto auto; height: auto; }
+    #gstage { height: 75vh; }
+  }
+</style>
+<script type="module" src="js/voxels-gallery.js"></script>
+</head>
+<body>
+<div id="app" class="gallery">
+  <main id="gstage">
+    <iframe id="frame" title="Voxels" loading="eager" allow="clipboard-write"></iframe>
+    <div class="now">
+      <h2 id="now-title"></h2>
+      <p id="now-text"></p>
+      <div class="buttons">
+        <a id="now-open" target="_blank" rel="noopener">Open in the Voxels page</a>
+        <button id="now-embed" type="button">Copy embed</button>
+      </div>
+    </div>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html">Peeling the orange</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./penguin.html">Penguin datum</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./frame.html">Frame</a><a href="./fourd.html">Time and depth</a><a href="./cutaway.html">Cutaway</a><a href="./voxels.html" aria-current="page">Voxels</a><a href="./story.html">Story</a></span></nav>
+    </header>
+    <section>
+      <h2 style="font-size:15px;margin:0 0 6px">Voxel gallery</h2>
+      <p class="hint" style="margin:0 0 10px">Blocks from the <a href="./voxels.html">Voxels</a> page, each a link that carries the
+        whole view. Drag to turn one, or open it in the full page to change it. Each block is drawn live, and the
+        elevation and imagery are read as it loads, so the finest ones take a few seconds.</p>
+      <ul id="list"></ul>
+    </section>
+    <section>
+      <p class="hint">Elevation from the GEBCO 2026 Grid (GEBCO Compilation Group) and, at kunanyi and Cradle
+        Mountain, the Tasmania 2 m DEM (Mineral Resources Tasmania, The LIST &copy; State of Tasmania,
+        CC BY 3.0 AU), both from <a href="https://source.coop/">Source Cooperative</a>. Imagery from Esri World
+        Imagery. The nudge came from Piotr Migda&#322;'s <a href="https://p.migdal.pl/warsaw-vibe-voxel/">Warsaw
+        in voxels</a>, via <a href="https://googlemapsmania.blogspot.com/2026/11/the-era-of-voxel-map-has-arrived.html">Maps Mania</a>.
+        For illustration only, not survey, engineering or planning data.</p>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
