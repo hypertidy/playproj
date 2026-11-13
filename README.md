@@ -1085,6 +1085,13 @@ sea and past its edges. Hash keys: `lon`, `lat`, `ext` (km), `n`, `crs` (`array`
 `colour`, `none`: the sides as dirt and stone, one colour `sc` in hex, or not
 drawn, which the .vox follows), `sc`, `cam`.
 
+The Voxel gallery (`voxels-gallery.html`, `js/voxels-gallery.js`) is a list of
+Voxels page hashes shown live in an embedded frame (`?embed=1`): kunanyi and
+Cradle Mountain from the Tasmania 2 m DEM, Heard Island textured, Mauna Kea at
+true scale, Challenger Deep, Ross Island in array and true-size cells, and
+more, each with a link to the full page and an embed snippet. `#g=` picks
+an entry.
+
 ### Your own elevation
 
 The page reads GEBCO and one regional DEM, but the voxel functions in `src/core/voxels.js`
@@ -1275,6 +1282,7 @@ frame.html, js/frame.js                Frame: any scenespec mesh in its CRS, dis
 fourd.html (sondage)                   Time and depth: time series of sea ice, SST and an ocean model on one globe
 cutaway.html (sondage)                 Cutaway: a section and block diagram through Antarctic ice, bed and sea
 voxels.html, js/voxels.js              Voxels: GEBCO topography as voxel columns, three cell systems, MagicaVoxel export
+voxels-gallery.html, js/voxels-gallery.js  Voxel gallery: preset blocks live in an embedded frame, with links and embeds
 story.html, js/story.js                Story: a block of storeys set down on draped terrain (2 m DEM or GEBCO, Esri imagery)
 
 js/data.js          loads the coastlines in data/
