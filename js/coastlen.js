@@ -110,6 +110,9 @@ const OCEANS = [
 const LANDS = [["AUSTRALIA", 134, -25], ["ANTARCTICA", 30, -82]];
 const STATIONS = [PLACES.mawson, PLACES.davis, PLACES.casey, PLACES.hobart, PLACES.macquarie];
 
+// the middle of the AAT's sectors, 45 to 160 E
+const AAT_MID = (K.AAT[0][0] + K.AAT[K.AAT.length - 1][1]) / 2;
+
 let rot = null, drag = null;
 const MAPS = {
   merc: {
@@ -123,13 +126,15 @@ const MAPS = {
   globe: {
     make: (w, h) => {
       if (state.view === "polar") {
-        // south polar stereographic, 0 degrees up, as EPSG:3031 and the atlas maps have it
-        const p = d3.geoStereographic().rotate([0, 90]).clipAngle(100);
-        return p.fitExtent([[8, 8], [w - 8, h - 26]], parallel(-42)).clipExtent([[0, 0], [w, h]]);
+        // south polar stereographic with the AAT's middle meridian up
+        const p = d3.geoStereographic().rotate([-AAT_MID, 90]).clipAngle(100);
+        // framed on Antarctica out to 60 S, and on the AAT's side north to 30 S
+        const fit = { type: "MultiPoint", coordinates: [...parallel(-60).coordinates, [AAT_MID - 30, -30], [AAT_MID, -30], [AAT_MID + 30, -30]] };
+        return p.fitExtent([[8, 8], [w - 8, h - 26]], fit).clipExtent([[0, 0], [w, h]]);
       }
       return d3.geoOrthographic().rotate(rot || [-110, 52]).fitExtent([[12, 12], [w - 12, h - 26]], { type: "Sphere" });
     },
-    label: () => (state.view === "polar" ? "South polar stereographic (as EPSG:3031)" : "Globe (orthographic): drag to turn")
+    label: () => (state.view === "polar" ? `South polar stereographic, ${AAT_MID}${DEG}E up` : "Globe (orthographic): drag to turn")
   }
 };
 
