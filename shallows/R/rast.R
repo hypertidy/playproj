@@ -3,12 +3,16 @@
 #' Reads the bed from a single-layer SpatRaster, keeping its extent and
 #' CRS so outputs can be written back as georeferenced rasters. Missing
 #' bed cells are filled with the maximum elevation plus 100 m (a high wall).
-#' @param dem SpatRaster (projected CRS, metres)
+#' @param dem SpatRaster in metres: projected CRS, or none for a generated
+#'   bed ([sw_generate()]); a `z` layer is used if there are several
+#'   ([sw_extract()])
 #' @param ... passed to [sw_state()] (h, eta, manning, rain, ...)
 #' @export
 sw_from_rast <- function(dem, ...) {
   if (!requireNamespace("terra", quietly = TRUE)) stop("needs the terra package")
-  if (terra::is.lonlat(dem)) stop("DEM must be in a projected CRS with metre units")
+  if (terra::nlyr(dem) > 1) dem <- dem[[if ("z" %in% names(dem)) "z" else 1]]
+  if (nzchar(terra::crs(dem)) && isTRUE(terra::is.lonlat(dem)))
+    stop("DEM must be in a projected CRS with metre units (see sw_extract())")
   z <- terra::as.matrix(dem, wide = TRUE)
   if (anyNA(z)) z[is.na(z)] <- max(z, na.rm = TRUE) + 100
   r <- terra::res(dem)

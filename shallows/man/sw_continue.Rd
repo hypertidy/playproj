@@ -9,7 +9,7 @@ sw_continue(run, ...)
 \arguments{
 \item{run}{from [sw_run()]}
 
-\item{...}{fields of [sw_state()] to replace: manning, rain}
+\item{...}{fields of [sw_state()] to replace: manning, rain, f}
 }
 \description{
 Returns a state holding the final depth and momentum of `run`, with any

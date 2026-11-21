@@ -15,7 +15,10 @@
 // hv is momentum towards increasing row number.
 
 const NG = 2;
-export const WALL = 0, OPEN = 1;
+export const WALL = 0, OPEN = 1, PERIODIC = 2;
+
+/** Coriolis parameter 2 omega sin(lat), lat in degrees (negative south). */
+export const coriolis = (lat, omega = 7.2921159e-5) => 2 * omega * Math.sin(lat * Math.PI / 180);
 
 function minmod(a, b) {
   if (a * b <= 0) return 0;
@@ -50,7 +53,8 @@ function hll(hl, ul, vl, hr, ur, vr, g, f) {
  * @param {ArrayLike<number>} [o.hu] [o.hv] momentum
  * @param {number|ArrayLike<number>} [o.manning]
  * @param {number|ArrayLike<number>} [o.rain] m/s
- * @param {number[]} [o.bc] west, east, north, south: WALL or OPEN
+ * @param {number|ArrayLike<number>} [o.f] Coriolis parameter (1/s), > 0 north
+ * @param {number[]} [o.bc] west, east, north, south: WALL, OPEN or PERIODIC
  * @param {number} [o.order] 1 or 2
  * @param {number} [o.cfl]
  * @param {number} [o.hdry]
@@ -62,9 +66,9 @@ export function createSolver(o) {
   const id = (i, j) => (i + NG) * NX + (j + NG);
   const S = {
     nx, ny, dx, dy, g, NX, NY,
-    order: o.order ?? 2, cfl: o.cfl ?? 0.45, hdry: o.hdry ?? 1e-5, dtMax: o.dtMax ?? 1,
+    order: o.order ?? 2, cfl: o.cfl ?? 0.45, hdry: o.hdry ?? 1e-5, dtMax: o.dtMax ?? Infinity,
     bc: (o.bc ?? [WALL, WALL, WALL, WALL]).slice(),
-    z: new Float64Array(N), n: new Float64Array(N), rain: new Float64Array(N),
+    z: new Float64Array(N), n: new Float64Array(N), rain: new Float64Array(N), f: new Float64Array(N),
     h: new Float64Array(N), hu: new Float64Array(N), hv: new Float64Array(N),
     acc: new Float64Array(N),
     t: 0, steps: 0, rainIn: 0, outflow: 0, added: 0, clipped: 0, lastDt: 0,
@@ -82,7 +86,7 @@ export function createSolver(o) {
     }
   };
   load(S.z, o.z); load(S.h, o.h); load(S.hu, o.hu); load(S.hv, o.hv);
-  load(S.n, o.manning ?? 0); load(S.rain, o.rain ?? 0);
+  load(S.n, o.manning ?? 0); load(S.rain, o.rain ?? 0); load(S.f, o.f ?? 0);
 
   function vel(h, q) {
     if (h <= 0) return 0;
@@ -91,15 +95,18 @@ export function createSolver(o) {
   }
   S.vel = vel;
 
+  // interior index copied into ghost k on the low (west / north) or high side
+  const src = (b, k, n, low) => b === WALL ? (low ? k - 1 : n - k) : b === PERIODIC ? (low ? n - k : k - 1) : (low ? 0 : n - 1);
+
   function fillBedGhosts() {
     const b = S.bc;
     for (let i = 0; i < ny; i++) for (let k = 1; k <= NG; k++) {
-      const sw = b[0] === WALL ? k - 1 : 0, se = b[1] === WALL ? nx - k : nx - 1;
+      const sw = src(b[0], k, nx, true), se = src(b[1], k, nx, false);
       S.z[id(i, -k)] = S.z[id(i, sw)]; S.n[id(i, -k)] = S.n[id(i, sw)];
       S.z[id(i, nx - 1 + k)] = S.z[id(i, se)]; S.n[id(i, nx - 1 + k)] = S.n[id(i, se)];
     }
     for (let j = -NG; j < nx + NG; j++) for (let k = 1; k <= NG; k++) {
-      const sn = b[2] === WALL ? k - 1 : 0, ss = b[3] === WALL ? ny - k : ny - 1;
+      const sn = src(b[2], k, ny, true), ss = src(b[3], k, ny, false);
       S.z[id(-k, j)] = S.z[id(sn, j)]; S.n[id(-k, j)] = S.n[id(sn, j)];
       S.z[id(ny - 1 + k, j)] = S.z[id(ss, j)]; S.n[id(ny - 1 + k, j)] = S.n[id(ss, j)];
     }
@@ -119,13 +126,13 @@ export function createSolver(o) {
   function fillGhosts(s) {
     const b = S.bc;
     for (let i = 0; i < ny; i++) for (let k = 1; k <= NG; k++) {
-      const sw = b[0] === WALL ? k - 1 : 0, se = b[1] === WALL ? nx - k : nx - 1;
+      const sw = src(b[0], k, nx, true), se = src(b[1], k, nx, false);
       const a = id(i, -k), bb = id(i, sw), c = id(i, nx - 1 + k), d = id(i, se);
       s.h[a] = s.h[bb]; s.hv[a] = s.hv[bb]; s.hu[a] = b[0] === WALL ? -s.hu[bb] : s.hu[bb];
       s.h[c] = s.h[d]; s.hv[c] = s.hv[d]; s.hu[c] = b[1] === WALL ? -s.hu[d] : s.hu[d];
     }
     for (let j = -NG; j < nx + NG; j++) for (let k = 1; k <= NG; k++) {
-      const sn = b[2] === WALL ? k - 1 : 0, ss = b[3] === WALL ? ny - k : ny - 1;
+      const sn = src(b[2], k, ny, true), ss = src(b[3], k, ny, false);
       const a = id(-k, j), bb = id(sn, j), c = id(ny - 1 + k, j), d = id(ss, j);
       s.h[a] = s.h[bb]; s.hu[a] = s.hu[bb]; s.hv[a] = b[2] === WALL ? -s.hv[bb] : s.hv[bb];
       s.h[c] = s.h[d]; s.hu[c] = s.hu[d]; s.hv[c] = b[3] === WALL ? -s.hv[d] : s.hv[d];
@@ -212,16 +219,18 @@ export function createSolver(o) {
   }
 
   function stableDt(s, cap) {
-    let dt = cap;
+    let dt = cap, wet = false;
     for (let i = 0; i < ny; i++) for (let j = 0; j < nx; j++) {
       const c = id(i, j), h = s.h[c];
       if (h <= 0) continue;
+      wet = true;
       const cw = Math.sqrt(g * h);
       const B = (Math.abs(vel(h, s.hu[c])) + cw) / dx + (Math.abs(vel(h, s.hv[c])) + cw) / dy;
       const A = S.acc[c];
       const d = A > 0 ? 2 * S.cfl / (B + Math.sqrt(B * B + 4 * A * S.cfl)) : S.cfl / B;
       if (d < dt) dt = d;
     }
+    if (!wet) dt = Math.min(dt, 1);  // a dry grid steps at 1 s (rain on dry ground)
     return dt;
   }
 
@@ -236,6 +245,29 @@ export function createSolver(o) {
       }
     }
   }
+
+  // Coriolis as an exact rotation of momentum; north-positive (U, V) = (hu, -hv)
+  let rotating = false;
+  for (let c = 0; c < N; c++) if (S.f[c] !== 0) { rotating = true; break; }
+  function coriolisTurn(s, dt) {
+    if (!rotating) return;
+    for (let i = 0; i < ny; i++) for (let j = 0; j < nx; j++) {
+      const c = id(i, j), f = S.f[c];
+      if (f === 0 || s.h[c] <= 0) continue;
+      const th = f * dt, cs = Math.cos(th), sn = Math.sin(th);
+      const U = s.hu[c], V = -s.hv[c];
+      s.hu[c] = U * cs + V * sn;
+      s.hv[c] = -(-U * sn + V * cs);
+    }
+  }
+  /** Set the Coriolis parameter (number or row-major array). */
+  S.setF = (fv2) => {
+    rotating = false;
+    for (let i = 0; i < ny; i++) for (let j = 0; j < nx; j++) {
+      const v = typeof fv2 === 'number' ? fv2 : fv2[i * nx + j];
+      S.f[id(i, j)] = v; if (v !== 0) rotating = true;
+    }
+  };
 
   function friction(s, dt) {
     for (let i = 0; i < ny; i++) for (let j = 0; j < nx; j++) {
@@ -267,6 +299,7 @@ export function createSolver(o) {
     S.lastDt = dt;
     if (S.t + dt > tLimit) dt = tLimit - S.t;
     if (dt <= 0) return 0;
+    coriolisTurn(S, 0.5 * dt);  // Strang splitting: half turn, flow step, half turn
     const out1 = rhs(S, r1);
     if (S.order === 1) {
       for (let c = 0; c < N; c++) { S.h[c] += dt * r1.h[c]; S.hu[c] += dt * r1.hu[c]; S.hv[c] += dt * r1.hv[c]; }
@@ -289,6 +322,7 @@ export function createSolver(o) {
       S.rainIn += dt * rainRateVol;
     }
     friction(S, dt);
+    coriolisTurn(S, 0.5 * dt);
     clean(S);
     S.t += dt; S.steps++;
     return dt;

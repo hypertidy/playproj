@@ -94,12 +94,20 @@ a { color: var(--water); }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
 </style>
 
+<style>
+.ctl-group { display: grid; gap: 8px; border-top: 1px solid var(--rule); padding-top: 10px; }
+.ctl-group:first-of-type { border-top: 0; padding-top: 0; }
+.params { display: grid; gap: 8px; }
+input[type="file"] { font: inherit; font-size: 12.5px; max-width: 100%; }
+.small { font-size: 12px; padding: 4px 9px; }
+</style>
+
 </head>
 <body>
 <div class="wrap">
   <header class="top">
     <h1>Shallows Viewer</h1>
-    <p class="lede">The shallows shallow water solver running live in the page: the same well-balanced finite volume scheme as the R package, step for step. Watch depth, speed and the water budget; click the map to probe a cell or drop a column of water.</p>
+    <p class="lede">The shallows shallow water solver running live in the page, the same well-balanced finite volume scheme as the R package. Generate terrain, open your own DEM, or use ground extracted from real elevation data; then rain on it, break a dam, raise the sea or send a wave, with or without Earth's rotation.</p>
   </header>
 
   <div class="grid">
@@ -114,8 +122,9 @@ a { color: var(--water); }
           <label class="row" style="gap:5px; font-size:13px; color:var(--muted);"><input id="arrows" type="checkbox" checked> flow arrows</label>
         </div>
         <div class="seg" role="group" aria-label="Click action">
-          <button id="tool-probe" type="button" aria-pressed="true">Click: probe</button>
-          <button id="tool-add" type="button" aria-pressed="false">Click: add water</button>
+          <button id="tool-probe" type="button" aria-pressed="true">Probe</button>
+          <button id="tool-add" type="button" aria-pressed="false">Add water</button>
+          <button id="tool-lake" type="button" aria-pressed="false">Fill a lake</button>
         </div>
       </div>
       <div class="maphold"><canvas id="map" aria-label="Plan view of water over terrain"></canvas></div>
@@ -136,10 +145,23 @@ a { color: var(--water); }
       <section class="card controls" aria-label="Run controls">
         <div class="field"><label for="scenario">Scenario</label>
           <select id="scenario">
-            <option value="mcrobies">Rain on McRobies Gully (Tasmania 2 m DEM)</option>
-            <option value="thacker">Thacker bowl (moving shoreline, analytic)</option>
-            <option value="stoker">Dam break onto water (Stoker, analytic)</option>
-            <option value="ritter">Dam break onto dry bed (Ritter, analytic)</option>
+            <optgroup label="Generated terrain">
+              <option value="gen-dam">Dam break in a valley</option>
+              <option value="gen-rain">Rain on rough hills</option>
+              <option value="gen-island">Wave around an island</option>
+              <option value="gen-basin">Rotating basin (Kelvin waves)</option>
+              <option value="gen-free">Make your own</option>
+            </optgroup>
+            <optgroup label="Real terrain">
+              <option value="mcrobies">Rain on McRobies Gully (Tasmania 2 m DEM)</option>
+              <option value="stormbay">Wave into Storm Bay (extracted, 200 m)</option>
+              <option value="file">Your GeoTIFF DEM</option>
+            </optgroup>
+            <optgroup label="Benchmarks with exact answers">
+              <option value="thacker">Thacker bowl (moving shoreline)</option>
+              <option value="stoker">Dam break onto water (Stoker)</option>
+              <option value="ritter">Dam break onto dry bed (Ritter)</option>
+            </optgroup>
           </select></div>
         <div class="row">
           <button id="play" class="primary" type="button">Run</button>
@@ -147,18 +169,54 @@ a { color: var(--water); }
           <button id="reset" type="button">Reset</button>
           <span class="cap" id="runstate"></span>
         </div>
-        <div class="field"><label for="order">Scheme</label>
-          <select id="order"><option value="2">Order 2 (MUSCL + Heun)</option><option value="1">Order 1</option></select></div>
-        <div id="terrain-ctl" class="controls">
+
+        <div class="ctl-group" id="g-gen">
+          <p class="label">Terrain</p>
+          <div class="field"><label for="shape">Shape</label>
+            <select id="shape"><option value="valley">Valley</option><option value="reservoir">Valley with a dam</option><option value="plane">Plane</option><option value="bowl">Bowl</option><option value="island">Island</option><option value="shelf">Coast and shelf</option></select></div>
+          <div class="field"><label for="gnx">Cells across</label><input id="gnx" type="number" min="16" max="400" step="10" value="160"></div>
+          <div class="field"><label for="gny">Cells down</label><input id="gny" type="number" min="1" max="400" step="10" value="100"></div>
+          <div class="field"><label for="gdx">Cell size (m)</label><input id="gdx" type="number" min="0.01" step="any" value="5"></div>
+          <div class="params" id="params"></div>
+          <div class="field"><label for="namp">Roughness (m)</label><input id="namp" type="number" min="0" step="any" value="1.5"></div>
+          <div class="field"><label for="nscale">Wavelength (m)</label><input id="nscale" type="number" min="1" step="any" value="150"></div>
+          <div class="field"><label for="seed">Seed</label><div class="row" style="flex-wrap:nowrap;"><input id="seed" type="number" step="1" value="3"><button id="newseed" class="small" type="button">New</button></div></div>
+        </div>
+
+        <div class="ctl-group" id="g-file" hidden>
+          <p class="label">Your DEM</p>
+          <input id="file" type="file" accept=".tif,.tiff,image/tiff">
+          <p class="cap" id="file-note">A single-band GeoTIFF of elevations in metres. It is read in this page and never uploaded. Large grids are averaged down to at most 300 cells a side.</p>
+        </div>
+
+        <div class="ctl-group" id="g-res" hidden>
           <div class="field"><label for="res">Grid</label>
             <select id="res"><option value="8">8 m (150 x 150), faster</option><option value="4">4 m (300 x 300)</option></select></div>
-          <div class="field"><label for="rain">Rain (mm/h)</label><input id="rain" type="number" min="0" max="500" step="5" value="60"></div>
-          <div class="field"><label for="rainmin">Rain for (min)</label><input id="rainmin" type="number" min="0" max="240" step="5" value="30"></div>
-          <div class="field"><label for="manning">Manning n</label><input id="manning" type="number" min="0" max="0.3" step="0.005" value="0.05"></div>
-          <div class="field"><label for="edges">Edges</label>
-            <select id="edges"><option value="open">Open (water leaves the tile)</option><option value="wall">Walls (closed box)</option></select></div>
         </div>
-        <p class="cap">Changing a setting restarts the run.</p>
+
+        <div class="ctl-group" id="g-water">
+          <p class="label">Water</p>
+          <div class="field"><label for="rain">Rain (mm/h)</label><input id="rain" type="number" min="0" max="500" step="5" value="0"></div>
+          <div class="field"><label for="rainmin">Rain for (min)</label><input id="rainmin" type="number" min="0" step="5" value="30"></div>
+          <div class="field"><label for="sea">Sea level (m)</label><input id="sea" type="number" step="any" placeholder="no sea"></div>
+          <div class="field"><label for="wave">Wave</label>
+            <select id="wave"><option value="none">None</option><option value="hump">Hump of water</option><option value="tilt">Tilted surface</option></select></div>
+          <div class="field"><label for="wamp">Wave height (m)</label><input id="wamp" type="number" step="any" value="1"></div>
+          <div class="field"><label for="wrad">Hump radius (m)</label><input id="wrad" type="number" min="0" step="any" value="100"></div>
+          <div class="field"><label for="lakedepth">Lake depth (m)</label><input id="lakedepth" type="number" min="0" step="any" value="3"></div>
+          <p class="cap" id="lake-note">With "Fill a lake" chosen, click the map: water stands that deep above the clicked cell, filling everything joined to it below that level.</p>
+        </div>
+
+        <div class="ctl-group" id="g-phys">
+          <p class="label">Physics</p>
+          <div class="field"><label for="order">Scheme</label>
+            <select id="order"><option value="2">Order 2 (MUSCL + Heun)</option><option value="1">Order 1</option></select></div>
+          <div class="field" id="f-manning"><label for="manning">Manning n</label><input id="manning" type="number" min="0" max="0.3" step="0.005" value="0.03"></div>
+          <div class="field" id="f-lat"><label for="lat">Latitude</label><input id="lat" type="number" min="-90" max="90" step="any" value="0"></div>
+          <div class="field" id="f-edges"><label for="edges">Edges</label>
+            <select id="edges"><option value="open">Open (water leaves)</option><option value="east">Open downstream (east) only</option><option value="wall">Walls (closed box)</option><option value="periodic">Wrap around</option></select></div>
+        </div>
+        <p class="cap">Changing a setting restarts the run. Latitude sets Earth's rotation (Coriolis); 0 turns it off, negative is south.</p>
       </section>
 
       <section class="card" aria-label="Run status">
@@ -168,7 +226,7 @@ a { color: var(--water); }
           <div class="stat"><b id="s-x">-</b><span>times real time</span></div>
           <div class="stat"><b id="s-steps">0</b><span>steps</span></div>
           <div class="stat"><b id="s-dt">-</b><span>step dt (s)</span></div>
-          <div class="stat"><b id="s-vol">0</b><span id="s-vol-u">stored (m3)</span></div>
+          <div class="stat"><b id="s-vol">0</b><span>stored (m3)</span></div>
           <div class="stat"><b id="s-out">0</b><span>out at edges (m3)</span></div>
         </div>
         <p class="cap" style="margin-top:8px;">Mass budget error <span id="s-err" class="pill ok">0</span> <span id="s-errnote"></span></p>
@@ -177,11 +235,11 @@ a { color: var(--water); }
       <section class="card" aria-label="Water budget chart">
         <p class="label">Water budget</p>
         <canvas class="chart" id="budget" aria-label="Cumulative water budget over time"></canvas>
-        <div class="keys"><span><i class="dash" style="color:var(--rain)"></i>in (rain + added)</span><span><i style="color:var(--water)"></i>stored</span><span><i style="color:var(--out)"></i>out at edges</span></div>
+        <div class="keys"><span><i class="dash" style="color:var(--rain)"></i>in (start + rain + added)</span><span><i style="color:var(--water)"></i>stored</span><span><i style="color:var(--out)"></i>out at edges</span></div>
       </section>
 
       <section class="card" aria-label="Probe">
-        <p class="label" id="probe-title">Probe</p>
+        <p class="label">Probe at the circle</p>
         <canvas class="chart" id="probe" aria-label="Depth and speed at the probe over time"></canvas>
         <div class="keys" id="probe-keys"></div>
       </section>
@@ -189,9 +247,9 @@ a { color: var(--water); }
       <section class="card">
         <details>
           <summary>What is being solved</summary>
-          <p>Depth h and momentum (hu, hv) under the shallow water equations, on the raster grid. Fluxes use the HLL Riemann solver with hydrostatic reconstruction (Audusse et al. 2004), so water at rest stays at rest and depth stays non-negative as cells wet and dry. Order 2 adds MUSCL (minmod) reconstruction and Heun time stepping. The step size obeys the CFL condition plus a bed-slope acceleration limit. Friction is Manning, applied semi-implicitly.</p>
-          <p>The budget compares water stored on the grid with water in (initial, rain, clicks) minus water out through the edges; it should stay near 1e-12. The benchmarks show the analytic solution as a line beside the model.</p>
-          <p>This page runs src/core/shallows.js, a port of the R package's C++ kernel (playproj shallows/). On the same inputs the two agree to 1e-12 or better.</p>
+          <p>Depth h and momentum (hu, hv) under the shallow water equations, on the grid. Fluxes use the HLL Riemann solver with hydrostatic reconstruction (Audusse et al. 2004), so water at rest stays at rest and depth stays non-negative as cells wet and dry. Order 2 adds MUSCL (minmod) reconstruction and Heun time stepping. Manning friction is semi-implicit; Earth's rotation is an exact turn of the momentum each step (Strang split).</p>
+          <p>Generated terrain uses the same generator as the R package (sw_generate): the same shape, size and seed give the same ground in R and here, to 1e-13 m. Storm Bay was extracted in R with sw_extract, which fills a local UTM grid from the Tasmania 2 m DEM, Copernicus GLO-30 and GEBCO in that order.</p>
+          <p>The budget compares water stored on the grid with water in (start, rain, clicks) minus water out through the edges; it should stay near 1e-12.</p>
         </details>
       </section>
     </aside>
@@ -199,26 +257,69 @@ a { color: var(--water); }
 </div>
 
 <script type="module">
-import { createSolver, OPEN, WALL, thackerBowl, dambreakStoker, dambreakRitter } from './src/core/shallows.js';
+import { createSolver, OPEN, WALL, PERIODIC, coriolis, thackerBowl, dambreakStoker, dambreakRitter } from './src/core/shallows.js';
+import { generate, fillLake, fillSea, SHAPES } from './src/core/terrain.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const num = (id, d = 0) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : d; };
 
-// ---------- data ----------
-let bedCache = null;
-async function loadBed() {
-  if (bedCache) return bedCache;
-  const r = await fetch('data/shallows/mcrobies-bed-4m.json');
+// ---------- presets: what each scenario puts in the controls ----------
+const PRESETS = {
+  'gen-dam': { shape: 'reservoir', gnx: 160, gny: 100, gdx: 5, namp: 1.5, nscale: 150, seed: 3,
+    params: { z0: 0, slope: 0.01, side: 0.15, floor: 30, dam_x: -150, dam_height: 12, dam_thick: 10, breach: 40 },
+    rain: 0, sea: '', wave: 'none', manning: 0.03, lat: 0, edges: 'east', layer: 'h', depthMax: 12, speedMax: 8 },
+  'gen-rain': { shape: 'valley', gnx: 150, gny: 120, gdx: 8, namp: 12, nscale: 500, seed: 11,
+    params: { z0: 0, slope: 0.02, side: 0.08, floor: 40 },
+    rain: 60, rainmin: 30, sea: '', wave: 'none', manning: 0.05, lat: 0, edges: 'east', layer: 'h', depthMax: 0.5, speedMax: 2 },
+  'gen-island': { shape: 'island', gnx: 150, gny: 150, gdx: 10, namp: 4, nscale: 300, seed: 5,
+    params: { height: 40, depth: 30, radius: 250 },
+    rain: 0, sea: 0, wave: 'hump', wamp: 3, wrad: 80, waveAt: [0.12, 0.5], manning: 0.025, lat: 0, edges: 'open', layer: 'e', depthMax: 30, speedMax: 3 },
+  'gen-basin': { shape: 'plane', gnx: 100, gny: 100, gdx: 10000, namp: 0, nscale: 1000, seed: 1,
+    params: { z0: -100, slope_x: 0, slope_y: 0 },
+    rain: 0, sea: 0, wave: 'tilt', wamp: 1, manning: 0, lat: -45, edges: 'wall', layer: 'e', depthMax: 100, speedMax: 0.1 },
+  'gen-free': {},
+  mcrobies: { rain: 60, rainmin: 30, sea: '', wave: 'none', manning: 0.05, lat: 0, edges: 'open', layer: 'h', depthMax: 0.5, speedMax: 2 },
+  stormbay: { rain: 0, sea: 0, wave: 'hump', wamp: 2, wrad: 2000, waveAt: [0.8, 0.85], probeAt: [0.6, 0.5], manning: 0.025, lat: -43, edges: 'open', layer: 'e', depthMax: 50, speedMax: 0.5 },
+  file: { rain: 20, rainmin: 30, sea: '', wave: 'none', manning: 0.04, lat: 0, edges: 'open', layer: 'h', depthMax: 1, speedMax: 2 },
+};
+const PARAM_LABELS = {
+  z0: 'Height at centre (m)', slope: 'Downhill slope', side: 'Side slope', floor: 'Floor width (m)',
+  slope_x: 'Fall to the east', slope_y: 'Fall to the north', depth: 'Depth (m)', radius: 'Radius (m)',
+  land_slope: 'Land slope', shelf_slope: 'Shelf slope', shelf_depth: 'Shelf break depth (m)', slope_slope: 'Continental slope', abyss: 'Abyss depth (m)',
+  height: 'Height (m)', dam_x: 'Dam at X (m)', dam_height: 'Dam height (m)', dam_thick: 'Dam thickness (m)', breach: 'Breach width (m)',
+};
+let shapeParams = {};
+function renderParams(shape, values) {
+  shapeParams = { ...SHAPES[shape], ...(values || {}) };
+  $('params').innerHTML = Object.keys(SHAPES[shape]).map((k) =>
+    `<div class="field"><label for="p-${k}">${PARAM_LABELS[k] || k}</label><input id="p-${k}" type="number" step="any" value="${shapeParams[k]}"></div>`).join('');
+  for (const k of Object.keys(SHAPES[shape])) $('p-' + k).addEventListener('change', () => { shapeParams[k] = num('p-' + k, SHAPES[shape][k]); reset(); });
+}
+function applyPreset(name) {
+  const p = PRESETS[name] || {};
+  for (const k of ['gnx', 'gny', 'gdx', 'namp', 'nscale', 'seed', 'rain', 'rainmin', 'wamp', 'wrad', 'manning', 'lat']) if (p[k] != null) $(k).value = p[k];
+  if (p.shape) $('shape').value = p.shape;
+  if (p.sea != null) $('sea').value = p.sea;
+  if (p.wave) $('wave').value = p.wave;
+  if (p.edges) $('edges').value = p.edges;
+  if (p.shape) renderParams(p.shape, p.params);
+  if (p.layer) setLayer(p.layer, false);
+}
+
+// ---------- beds ----------
+async function loadBedJson(url) {
+  const r = await fetch(url);
   if (!r.ok) throw new Error('Could not load the terrain file (' + r.status + ')');
   const j = await r.json();
-  const bin = atob(j.uint16le_base64);
-  const n = j.nx * j.ny, z = new Float64Array(n);
-  for (let k = 0; k < n; k++) {
-    const v = bin.charCodeAt(2 * k) | (bin.charCodeAt(2 * k + 1) << 8);
-    z[k] = j.zmin + v * j.scale;
-  }
-  bedCache = { ...j, z };
-  return bedCache;
+  const bin = atob(j.uint16le_base64), n = j.nx * j.ny, z = new Float64Array(n);
+  for (let k = 0; k < n; k++) z[k] = j.zmin + (bin.charCodeAt(2 * k) | (bin.charCodeAt(2 * k + 1) << 8)) * j.scale;
+  return { ...j, dy: j.dx, z };
+}
+const bedCache = {};
+async function bedFor(name) {
+  if (!bedCache[name]) bedCache[name] = await loadBedJson(name === 'mcrobies' ? 'data/shallows/mcrobies-bed-4m.json' : 'data/shallows/stormbay-bed-200m.json');
+  return bedCache[name];
 }
 function aggregate2(b) {
   const nx = b.nx >> 1, ny = b.ny >> 1, z = new Float64Array(nx * ny);
@@ -226,184 +327,45 @@ function aggregate2(b) {
     const a = (2 * i) * b.nx + 2 * j;
     z[i * nx + j] = 0.25 * (b.z[a] + b.z[a + 1] + b.z[a + b.nx] + b.z[a + b.nx + 1]);
   }
-  return { ...b, nx, ny, dx: b.dx * 2, z };
+  return { ...b, nx, ny, dx: b.dx * 2, dy: b.dy * 2, z };
 }
 
-// ---------- scenarios ----------
-async function buildScenario(name, p) {
-  const order = +p.order;
-  if (name === 'mcrobies') {
-    let b = await loadBed();
-    if (+p.res === 8) b = aggregate2(b);
-    const edge = p.edges === 'open' ? OPEN : WALL;
-    const rate = Math.max(0, +p.rain || 0) / 1000 / 3600;
-    const S = createSolver({ nx: b.nx, ny: b.ny, dx: b.dx, z: b.z, manning: Math.max(0, +p.manning || 0),
-      rain: rate, bc: [edge, edge, edge, edge], order });
-    return {
-      name, S, real: true, rate, rainUntil: Math.max(0, +p.rainmin || 0) * 60,
-      depthMax: 0.5, speedMax: 2, dropR: 20, dropD: 2, unit: 'm', showMin: 0.01,
-      probe: [b.ny >> 1, b.nx >> 1],
-      coord: (i, j) => `E ${(b.xmin + (j + 0.5) * b.dx).toFixed(0)}  N ${(b.ymax - (i + 0.5) * b.dx).toFixed(0)}  (EPSG:28355)  bed ${S.at('z', i, j).toFixed(1)} m`,
-      xOf: (j) => (j + 0.5) * b.dx, xLabel: 'distance west to east (m)',
-      credit: 'Bed: Tasmania Statewide 2 m DEM (2021) via source.coop, ' + b.dx + ' m cells, 1.2 km square centred on the McRobies Gully tip floor. Bare ground: no buildings, pipes, culverts or infiltration.',
-    };
+let fileBed = null;
+async function readGeoTIFF(file) {
+  if (typeof GeoTIFF === 'undefined') {
+    await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/geotiff@3.0.5/dist-browser/geotiff.js'; s.onload = res; s.onerror = () => rej(new Error('Could not load the GeoTIFF reader')); document.head.appendChild(s); });
   }
-  if (name === 'thacker') {
-    const n = 80, dx = 4 / n, z = [], h = [], hu = [], hv = [];
-    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
-      const a = thackerBowl(-2 + (j + 0.5) * dx, -2 + (i + 0.5) * dx, 0);
-      z.push(a.z); h.push(a.h); hu.push(a.h * a.u); hv.push(a.h * a.v);
-    }
-    const S = createSolver({ nx: n, ny: n, dx, z, h, hu, hv, order });
-    const P = thackerBowl(0, 0, 0).period;
-    return {
-      name, S, depthMax: 0.15, speedMax: 0.8, dropR: 0.15, dropD: 0.03, unit: 'm',
-      probe: [n >> 1, Math.round(n * 0.3)],
-      coord: (i, j) => `x ${(-2 + (j + 0.5) * dx).toFixed(2)} m  y ${(-2 + (i + 0.5) * dx).toFixed(2)} m`,
-      xOf: (j) => -2 + (j + 0.5) * dx, xLabel: 'x (m)',
-      analyticSection: (i, t) => {
-        const y = -2 + (i + 0.5) * dx, xs = [], ys = [];
-        for (let j = 0; j < n; j++) { const a = thackerBowl(-2 + (j + 0.5) * dx, y, t); if (a.h > 0) { xs.push(-2 + (j + 0.5) * dx); ys.push(a.h + a.z); } }
-        return { xs, ys };
-      },
-      error: (S) => {
-        let e = 0, v = 0;
-        for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
-          const a = thackerBowl(-2 + (j + 0.5) * dx, -2 + (i + 0.5) * dx, S.t);
-          e += Math.abs(S.at('h', i, j) - a.h); v += a.h;
-        }
-        return e / v;
-      },
-      errorLabel: 'relative L1 depth error vs analytic',
-      credit: 'Thacker (1981) planar surface in a paraboloid bowl, SWASHES parameters: radius 1 m, centre depth 0.1 m, period ' + P.toFixed(2) + ' s. The shoreline moves over dry bed every cycle.',
-    };
-  }
-  // dam breaks: 1000 m channel, 8 rows with walls at the sides
-  const wet = name === 'stoker';
-  const nx = 400, ny = 8, dx = 2.5, z = new Float64Array(nx * ny), h = new Float64Array(nx * ny);
-  for (let i = 0; i < ny; i++) for (let j = 0; j < nx; j++) h[i * nx + j] = (-500 + (j + 0.5) * dx) < 0 ? 10 : (wet ? 2 : 0);
-  const S = createSolver({ nx, ny, dx, z, h, bc: [OPEN, OPEN, WALL, WALL], order });
-  const exact = wet ? dambreakStoker(10, 2) : null;
-  const ana = (x, t) => wet ? exact(x, t) : dambreakRitter(x, t, 10);
-  return {
-    name, S, depthMax: 10, speedMax: 10, dropR: 15, dropD: 3, unit: 'm', stopAt: 30,
-    probe: [ny >> 1, Math.round(nx * 0.7)],
-    coord: (i, j) => `x ${(-500 + (j + 0.5) * dx).toFixed(1)} m`,
-    xOf: (j) => -500 + (j + 0.5) * dx, xLabel: 'x (m), dam at 0',
-    analyticSection: (i, t) => {
-      const xs = [], ys = [];
-      if (t <= 0) return { xs, ys };
-      for (let j = 0; j < nx; j++) { const x = -500 + (j + 0.5) * dx; xs.push(x); ys.push(ana(x, t)); }
-      return { xs, ys };
-    },
-    error: (S) => {
-      if (S.t <= 0) return 0;
-      let e = 0; const i = ny >> 1;
-      for (let j = 0; j < nx; j++) e += Math.abs(S.at('h', i, j) - ana(-500 + (j + 0.5) * dx, S.t));
-      return e / nx;
-    },
-    errorLabel: 'mean |depth error| vs analytic (m)',
-    credit: (wet ? 'Stoker: 10 m of water released onto 2 m, flat frictionless bed. Rarefaction back upstream, a bore runs downstream.' : 'Ritter: 10 m of water released onto a dry flat bed. The front runs at 2 sqrt(g h0) = 19.8 m/s.') + ' Runs to 30 s, before waves reach the open ends.',
-  };
-}
-
-// ---------- state ----------
-const ui = { layer: 'h', tool: 'probe', playing: false };
-let sc = null, S = null, shade = null, hist = null, frameN = 0;
-let lastWall = 0, simAtWall = 0, speedX = 0;
-
-function params() {
-  return { order: $('order').value, res: $('res').value, rain: $('rain').value, rainmin: $('rainmin').value,
-    manning: $('manning').value, edges: $('edges').value };
-}
-
-function computeShade() {
-  const { nx, ny, dx, dy } = S, z = S.field('z'), sh = new Float32Array(nx * ny);
-  const az = 315 * Math.PI / 180, alt = 40 * Math.PI / 180;
-  const lx = Math.cos(alt) * Math.sin(az), ly = Math.cos(alt) * Math.cos(az), lz = Math.sin(alt);
+  const tiff = await GeoTIFF.fromArrayBuffer(await file.arrayBuffer());
+  const img = await tiff.getImage();
+  const w = img.getWidth(), h = img.getHeight();
+  const [rx, ry] = img.getResolution(), [ox, oy] = img.getOrigin();
+  const keys = img.getGeoKeys() || {};
+  const nd = img.getGDALNoData();
+  const data = (await img.readRasters({ samples: [0] }))[0];
+  const k = Math.max(1, Math.ceil(Math.max(w, h) / 300));
+  const nx = Math.floor(w / k), ny = Math.floor(h / k), z = new Float64Array(nx * ny);
+  let zmax = -Infinity, missing = 0;
   for (let i = 0; i < ny; i++) for (let j = 0; j < nx; j++) {
-    const jl = Math.max(0, j - 1), jr = Math.min(nx - 1, j + 1), iu = Math.max(0, i - 1), id = Math.min(ny - 1, i + 1);
-    const gx = (z[i * nx + jr] - z[i * nx + jl]) / ((jr - jl) * dx || 1);
-    const gy = (z[iu * nx + j] - z[id * nx + j]) / ((id - iu) * dy || 1);  // north minus south: dz/dnorth
-    const nrm = Math.sqrt(gx * gx + gy * gy + 1);
-    sh[i * nx + j] = Math.max(0, (-gx * lx - gy * ly + lz) / nrm);
-  }
-  return sh;
-}
-
-async function reset() {
-  ui.playing = false; updatePlay();
-  $('runstate').textContent = 'Loading...';
-  try {
-    sc = await buildScenario($('scenario').value, params());
-  } catch (e) {
-    $('runstate').textContent = e.message; return;
-  }
-  S = sc.S;
-  shade = computeShade();
-  hist = { t: [], vin: [], stored: [], out: [], ph: [], ps: [], err: [] };
-  record();
-  $('terrain-ctl').hidden = sc.name !== 'mcrobies';
-  $('caveat').hidden = !sc.real;
-  $('credit').textContent = sc.credit;
-  $('runstate').textContent = '';
-  sizeCanvases();
-  draw();
-}
-
-function record() {
-  const [pi, pj] = sc.probe;
-  const h = S.at('h', pi, pj);
-  const sp = h > 1e-3 ? Math.hypot(S.vel(h, S.at('hu', pi, pj)), S.vel(h, S.at('hv', pi, pj))) : 0;
-  hist.t.push(S.t);
-  hist.vin.push(S.volume0 + S.added + S.rainIn);
-  hist.stored.push(S.volume());
-  hist.out.push(S.outflow);
-  hist.ph.push(h); hist.ps.push(sp);
-  if (sc.error) hist.err.push(sc.error(S));
-  if (hist.t.length > 4000) for (const k in hist) hist[k] = hist[k].filter((_, i) => i % 2 === 0);
-}
-
-// ---------- loop ----------
-function tick(now) {
-  requestAnimationFrame(tick);
-  if (!S) return;
-  if (ui.playing) {
-    const t0 = performance.now(), tsim0 = S.t;
-    while (performance.now() - t0 < 24) {
-      if (sc.rate && S.t >= sc.rainUntil && !sc.rainStopped) { S.setRain(0); sc.rainStopped = true; }
-      let limit = Infinity;
-      if (sc.rate && !sc.rainStopped) limit = sc.rainUntil;
-      if (sc.stopAt) limit = Math.min(limit, sc.stopAt);
-      S.step(limit);
-      if (sc.stopAt && S.t >= sc.stopAt - 1e-9) { ui.playing = false; updatePlay(); $('runstate').textContent = 'Stopped at ' + sc.stopAt + ' s.'; break; }
+    let s = 0, n = 0;
+    for (let a = 0; a < k; a++) for (let b = 0; b < k; b++) {
+      const v = data[(i * k + a) * w + j * k + b];
+      if (Number.isFinite(v) && (nd === null || v !== nd) && v > -1e30) { s += v; n++; }
     }
-    const dw = performance.now() - t0;
-    speedX = 0.8 * speedX + 0.2 * ((S.t - tsim0) / Math.max(dw, 16) * 1000 * (dw / Math.max(16.7, dw)));
-    frameN++;
-    if (frameN % 2 === 0) record();
-    draw();
+    z[i * nx + j] = n ? s / n : NaN;
+    if (n && s / n > zmax) zmax = s / n;
   }
-}
-
-function stepOnce() { if (!S) return; S.step(sc.stopAt ?? Infinity); record(); draw(); }
-
-// ---------- drawing ----------
-function sizeCanvases() {
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const map = $('map');
-  const aspect = S ? S.ny * S.dy / (S.nx * S.dx) : 1;
-  map.style.width = '100%';
-  const w = Math.min(map.parentElement.clientWidth, Math.max(280, 0.8 * window.innerHeight / aspect));
-  map.style.width = w + 'px';
-  const hgt = Math.max(48, Math.round(w * aspect));
-  map.style.height = hgt + 'px';
-  map.width = Math.round(w * dpr); map.height = Math.round(hgt * dpr);
-  for (const id of ['budget', 'probe', 'section']) {
-    const c = $(id); c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr);
+  for (let q = 0; q < z.length; q++) if (!Number.isFinite(z[q])) { z[q] = zmax + 100; missing++; }
+  const geographic = keys.GTModelTypeGeoKey === 2;
+  let dx = Math.abs(rx) * k, dy = Math.abs(ry) * k, note = '';
+  if (geographic) {
+    const latc = oy + ry * h / 2;
+    dx *= 111320 * Math.cos(latc * Math.PI / 180); dy *= 110540;
+    note = 'Longitude and latitude grid: cells taken as ' + dx.toFixed(1) + ' x ' + dy.toFixed(1) + ' m at the centre. ';
   }
+  const epsg = keys.ProjectedCSTypeGeoKey || keys.GeographicTypeGeoKey || 0;
+  return { nx, ny, dx, dy, z, xmin: ox, ymax: oy, crs: epsg ? 'EPSG:' + epsg : '', geographic,
+    credit: file.name + ': ' + w + ' x ' + h + (k > 1 ? ', averaged ' + k + ' x ' + k + ' to ' + nx + ' x ' + ny : '') + '. ' + note + (missing ? missing + ' cells without data became high walls.' : '') };
 }
-
 function lerp(a, b, t) { return a + (b - a) * t; }
 // sequential palettes as stops [t, r, g, b]
 const PAL = {
@@ -418,71 +380,6 @@ function palette(name, t, out) {
   out[0] = lerp(a[1], b[1], u); out[1] = lerp(a[2], b[2], u); out[2] = lerp(a[3], b[3], u);
 }
 
-const off = document.createElement('canvas');
-function drawMap() {
-  const { nx, ny } = S, map = $('map'), ctx = map.getContext('2d');
-  off.width = nx; off.height = ny;
-  const octx = off.getContext('2d'), img = octx.createImageData(nx, ny), d = img.data;
-  const h = S.field('h'), hu = S.field('hu'), hv = S.field('hv'), z = S.field('z');
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches && document.documentElement.dataset.theme !== 'light' || document.documentElement.dataset.theme === 'dark';
-  const rgb = [0, 0, 0];
-  // surface range for the "surface" layer
-  let emin = Infinity, emax = -Infinity;
-  if (ui.layer === 'e') for (let k = 0; k < h.length; k++) if (h[k] > 1e-3) { const e = h[k] + z[k]; if (e < emin) emin = e; if (e > emax) emax = e; }
-  if (!(emax > emin)) { emin = 0; emax = 1; }
-  sc.emin = emin; sc.emax = emax;
-  for (let k = 0; k < nx * ny; k++) {
-    const g = dark ? 25 + 120 * shade[k] : 70 + 175 * shade[k];
-    let r = g, gg = g, b = g;
-    const hk = h[k];
-    if (hk > (sc.showMin ?? 1e-3)) {
-      let t, a;
-      if (ui.layer === 'h') { t = hk / sc.depthMax; a = Math.min(1, 0.35 + 0.65 * Math.sqrt(t)); palette('h', t, rgb); }
-      else if (ui.layer === 's') { t = Math.hypot(S.vel(hk, hu[k]), S.vel(hk, hv[k])) / sc.speedMax; a = 0.9; palette('s', t, rgb); }
-      else { t = (hk + z[k] - emin) / (emax - emin); a = 0.9; palette('e', t, rgb); }
-      r = lerp(r, rgb[0], a); gg = lerp(gg, rgb[1], a); b = lerp(b, rgb[2], a);
-    }
-    d[4 * k] = r; d[4 * k + 1] = gg; d[4 * k + 2] = b; d[4 * k + 3] = 255;
-  }
-  octx.putImageData(img, 0, 0);
-  ctx.imageSmoothingEnabled = nx < map.width;
-  ctx.drawImage(off, 0, 0, map.width, map.height);
-  const sx = map.width / nx, sy = map.height / ny;
-  // arrows
-  if ($('arrows').checked) {
-    const step = Math.max(1, Math.round(Math.max(nx, ny) / 34));
-    ctx.strokeStyle = dark ? 'rgba(255,255,255,0.85)' : 'rgba(10,20,25,0.8)';
-    ctx.lineWidth = Math.max(1, sx * step * 0.06);
-    const len = sx * step * 0.9;
-    for (let i = step >> 1; i < ny; i += step) for (let j = step >> 1; j < nx; j += step) {
-      const k = i * nx + j; if (h[k] < Math.max(5e-3, 2 * (sc.showMin ?? 0))) continue;
-      const u = S.vel(h[k], hu[k]), v = S.vel(h[k], hv[k]), sp = Math.hypot(u, v);
-      if (sp < sc.speedMax * 0.03) continue;
-      const L = len * Math.min(1, Math.sqrt(sp / sc.speedMax));
-      const cx = (j + 0.5) * sx, cy = (i + 0.5) * sy, ux = u / sp, uy = v / sp;
-      const x0 = cx - ux * L / 2, y0 = cy - uy * L / 2, x1 = cx + ux * L / 2, y1 = cy + uy * L / 2;
-      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
-      ctx.moveTo(x1, y1); ctx.lineTo(x1 - L * 0.35 * (ux - uy * 0.6), y1 - L * 0.35 * (uy + ux * 0.6));
-      ctx.moveTo(x1, y1); ctx.lineTo(x1 - L * 0.35 * (ux + uy * 0.6), y1 - L * 0.35 * (uy - ux * 0.6));
-      ctx.stroke();
-    }
-  }
-  // probe marker and section line
-  const [pi, pj] = sc.probe;
-  ctx.strokeStyle = css('--out'); ctx.lineWidth = Math.max(1, 1.2 * (devicePixelRatio || 1));
-  ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(0, (pi + 0.5) * sy); ctx.lineTo(map.width, (pi + 0.5) * sy); ctx.stroke(); ctx.setLineDash([]);
-  ctx.beginPath(); ctx.arc((pj + 0.5) * sx, (pi + 0.5) * sy, Math.max(5, 4 * (devicePixelRatio || 1)), 0, 2 * Math.PI); ctx.lineWidth = 2.5; ctx.stroke();
-  // legend
-  const leg = $('leg'), lctx = leg.getContext('2d'), li = lctx.createImageData(leg.width, 1);
-  for (let x = 0; x < leg.width; x++) { palette(ui.layer, x / (leg.width - 1), rgb); li.data.set([rgb[0], rgb[1], rgb[2], 255], 4 * x); }
-  for (let y = 0; y < leg.height; y++) lctx.putImageData(li, 0, y);
-  const fmt = (v) => Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2);
-  if (ui.layer === 'h') { $('leg-name').textContent = 'depth'; $('leg-lo').textContent = (sc.showMin ?? 1e-3) >= 0.01 ? (sc.showMin * 100) + ' cm' : '1 mm'; $('leg-hi').textContent = sc.depthMax + ' m+'; }
-  else if (ui.layer === 's') { $('leg-name').textContent = 'speed'; $('leg-lo').textContent = '0'; $('leg-hi').textContent = sc.speedMax + ' m/s+'; }
-  else { $('leg-name').textContent = 'surface elev.'; $('leg-lo').textContent = fmt(emin); $('leg-hi').textContent = fmt(emax) + ' m'; }
-  $('coord').textContent = sc.coord(pi, pj);
-}
-
 function niceTicks(lo, hi, n = 4) {
   const span = hi - lo || 1, raw = span / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => span / s <= n) || 10 * mag;
@@ -492,11 +389,13 @@ function niceTicks(lo, hi, n = 4) {
 function fmtTick(v) {
   const a = Math.abs(v);
   if (a === 0) return '0';
+  if (a >= 1e7) return v.toExponential(1).replace('e+', 'e');
   if (a >= 10000) return (v / 1000).toFixed(0) + 'k';
   if (a >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
   if (a >= 10) return v.toFixed(0);
   if (a >= 1) return v.toFixed(1).replace(/\.0$/, '');
-  return v.toPrecision(2);
+  if (a < 1e-3) return v.toExponential(0);
+  return +v.toPrecision(2) + '';
 }
 
 // generic line chart; series: {x, y, color, dash, width, fill}
@@ -505,7 +404,7 @@ function chart(cv, series, o) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const W = cv.clientWidth, H = cv.clientHeight;
   ctx.clearRect(0, 0, W, H);
-  const m = { l: 44, r: o.right ? 40 : 10, t: 20, b: 26 };
+  const m = { l: 48, r: o.right ? 46 : 10, t: 20, b: 26 };
   let x0 = o.xmin ?? Infinity, x1 = o.xmax ?? -Infinity, y0 = o.ymin ?? Infinity, y1 = o.ymax ?? -Infinity;
   for (const s of series) if (!s.axis2) for (let k = 0; k < s.x.length; k++) {
     if (o.xmin == null) x0 = Math.min(x0, s.x[k]); if (o.xmax == null) x1 = Math.max(x1, s.x[k]);
@@ -553,7 +452,333 @@ function chart(cv, series, o) {
   }
 }
 
-const mmss = (t) => { const m = Math.floor(t / 60), s = t - 60 * m; return t < 120 ? t.toFixed(t < 10 ? 2 : 1) + ' s' : m + ':' + String(Math.floor(s)).padStart(2, '0'); };
+
+// ---------- scenarios ----------
+const BENCH = ['thacker', 'stoker', 'ritter'];
+
+function waterSetup(bed, preset) {
+  // initial depth and momentum from the Water controls, on any bed
+  const { nx, ny, dx, dy, z } = bed;
+  const h = new Float64Array(nx * ny);
+  const seaTxt = $('sea').value.trim(), sea = seaTxt === '' ? null : parseFloat(seaTxt);
+  if (sea !== null && Number.isFinite(sea)) h.set(fillSea(z, nx, ny, sea));
+  if (bed.lake) for (let k = 0; k < h.length; k++) h[k] = Math.max(h[k], bed.lake[k]);
+  const wave = $('wave').value, A = num('wamp', 0), Rw = Math.max(num('wrad', 1), 1e-9);
+  if (wave === 'hump' && A !== 0) {
+    const at = preset.waveAt || [0.5, 0.5];
+    const xc = at[0] * nx * dx, yc = at[1] * ny * dy;
+    for (let i = 0; i < ny; i++) for (let j = 0; j < nx; j++) {
+      const k = i * nx + j, X = (j + 0.5) * dx - xc, Y = (i + 0.5) * dy - yc;
+      if (h[k] > 0 || sea === null) h[k] = Math.max(0, h[k] + A * Math.exp(-(X * X + Y * Y) / (Rw * Rw)));
+    }
+  }
+  if (wave === 'tilt' && A !== 0) {
+    for (let i = 0; i < ny; i++) for (let j = 0; j < nx; j++) {
+      const k = i * nx + j; if (h[k] <= 0) continue;
+      h[k] = Math.max(0, h[k] + A * ((j + 0.5) / nx * 2 - 1));
+    }
+  }
+  return { h, sea };
+}
+
+async function buildScenario(name) {
+  const order = +$('order').value, preset = PRESETS[name] || {};
+  if (BENCH.includes(name)) return buildBench(name, order);
+  let bed, real = false, credit = '', kind = name;
+  if (name.startsWith('gen')) {
+    const shape = $('shape').value;
+    const o = { shape, nx: Math.round(num('gnx', 100)), ny: Math.round(num('gny', 100)), dx: num('gdx', 5), params: shapeParams,
+      noise: { amp: num('namp', 0), scale: num('nscale', 200), octaves: 5, gain: 0.5, seed: Math.round(num('seed', 1)) } };
+    o.nx = Math.min(400, Math.max(4, o.nx)); o.ny = Math.min(400, Math.max(1, o.ny));
+    bed = generate(o);
+    if (shape === 'reservoir') {
+      // fill the lake behind the intact dam, then run on the bed as set (breached or not)
+      const intact = generate({ ...o, params: { ...shapeParams, breach: 0 } });
+      const q = shapeParams, level = q.z0 - q.slope * q.dam_x + q.dam_height - 1;
+      const jj = Math.round((q.dam_x - q.dam_thick - 2 * o.dx) / o.dx + o.nx / 2 - 0.5), ii = Math.floor(o.ny / 2);
+      if (jj >= 0 && jj < o.nx) bed.lake = fillLake(intact.z, o.nx, o.ny, ii, jj, level);
+    }
+    credit = 'Generated: ' + shape + ', ' + o.nx + ' x ' + o.ny + ' cells of ' + o.dx + ' m, roughness ' + o.noise.amp + ' m at ' + o.noise.scale + ' m, seed ' + o.noise.seed + '. In R: sw_generate("' + shape + '", ' + o.nx + ', ' + o.ny + ', ' + o.dx + ', ..., noise = list(amp = ' + o.noise.amp + ', scale = ' + o.noise.scale + ', seed = ' + o.noise.seed + ')).';
+    kind = 'gen';
+  } else if (name === 'mcrobies') {
+    bed = await bedFor('mcrobies'); if (+$('res').value === 8) bed = aggregate2(bed);
+    real = true;
+    credit = 'Bed: Tasmania Statewide 2 m DEM (2021) via source.coop, ' + bed.dx + ' m cells, 1.2 km square centred on the McRobies Gully tip floor. Bare ground: no buildings, pipes, culverts or infiltration.';
+  } else if (name === 'stormbay') {
+    bed = await bedFor('stormbay'); real = true;
+    credit = 'Bed: ' + bed.source + ' (' + Math.round(bed.share.tas2m * 100) + '% Tasmania 2 m, ' + Math.round(bed.share.gebco * 100) + '% GEBCO). 40 km square, 200 m cells, UTM 55S. GEBCO is coarse (about 460 m) and smooths the bay floor.';
+  } else if (name === 'file') {
+    if (!fileBed) {
+      $('runstate').textContent = 'Choose a GeoTIFF file to start.';
+      return null;
+    }
+    bed = fileBed; real = true; credit = fileBed.credit;
+  }
+  const { h, sea } = waterSetup(bed, preset);
+  const ev = $('edges').value;
+  const bc = ev === 'east' ? [WALL, OPEN, WALL, WALL] : Array(4).fill({ open: OPEN, wall: WALL, periodic: PERIODIC }[ev]);
+  const lat = num('lat', 0);
+  const S = createSolver({ nx: bed.nx, ny: bed.ny, dx: bed.dx, dy: bed.dy ?? bed.dx, z: bed.z, h,
+    manning: Math.max(0, num('manning', 0)), rain: Math.max(0, num('rain', 0)) / 1000 / 3600,
+    f: coriolis(lat), bc, order });
+  let zlo = Infinity, zhi = -Infinity, hmax = 0;
+  for (let k = 0; k < bed.z.length; k++) { zlo = Math.min(zlo, bed.z[k]); zhi = Math.max(zhi, bed.z[k]); hmax = Math.max(hmax, h[k]); }
+  const W = bed.nx * bed.dx, Hh = bed.ny * (bed.dy ?? bed.dx);
+  const local = kind === 'gen' || !bed.crs;
+  return {
+    name, kind, S, real, credit, sea, lat,
+    rate: Math.max(0, num('rain', 0)) / 1000 / 3600, rainUntil: Math.max(0, num('rainmin', 0)) * 60,
+    depthMax: preset.depthMax ?? Math.max(0.5, +(hmax || 1).toPrecision(2)), speedMax: preset.speedMax ?? 2,
+    dropR: Math.max(2 * bed.dx, Math.min(W, Hh) / 40), dropD: hmax > 0 ? Math.max(0.5, +(hmax / 5).toPrecision(1)) : 2,
+    probe: preset.probeAt ? [Math.floor(preset.probeAt[1] * bed.ny), Math.floor(preset.probeAt[0] * bed.nx)] : [bed.ny >> 1, bed.nx >> 1],
+    coord: (i, j) => local
+      ? `X ${((j + 0.5) * bed.dx - W / 2).toFixed(1)} m  Y ${(Hh / 2 - (i + 0.5) * (bed.dy ?? bed.dx)).toFixed(1)} m  bed ${S.at('z', i, j).toFixed(2)} m`
+      : `E ${(bed.xmin + (j + 0.5) * bed.dx).toFixed(0)}  N ${(bed.ymax - (i + 0.5) * (bed.dy ?? bed.dx)).toFixed(0)}  (${bed.crs})  bed ${S.at('z', i, j).toFixed(1)} m`,
+    xOf: (j) => (j + 0.5) * bed.dx, xLabel: 'distance west to east (m)',
+    exaggerate: (zhi - zlo) / W > 0.02 || kind === 'gen',
+    bigTime: bed.dx >= 1000,
+  };
+}
+
+function buildBench(name, order) {
+  if (name === 'thacker') {
+    const n = 80, dx = 4 / n, z = [], h = [], hu = [], hv = [];
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      const a = thackerBowl(-2 + (j + 0.5) * dx, -2 + (i + 0.5) * dx, 0);
+      z.push(a.z); h.push(a.h); hu.push(a.h * a.u); hv.push(a.h * a.v);
+    }
+    const S = createSolver({ nx: n, ny: n, dx, z, h, hu, hv, order });
+    const P = thackerBowl(0, 0, 0).period;
+    return {
+      name, kind: 'bench', S, depthMax: 0.15, speedMax: 0.8, dropR: 0.15, dropD: 0.03,
+      probe: [n >> 1, Math.round(n * 0.3)],
+      coord: (i, j) => `x ${(-2 + (j + 0.5) * dx).toFixed(2)} m  y ${(-2 + (i + 0.5) * dx).toFixed(2)} m`,
+      xOf: (j) => -2 + (j + 0.5) * dx, xLabel: 'x (m)', ylim: [-0.1, 0.08],
+      analyticSection: (i, t) => {
+        const y = -2 + (i + 0.5) * dx, xs = [], ys = [];
+        for (let j = 0; j < n; j++) { const a = thackerBowl(-2 + (j + 0.5) * dx, y, t); if (a.h > 0) { xs.push(-2 + (j + 0.5) * dx); ys.push(a.h + a.z); } }
+        return { xs, ys };
+      },
+      error: (S) => {
+        let e = 0, v = 0;
+        for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+          const a = thackerBowl(-2 + (j + 0.5) * dx, -2 + (i + 0.5) * dx, S.t);
+          e += Math.abs(S.at('h', i, j) - a.h); v += a.h;
+        }
+        return e / v;
+      },
+      errorLabel: 'relative L1 depth error vs exact',
+      credit: 'Thacker (1981) planar surface in a paraboloid bowl, SWASHES parameters: radius 1 m, centre depth 0.1 m, period ' + P.toFixed(2) + ' s. The shoreline moves over dry bed every cycle.',
+    };
+  }
+  const wet = name === 'stoker';
+  const nx = 400, ny = 8, dx = 2.5, z = new Float64Array(nx * ny), h = new Float64Array(nx * ny);
+  for (let i = 0; i < ny; i++) for (let j = 0; j < nx; j++) h[i * nx + j] = (-500 + (j + 0.5) * dx) < 0 ? 10 : (wet ? 2 : 0);
+  const S = createSolver({ nx, ny, dx, z, h, bc: [OPEN, OPEN, WALL, WALL], order });
+  const exact = wet ? dambreakStoker(10, 2) : null;
+  const ana = (x, t) => wet ? exact(x, t) : dambreakRitter(x, t, 10);
+  return {
+    name, kind: 'bench', S, depthMax: 10, speedMax: 10, dropR: 15, dropD: 3, stopAt: 30,
+    probe: [ny >> 1, Math.round(nx * 0.7)],
+    coord: (i, j) => `x ${(-500 + (j + 0.5) * dx).toFixed(1)} m`,
+    xOf: (j) => -500 + (j + 0.5) * dx, xLabel: 'x (m), dam at 0', ylim: [0, 11],
+    analyticSection: (i, t) => {
+      const xs = [], ys = [];
+      if (t <= 0) return { xs, ys };
+      for (let j = 0; j < nx; j++) { const x = -500 + (j + 0.5) * dx; xs.push(x); ys.push(ana(x, t)); }
+      return { xs, ys };
+    },
+    error: (S) => {
+      if (S.t <= 0) return 0;
+      let e = 0; const i = ny >> 1;
+      for (let j = 0; j < nx; j++) e += Math.abs(S.at('h', i, j) - ana(-500 + (j + 0.5) * dx, S.t));
+      return e / nx;
+    },
+    errorLabel: 'mean |depth error| vs exact (m)',
+    credit: (wet ? 'Stoker: 10 m of water released onto 2 m, flat frictionless bed. Rarefaction back upstream, a bore runs downstream.' : 'Ritter: 10 m of water released onto a dry flat bed. The front runs at 2 sqrt(g h0) = 19.8 m/s.') + ' Runs to 30 s, before waves reach the open ends.',
+  };
+}
+
+// ---------- state ----------
+const ui = { layer: 'h', tool: 'probe', playing: false };
+let sc = null, S = null, shade = null, hist = null, frameN = 0, speedX = 0, building = 0;
+
+function showGroups(name) {
+  const gen = name.startsWith('gen'), bench = BENCH.includes(name);
+  $('g-gen').hidden = !gen;
+  $('g-file').hidden = name !== 'file';
+  $('g-res').hidden = name !== 'mcrobies';
+  $('g-water').hidden = bench;
+  $('f-manning').hidden = bench; $('f-lat').hidden = bench; $('f-edges').hidden = bench;
+  $('tool-lake').hidden = bench;
+}
+
+function computeShade() {
+  const { nx, ny, dx, dy } = S, z = S.field('z'), sh = new Float32Array(nx * ny);
+  const az = 315 * Math.PI / 180, alt = 40 * Math.PI / 180;
+  const lx = Math.cos(alt) * Math.sin(az), ly = Math.cos(alt) * Math.cos(az), lz = Math.sin(alt);
+  // exaggerate gentle relief so it still reads
+  let lo = Infinity, hi = -Infinity; for (const v of z) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  const ex = Math.max(1, Math.min(50, 0.05 * nx * dx / Math.max(hi - lo, 1e-9)));
+  for (let i = 0; i < ny; i++) for (let j = 0; j < nx; j++) {
+    const jl = Math.max(0, j - 1), jr = Math.min(nx - 1, j + 1), iu = Math.max(0, i - 1), id = Math.min(ny - 1, i + 1);
+    const gx = ex * (z[i * nx + jr] - z[i * nx + jl]) / ((jr - jl) * dx || 1);
+    const gy = ex * (z[iu * nx + j] - z[id * nx + j]) / ((id - iu) * dy || 1);
+    const nrm = Math.sqrt(gx * gx + gy * gy + 1);
+    sh[i * nx + j] = Math.max(0, (-gx * lx - gy * ly + lz) / nrm);
+  }
+  return sh;
+}
+
+async function reset() {
+  const ticket = ++building;
+  ui.playing = false; updatePlay();
+  $('runstate').textContent = 'Building...';
+  let next;
+  try { next = await buildScenario($('scenario').value); } catch (e) { $('runstate').textContent = e.message; return; }
+  if (ticket !== building) return;
+  if (!next) return;
+  sc = next; S = sc.S;
+  shade = computeShade();
+  hist = { t: [], vin: [], stored: [], out: [], ph: [], ps: [], err: [] };
+  record();
+  $('caveat').hidden = !sc.real;
+  $('credit').textContent = sc.credit;
+  $('runstate').textContent = '';
+  sizeCanvases();
+  draw();
+}
+
+function record() {
+  const [pi, pj] = sc.probe;
+  const h = S.at('h', pi, pj);
+  const sp = h > 1e-3 ? Math.hypot(S.vel(h, S.at('hu', pi, pj)), S.vel(h, S.at('hv', pi, pj))) : 0;
+  hist.t.push(S.t);
+  hist.vin.push(S.volume0 + S.added + S.rainIn);
+  hist.stored.push(S.volume());
+  hist.out.push(S.outflow);
+  hist.ph.push(sc.sea != null && h > 0 ? h + S.at('z', pi, pj) - sc.sea : h); hist.ps.push(sp);
+  if (sc.error) hist.err.push(sc.error(S));
+  if (hist.t.length > 4000) for (const k in hist) hist[k] = hist[k].filter((_, i) => i % 2 === 0);
+}
+
+// ---------- loop ----------
+function tick() {
+  requestAnimationFrame(tick);
+  if (!S || !ui.playing) return;
+  const t0 = performance.now(), tsim0 = S.t;
+  while (performance.now() - t0 < 24) {
+    if (sc.rate && S.t >= sc.rainUntil && !sc.rainStopped) { S.setRain(0); sc.rainStopped = true; }
+    let limit = Infinity;
+    if (sc.rate && !sc.rainStopped) limit = sc.rainUntil;
+    if (sc.stopAt) limit = Math.min(limit, sc.stopAt);
+    S.step(limit);
+    if (sc.stopAt && S.t >= sc.stopAt - 1e-9) { ui.playing = false; updatePlay(); $('runstate').textContent = 'Stopped at ' + sc.stopAt + ' s.'; break; }
+  }
+  const dw = performance.now() - t0;
+  speedX = 0.8 * speedX + 0.2 * ((S.t - tsim0) / Math.max(dw, 16.7) * 1000);
+  if (++frameN % 2 === 0) record();
+  draw();
+}
+function stepOnce() { if (!S) return; S.step(sc.stopAt ?? Infinity); record(); draw(); }
+
+// ---------- drawing ----------
+function sizeCanvases() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const map = $('map');
+  const aspect = S ? S.ny * S.dy / (S.nx * S.dx) : 1;
+  map.style.width = '100%';
+  const w = Math.min(map.parentElement.clientWidth, Math.max(280, 0.8 * window.innerHeight / aspect));
+  map.style.width = w + 'px';
+  const hgt = Math.max(48, Math.round(w * aspect));
+  map.style.height = hgt + 'px';
+  map.width = Math.round(w * dpr); map.height = Math.round(hgt * dpr);
+  for (const id of ['budget', 'probe', 'section']) {
+    const c = $(id); c.width = Math.round(c.clientWidth * dpr); c.height = Math.round(c.clientHeight * dpr);
+  }
+}
+
+const off = document.createElement('canvas');
+function isDark() {
+  const t = document.documentElement.dataset.theme;
+  return t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+}
+function drawMap() {
+  const { nx, ny } = S, map = $('map'), ctx = map.getContext('2d');
+  off.width = nx; off.height = ny;
+  const octx = off.getContext('2d'), img = octx.createImageData(nx, ny), d = img.data;
+  const h = S.field('h'), hu = S.field('hu'), hv = S.field('hv'), z = S.field('z');
+  const dark = isDark(), rgb = [0, 0, 0];
+  const showMin = sc.real && sc.rate ? 0.01 : 1e-3;
+  let emin = Infinity, emax = -Infinity;
+  if (ui.layer === 'e') {
+    if (sc.sea != null) {
+      let a = 0; for (let k = 0; k < h.length; k++) if (h[k] > showMin) a = Math.max(a, Math.abs(h[k] + z[k] - sc.sea));
+      a = Math.max(a, 1e-3); emin = sc.sea - a; emax = sc.sea + a;
+    } else for (let k = 0; k < h.length; k++) if (h[k] > showMin) { const e = h[k] + z[k]; if (e < emin) emin = e; if (e > emax) emax = e; }
+    if (!(emax > emin)) { emin = 0; emax = 1; }
+  }
+  for (let k = 0; k < nx * ny; k++) {
+    const g = dark ? 25 + 120 * shade[k] : 70 + 175 * shade[k];
+    let r = g, gg = g, b = g;
+    const hk = h[k];
+    if (hk > showMin) {
+      let t, a;
+      if (ui.layer === 'h') { t = hk / sc.depthMax; a = Math.min(1, 0.35 + 0.65 * Math.sqrt(t)); palette('h', t, rgb); }
+      else if (ui.layer === 's') { t = Math.hypot(S.vel(hk, hu[k]), S.vel(hk, hv[k])) / sc.speedMax; a = 0.9; palette('s', t, rgb); }
+      else { t = (hk + z[k] - emin) / (emax - emin); a = 0.9; palette('e', t, rgb); }
+      r = lerp(r, rgb[0], a); gg = lerp(gg, rgb[1], a); b = lerp(b, rgb[2], a);
+    }
+    d[4 * k] = r; d[4 * k + 1] = gg; d[4 * k + 2] = b; d[4 * k + 3] = 255;
+  }
+  octx.putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = nx < map.width;
+  ctx.drawImage(off, 0, 0, map.width, map.height);
+  const sx = map.width / nx, sy = map.height / ny;
+  if ($('arrows').checked) {
+    const step = Math.max(1, Math.round(Math.max(nx, ny) / 34));
+    ctx.strokeStyle = dark ? 'rgba(255,255,255,0.85)' : 'rgba(10,20,25,0.8)';
+    ctx.lineWidth = Math.max(1, sx * step * 0.06);
+    const len = Math.min(sx, sy) * step * 0.9;
+    for (let i = step >> 1; i < ny; i += step) for (let j = step >> 1; j < nx; j += step) {
+      const k = i * nx + j; if (h[k] < Math.max(5e-3, 2 * showMin)) continue;
+      const u = S.vel(h[k], hu[k]), v = S.vel(h[k], hv[k]), sp = Math.hypot(u, v);
+      if (sp < sc.speedMax * 0.03) continue;
+      const L = len * Math.min(1, Math.sqrt(sp / sc.speedMax));
+      const cx = (j + 0.5) * sx, cy = (i + 0.5) * sy, ux = u / sp, uy = v / sp;
+      const x0 = cx - ux * L / 2, y0 = cy - uy * L / 2, x1 = cx + ux * L / 2, y1 = cy + uy * L / 2;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+      ctx.moveTo(x1, y1); ctx.lineTo(x1 - L * 0.35 * (ux - uy * 0.6), y1 - L * 0.35 * (uy + ux * 0.6));
+      ctx.moveTo(x1, y1); ctx.lineTo(x1 - L * 0.35 * (ux + uy * 0.6), y1 - L * 0.35 * (uy - ux * 0.6));
+      ctx.stroke();
+    }
+  }
+  const [pi, pj] = sc.probe, dpr = devicePixelRatio || 1;
+  ctx.strokeStyle = css('--out'); ctx.lineWidth = Math.max(1, 1.2 * dpr);
+  ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(0, (pi + 0.5) * sy); ctx.lineTo(map.width, (pi + 0.5) * sy); ctx.stroke(); ctx.setLineDash([]);
+  ctx.beginPath(); ctx.arc((pj + 0.5) * sx, (pi + 0.5) * sy, Math.max(5, 4 * dpr), 0, 2 * Math.PI); ctx.lineWidth = 2.5; ctx.stroke();
+  // legend
+  const leg = $('leg'), lctx = leg.getContext('2d'), li = lctx.createImageData(leg.width, 1);
+  for (let x = 0; x < leg.width; x++) { palette(ui.layer, x / (leg.width - 1), rgb); li.data.set([rgb[0], rgb[1], rgb[2], 255], 4 * x); }
+  for (let y = 0; y < leg.height; y++) lctx.putImageData(li, 0, y);
+  const fmt = (v) => Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toPrecision(2);
+  if (ui.layer === 'h') { $('leg-name').textContent = 'depth'; $('leg-lo').textContent = showMin >= 0.01 ? '1 cm' : '1 mm'; $('leg-hi').textContent = sc.depthMax + ' m+'; }
+  else if (ui.layer === 's') { $('leg-name').textContent = 'speed'; $('leg-lo').textContent = '0'; $('leg-hi').textContent = sc.speedMax + ' m/s+'; }
+  else { $('leg-name').textContent = sc.sea != null ? 'surface vs sea level' : 'surface elev.'; $('leg-lo').textContent = fmt(sc.sea != null ? emin - sc.sea : emin); $('leg-hi').textContent = (sc.sea != null && emax - sc.sea > 0 ? '+' : '') + fmt(sc.sea != null ? emax - sc.sea : emax) + ' m'; }
+  $('coord').textContent = sc.coord(pi, pj);
+}
+
+function tunit() {
+  const t = S.t;
+  if (sc.bigTime || t > 3 * 3600) return { div: 3600, name: 'hours' };
+  if (t > 600) return { div: 60, name: 'minutes' };
+  return { div: 1, name: 'seconds' };
+}
+const fmtTime = (t) => {
+  if (t < 120) return t.toFixed(t < 10 ? 2 : 1) + ' s';
+  const hh = Math.floor(t / 3600), m = Math.floor((t - 3600 * hh) / 60), s = Math.floor(t % 60);
+  return (hh ? hh + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0');
+};
 
 function drawSection() {
   const [pi] = sc.probe, nx = S.nx, xs = [], zb = [], eta = [];
@@ -571,48 +796,50 @@ function drawSection() {
   const keys = [`<span><i style="color:var(--water)"></i>water surface (model)</span>`, `<span><i style="color:var(--muted)"></i>bed</span>`];
   if (sc.analyticSection) {
     const a = sc.analyticSection(pi, S.t);
-    if (a.xs.length) { series.push({ x: a.xs, y: a.ys, color: css('--out'), dash: [5, 3], width: 1.6 }); keys.push(`<span><i class="dash" style="color:var(--out)"></i>analytic</span>`); }
+    if (a.xs.length) { series.push({ x: a.xs, y: a.ys, color: css('--out'), dash: [5, 3], width: 1.6 }); keys.push(`<span><i class="dash" style="color:var(--out)"></i>exact</span>`); }
   }
-  const lo = sc.name === 'thacker' ? -0.1 : (sc.name === 'mcrobies' ? zmin : 0);
-  const hi = sc.name === 'thacker' ? 0.08 : (sc.name === 'mcrobies' ? zmax : 11);
-  chart($('section'), series, { ymin: lo, ymax: hi, pad: sc.name === 'mcrobies' ? 0.05 : 0, xlabel: sc.xLabel, ylabel: 'elevation (m)' });
+  const [lo, hi] = sc.ylim || [zmin, zmax];
+  chart($('section'), series, { ymin: lo, ymax: hi, pad: sc.ylim ? 0 : 0.05, xlabel: sc.xLabel, ylabel: 'elevation (m)' });
   $('sec-keys').innerHTML = keys.join('');
-  $('sec-title').textContent = 'Section along the dashed line, t = ' + mmss(S.t) + (sc.name === 'mcrobies' ? ' (vertical scale exaggerated)' : '');
+  $('sec-title').textContent = 'Section along the dashed line, t = ' + fmtTime(S.t) + (sc.exaggerate ? ' (vertical scale exaggerated)' : '');
 }
 
 function drawBudget() {
-  const t = hist.t.map((v) => sc.name === 'mcrobies' ? v / 60 : v);
+  const u = tunit(), t = hist.t.map((v) => v / u.div);
   chart($('budget'), [
     { x: t, y: hist.vin, color: css('--rain'), dash: [5, 3], width: 1.4 },
     { x: t, y: hist.stored, color: css('--water'), width: 2 },
     { x: t, y: hist.out, color: css('--out'), width: 2 },
-  ], { ymin: 0, pad: 0.08, xlabel: sc.name === 'mcrobies' ? 'minutes' : 'seconds', ylabel: 'm3' });
+  ], { ymin: 0, pad: 0.08, xlabel: u.name, ylabel: 'm3' });
 }
 
 function drawProbe() {
-  const t = hist.t.map((v) => sc.name === 'mcrobies' ? v / 60 : v);
-  const xl = sc.name === 'mcrobies' ? 'minutes' : 'seconds';
-  const series = [{ x: t, y: hist.ph, color: css('--water'), width: 2 }, { x: t, y: hist.ps, color: css('--out'), width: 1.6, axis2: true }];
-  chart($('probe'), series, { ymin: 0, pad: 0.1, right: true, xlabel: xl, ylabel: 'depth (m)' });
-  $('probe-keys').innerHTML = `<span><i style="color:var(--water)"></i>depth (m, left)</span><span><i style="color:var(--out)"></i>speed (m/s, right)</span>` +
+  const u = tunit(), t = hist.t.map((v) => v / u.div);
+  const sea = sc.sea != null;
+  chart($('probe'), [{ x: t, y: hist.ph, color: css('--water'), width: 2 }, { x: t, y: hist.ps, color: css('--out'), width: 1.6, axis2: true }],
+    { ymin: sea ? undefined : 0, pad: 0.1, right: true, xlabel: u.name, ylabel: sea ? 'surface vs sea level (m)' : 'depth (m)' });
+  $('probe-keys').innerHTML = `<span><i style="color:var(--water)"></i>${sea ? 'surface (m, left)' : 'depth (m, left)'}</span><span><i style="color:var(--out)"></i>speed (m/s, right)</span>` +
     (sc.error ? `<span class="mono">${sc.errorLabel}: ${(hist.err[hist.err.length - 1] ?? 0).toPrecision(3)}</span>` : '');
-  $('probe-title').textContent = 'Probe at the circle';
 }
 
 function drawStats() {
-  $('s-t').textContent = mmss(S.t);
-  $('s-x').textContent = ui.playing && speedX > 0 ? speedX.toFixed(speedX < 10 ? 1 : 0) + 'x' : '-';
+  $('s-t').textContent = fmtTime(S.t);
+  $('s-x').textContent = ui.playing && speedX > 0 ? (speedX >= 100 ? Math.round(speedX).toLocaleString('en') : speedX.toFixed(speedX < 10 ? 1 : 0)) + 'x' : '-';
   $('s-steps').textContent = S.steps.toLocaleString('en');
   $('s-dt').textContent = S.lastDt ? S.lastDt.toPrecision(3) : '-';
   const vol = S.volume();
-  const f = (v) => v >= 100 ? Math.round(v).toLocaleString('en') : v.toPrecision(3);
+  const f = (v) => Math.abs(v) >= 1e7 ? v.toExponential(2) : Math.abs(v) >= 100 ? Math.round(v).toLocaleString('en') : v.toPrecision(3);
   $('s-vol').textContent = f(vol); $('s-out').textContent = f(S.outflow);
   const tot = Math.max(S.volume0 + S.added + S.rainIn, 1e-30);
   const rel = Math.abs(S.budgetError()) / tot;
   const pill = $('s-err');
   pill.textContent = rel === 0 ? '0' : rel.toExponential(1);
   pill.className = 'pill ' + (rel < 1e-9 ? 'ok' : 'bad');
-  $('s-errnote').textContent = (sc.rate ? (sc.rainStopped ? 'Rain has stopped. ' : 'Raining. ') : '') + (S.clipped > 0 ? 'Depth clipped: ' + S.clipped.toExponential(1) + ' m3.' : '');
+  const bits = [];
+  if (sc.rate) bits.push(sc.rainStopped ? 'Rain has stopped.' : 'Raining.');
+  if (sc.lat) bits.push('Rotating at ' + Math.abs(sc.lat) + (sc.lat < 0 ? ' S' : ' N') + ' (f = ' + coriolis(sc.lat).toExponential(2) + ' /s).');
+  if (S.clipped > 0) bits.push('Depth clipped: ' + S.clipped.toExponential(1) + ' m3.');
+  $('s-errnote').textContent = bits.join(' ');
 }
 
 function draw() { if (!S) return; drawMap(); drawSection(); drawBudget(); drawProbe(); drawStats(); }
@@ -626,15 +853,25 @@ $('play').addEventListener('click', () => {
 });
 $('step').addEventListener('click', stepOnce);
 $('reset').addEventListener('click', reset);
-for (const id of ['scenario', 'order', 'res', 'rain', 'rainmin', 'manning', 'edges']) $(id).addEventListener('change', reset);
-function setLayer(l) { ui.layer = l; for (const [k, id] of [['h', 'lay-h'], ['s', 'lay-s'], ['e', 'lay-e']]) $(id).setAttribute('aria-pressed', String(k === l)); draw(); }
+$('scenario').addEventListener('change', () => { const n = $('scenario').value; showGroups(n); applyPreset(n); reset(); });
+$('shape').addEventListener('change', () => { renderParams($('shape').value); reset(); });
+for (const id of ['order', 'res', 'gnx', 'gny', 'gdx', 'namp', 'nscale', 'seed', 'rain', 'rainmin', 'sea', 'wave', 'wamp', 'wrad', 'manning', 'lat', 'edges']) $(id).addEventListener('change', reset);
+$('newseed').addEventListener('click', () => { $('seed').value = 1 + Math.floor(Math.random() * 99999); reset(); });
+$('file').addEventListener('change', async () => {
+  const f = $('file').files[0]; if (!f) return;
+  $('runstate').textContent = 'Reading ' + f.name + '...';
+  try { fileBed = await readGeoTIFF(f); $('file-note').textContent = fileBed.credit; reset(); }
+  catch (e) { $('runstate').textContent = 'Could not read that file: ' + e.message; }
+});
+function setLayer(l, redraw = true) { ui.layer = l; for (const [k, id] of [['h', 'lay-h'], ['s', 'lay-s'], ['e', 'lay-e']]) $(id).setAttribute('aria-pressed', String(k === l)); if (redraw) draw(); }
 $('lay-h').addEventListener('click', () => setLayer('h'));
 $('lay-s').addEventListener('click', () => setLayer('s'));
 $('lay-e').addEventListener('click', () => setLayer('e'));
 $('arrows').addEventListener('change', draw);
-function setTool(t) { ui.tool = t; $('tool-probe').setAttribute('aria-pressed', String(t === 'probe')); $('tool-add').setAttribute('aria-pressed', String(t === 'add')); }
+function setTool(t) { ui.tool = t; for (const [k, id] of [['probe', 'tool-probe'], ['add', 'tool-add'], ['lake', 'tool-lake']]) $(id).setAttribute('aria-pressed', String(k === t)); }
 $('tool-probe').addEventListener('click', () => setTool('probe'));
 $('tool-add').addEventListener('click', () => setTool('add'));
+$('tool-lake').addEventListener('click', () => setTool('lake'));
 $('map').addEventListener('pointerdown', (ev) => {
   if (!S) return;
   const r = ev.currentTarget.getBoundingClientRect();
@@ -643,19 +880,31 @@ $('map').addEventListener('pointerdown', (ev) => {
   if (ui.tool === 'probe') {
     sc.probe = [i, j];
     for (const k of ['ph', 'ps']) hist[k] = hist[k].map(() => null);
-  } else {
+  } else if (ui.tool === 'add') {
     S.addWater(i, j, sc.dropR, sc.dropD);
-    $('runstate').textContent = 'Added a ' + sc.dropD + ' m column, radius ' + sc.dropR + ' m.';
+    $('runstate').textContent = 'Added a ' + sc.dropD + ' m column, radius ' + +sc.dropR.toPrecision(3) + ' m.';
+  } else {
+    // fill to (water surface or bed here) + lake depth, over everything joined below that level
+    const z = S.field('z'), h = S.field('h'), nx = S.nx;
+    const level = z[i * nx + j] + h[i * nx + j] + Math.max(0, num('lakedepth', 3));
+    const eta = new Float64Array(z.length); for (let k = 0; k < z.length; k++) eta[k] = z[k] + h[k];
+    const add = fillLake(eta, nx, S.ny, i, j, level);
+    let v = 0;
+    for (let a = 0; a < S.ny; a++) for (let b = 0; b < nx; b++) { const dk = add[a * nx + b]; if (dk > 0) { S.h[S.id(a, b)] += dk; v += dk; } }
+    S.added += v * S.dx * S.dy;
+    $('runstate').textContent = 'Filled a lake to ' + level.toFixed(2) + ' m: ' + Math.round(v * S.dx * S.dy).toLocaleString('en') + ' m3.';
   }
   record(); draw();
 });
 let rz = 0;
 window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (S) { sizeCanvases(); draw(); } }, 120); });
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
-new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (S) draw(); });
+new MutationObserver(() => { if (S) draw(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
+// open on the dam break, running
+$('scenario').value = 'gen-dam';
+showGroups('gen-dam'); applyPreset('gen-dam');
 await reset();
-// open in a working state: the storm starts running straight away
 if (S) { ui.playing = true; updatePlay(); }
 requestAnimationFrame(tick);
 </script>

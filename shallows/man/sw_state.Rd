@@ -14,6 +14,7 @@ sw_state(
   dy = dx,
   manning = 0,
   rain = 0,
+  f = 0,
   g = 9.81,
   extent = NULL,
   crs = NULL
@@ -34,6 +35,10 @@ sw_state(
 \item{manning}{Manning n (s m^-1/3), matrix or scalar, 0 for frictionless}
 
 \item{rain}{rain rate (m/s), matrix or scalar}
+
+\item{f}{Coriolis parameter (1/s), matrix or scalar; 0 for no rotation.
+Positive in the northern hemisphere, negative in the southern; see
+[sw_coriolis()]}
 
 \item{g}{gravity (m/s^2)}
 

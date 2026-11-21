@@ -11,8 +11,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // swe_run_cpp
-List swe_run_cpp(NumericMatrix h, NumericMatrix hu, NumericMatrix hv, NumericMatrix z, NumericMatrix manning, NumericMatrix rain, double dx, double dy, double g, NumericVector times, double cfl, int order, IntegerVector bc, double hdry, int max_steps, double dt_max);
-RcppExport SEXP _shallows_swe_run_cpp(SEXP hSEXP, SEXP huSEXP, SEXP hvSEXP, SEXP zSEXP, SEXP manningSEXP, SEXP rainSEXP, SEXP dxSEXP, SEXP dySEXP, SEXP gSEXP, SEXP timesSEXP, SEXP cflSEXP, SEXP orderSEXP, SEXP bcSEXP, SEXP hdrySEXP, SEXP max_stepsSEXP, SEXP dt_maxSEXP) {
+List swe_run_cpp(NumericMatrix h, NumericMatrix hu, NumericMatrix hv, NumericMatrix z, NumericMatrix manning, NumericMatrix rain, NumericMatrix fcor, double dx, double dy, double g, NumericVector times, double cfl, int order, IntegerVector bc, double hdry, int max_steps, double dt_max);
+RcppExport SEXP _shallows_swe_run_cpp(SEXP hSEXP, SEXP huSEXP, SEXP hvSEXP, SEXP zSEXP, SEXP manningSEXP, SEXP rainSEXP, SEXP fcorSEXP, SEXP dxSEXP, SEXP dySEXP, SEXP gSEXP, SEXP timesSEXP, SEXP cflSEXP, SEXP orderSEXP, SEXP bcSEXP, SEXP hdrySEXP, SEXP max_stepsSEXP, SEXP dt_maxSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -22,6 +22,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericMatrix >::type z(zSEXP);
     Rcpp::traits::input_parameter< NumericMatrix >::type manning(manningSEXP);
     Rcpp::traits::input_parameter< NumericMatrix >::type rain(rainSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type fcor(fcorSEXP);
     Rcpp::traits::input_parameter< double >::type dx(dxSEXP);
     Rcpp::traits::input_parameter< double >::type dy(dySEXP);
     Rcpp::traits::input_parameter< double >::type g(gSEXP);
@@ -32,13 +33,13 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type hdry(hdrySEXP);
     Rcpp::traits::input_parameter< int >::type max_steps(max_stepsSEXP);
     Rcpp::traits::input_parameter< double >::type dt_max(dt_maxSEXP);
-    rcpp_result_gen = Rcpp::wrap(swe_run_cpp(h, hu, hv, z, manning, rain, dx, dy, g, times, cfl, order, bc, hdry, max_steps, dt_max));
+    rcpp_result_gen = Rcpp::wrap(swe_run_cpp(h, hu, hv, z, manning, rain, fcor, dx, dy, g, times, cfl, order, bc, hdry, max_steps, dt_max));
     return rcpp_result_gen;
 END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_shallows_swe_run_cpp", (DL_FUNC) &_shallows_swe_run_cpp, 16},
+    {"_shallows_swe_run_cpp", (DL_FUNC) &_shallows_swe_run_cpp, 17},
     {NULL, NULL, 0}
 };
 
