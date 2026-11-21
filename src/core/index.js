@@ -62,3 +62,4 @@ export * as palette from "./palette.js";
 export * as meshframe from "./meshframe.js";
 export * as voxels from "./voxels.js";
 export * as story from "./story.js";
+export * as shallows from "./shallows.js";

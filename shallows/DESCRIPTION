@@ -1,0 +1,19 @@
+Package: shallows
+Title: Well-Balanced Shallow Water Simulation on Raster Grids
+Version: 0.0.0.9000
+Authors@R: person("Michael", "Sumner", email = "mdsumner@gmail.com", role = c("aut", "cre"))
+Description: Prototype two-dimensional shallow water (Saint-Venant) solver on
+    regular grids. First- or second-order finite volume scheme with the HLL
+    Riemann solver and hydrostatic reconstruction (Audusse et al. 2004), so
+    that lakes at rest are preserved exactly and depth stays non-negative over
+    wetting and drying terrain. Manning bed friction, rain, wall and open
+    boundaries, and a mass budget that closes to round-off. Includes analytic
+    benchmark solutions (Ritter and Stoker dam breaks, Thacker paraboloid)
+    used for validation.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LinkingTo: Rcpp
+Imports: Rcpp
+Suggests: terra, testthat (>= 3.0.0)
+Config/testthat/edition: 3
+RoxygenNote: 7.3.1
