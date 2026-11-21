@@ -117,3 +117,10 @@ so water ponds behind road fill that in reality has pipes through it.
 * Delestre, O., Darboux, F., James, F., Lucas, C., Laguerre, C. and
   Cordier, S. (2017). FullSWOF: full shallow-water equations for overland
   flow. J. Open Source Softw. 2(20), 448.
+
+## Browser viewer
+
+`../shallows.html` (with `../src/core/shallows.js`) runs the same scheme in the
+browser, ported line for line from `src/swe.cpp`, with depth, speed, water
+budget, probe and section views, on McRobies Gully terrain and the analytic
+benchmarks. `../test/check-shallows.mjs` checks the port.

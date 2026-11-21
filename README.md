@@ -1180,6 +1180,21 @@ Hash keys: `lon`, `lat`, `ext` (km), `n` (cells across), `src` (`dem`,
 0 for storeys), `qu` (`t`, `m3`), `mat`, `shape` (`cube`, `slab`, `pit`),
 `story` (a preset; keys the link also names win), `cam`.
 
+## Shallow water
+
+`shallows.html` runs a two-dimensional shallow water solver live in the page.
+`src/core/shallows.js` is a port of the C++ kernel of the `shallows/` R
+package (HLL flux, hydrostatic reconstruction, wetting and drying, Manning
+friction, rain); on the same inputs the two agree to 1e-12 or better. Four
+scenarios: rain on a 1.2 km tile of the Tasmania 2 m DEM around McRobies Gully
+(`data/shallows/mcrobies-bed-4m.json`, 4 m or 8 m cells), the Thacker bowl,
+and Stoker and Ritter dam breaks, the last three with the analytic solution
+drawn beside the model. Panels show depth, speed or surface elevation with
+flow arrows, the water budget (it should stay near 1e-12), a probe time series
+and a section along the probe's row. Click to move the probe or to drop a
+column of water. The terrain run is for illustration only, not survey,
+engineering or planning data.
+
 ## Share and embed
 
 The view state lives in the URL hash, so a link reproduces what you see:
@@ -1287,6 +1302,7 @@ cutaway.html (sondage)                 Cutaway: a section and block diagram thro
 voxels.html, js/voxels.js              Voxels: GEBCO topography as voxel columns, three cell systems, MagicaVoxel export
 voxels-gallery.html, js/voxels-gallery.js  Voxel gallery: preset blocks live in an embedded frame, with links and embeds
 story.html, js/story.js                Story: a block of storeys set down on draped terrain (2 m DEM or GEBCO, Esri imagery)
+shallows.html                          Shallow water: the shallows solver live on McRobies Gully terrain and analytic benchmarks
 
 js/data.js          loads the coastlines in data/
 js/dem-load.js      opens a projected elevation COG (UTM or MGA) and reads the window a block needs
