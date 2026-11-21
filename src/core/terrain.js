@@ -1,5 +1,6 @@
 // Synthetic terrain for the shallow water model, matched number for number
-// by the shallows R package (shallows/R/generate.R): the same shape, size
+// by the shallows R package (R/generate.R in
+// https://github.com/hypertidy/shallows): the same shape, size
 // and seed give the same bed in R and here.
 //
 // Grids are row-major, ny rows by nx columns, row 0 at the north (top) edge.

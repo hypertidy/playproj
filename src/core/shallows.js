@@ -1,6 +1,6 @@
 // Shallow water solver: a line-for-line port of the shallows R package's
-// C++ kernel (shallows/src/swe.cpp), so the browser and R give the same
-// numbers.
+// C++ kernel (src/swe.cpp in https://github.com/hypertidy/shallows), so the
+// browser and R give the same numbers.
 //
 // Finite volume, HLL flux, hydrostatic reconstruction (Audusse et al. 2004):
 // well balanced, depth stays non-negative, cells wet and dry.
