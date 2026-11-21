@@ -25,7 +25,7 @@ namespace {
 
 const int NG = 2;
 
-enum Bc { WALL = 0, OPEN = 1 };
+enum Bc { WALL = 0, OPEN = 1, PERIODIC = 2 };
 
 struct Grid {
   int nx, ny, NX, NY;
@@ -69,13 +69,15 @@ struct Solver {
   Grid G;
   std::vector<double> z;     // bed, with ghosts
   std::vector<double> nman;  // Manning n per cell (with ghosts)
+  std::vector<double> fcor;  // Coriolis parameter per cell (1/s), 0 for none
+  bool rotating = false;
   int bc[4];                 // west, east, north (row 0 side), south (row ny-1 side)
   int order;
   double hdry;               // below this depth velocity is taken as zero
   // boundary mass flux accumulated over one evaluation of the RHS (m^3/s out)
   double outflow_rate;
 
-  Solver(const Grid& g) : G(g), z(g.size(), 0.0), nman(g.size(), 0.0),
+  Solver(const Grid& g) : G(g), z(g.size(), 0.0), nman(g.size(), 0.0), fcor(g.size(), 0.0),
     order(1), hdry(1e-6), outflow_rate(0.0), clipped(0.0) {}
 
   // Desingularised velocity (Kurganov and Petrova 2007): equals q / h for
@@ -87,13 +89,20 @@ struct Solver {
     return std::sqrt(2.0) * h * q / std::sqrt(h4 + std::max(h4, e4));
   }
 
+  // interior index copied into ghost k (1, 2) on the low (west / north) or
+  // high (east / south) side of an axis of n cells
+  static inline int src(int b, int k, int n, bool low) {
+    if (b == WALL) return low ? (k - 1) : (n - k);
+    if (b == PERIODIC) return low ? (n - k) : (k - 1);
+    return low ? 0 : (n - 1);
+  }
+
   void fill_ghosts(State& s) const {
     // columns (west / east)
     for (int i = 0; i < G.ny; i++) {
       for (int k = 1; k <= NG; k++) {
         int jw = -k, je = G.nx - 1 + k;
-        int sw = (bc[0] == WALL) ? (k - 1) : 0;
-        int se = (bc[1] == WALL) ? (G.nx - k) : (G.nx - 1);
+        int sw = src(bc[0], k, G.nx, true), se = src(bc[1], k, G.nx, false);
         int a = G.id(i, jw), b = G.id(i, sw), c = G.id(i, je), d = G.id(i, se);
         s.h[a] = s.h[b]; s.hv[a] = s.hv[b];
         s.hu[a] = (bc[0] == WALL) ? -s.hu[b] : s.hu[b];
@@ -105,8 +114,7 @@ struct Solver {
     for (int j = -NG; j < G.nx + NG; j++) {
       for (int k = 1; k <= NG; k++) {
         int in = -k, is = G.ny - 1 + k;
-        int sn = (bc[2] == WALL) ? (k - 1) : 0;
-        int ss = (bc[3] == WALL) ? (G.ny - k) : (G.ny - 1);
+        int sn = src(bc[2], k, G.ny, true), ss = src(bc[3], k, G.ny, false);
         int a = G.id(in, j), b = G.id(sn, j), c = G.id(is, j), d = G.id(ss, j);
         s.h[a] = s.h[b]; s.hu[a] = s.hu[b];
         s.hv[a] = (bc[2] == WALL) ? -s.hv[b] : s.hv[b];
@@ -118,14 +126,12 @@ struct Solver {
 
   void fill_bed_ghosts() {
     for (int i = 0; i < G.ny; i++) for (int k = 1; k <= NG; k++) {
-      int sw = (bc[0] == WALL) ? (k - 1) : 0;
-      int se = (bc[1] == WALL) ? (G.nx - k) : (G.nx - 1);
+      int sw = src(bc[0], k, G.nx, true), se = src(bc[1], k, G.nx, false);
       z[G.id(i, -k)] = z[G.id(i, sw)];  nman[G.id(i, -k)] = nman[G.id(i, sw)];
       z[G.id(i, G.nx - 1 + k)] = z[G.id(i, se)]; nman[G.id(i, G.nx - 1 + k)] = nman[G.id(i, se)];
     }
     for (int j = -NG; j < G.nx + NG; j++) for (int k = 1; k <= NG; k++) {
-      int sn = (bc[2] == WALL) ? (k - 1) : 0;
-      int ss = (bc[3] == WALL) ? (G.ny - k) : (G.ny - 1);
+      int sn = src(bc[2], k, G.ny, true), ss = src(bc[3], k, G.ny, false);
       z[G.id(-k, j)] = z[G.id(sn, j)]; nman[G.id(-k, j)] = nman[G.id(sn, j)];
       z[G.id(G.ny - 1 + k, j)] = z[G.id(ss, j)]; nman[G.id(G.ny - 1 + k, j)] = nman[G.id(ss, j)];
     }
@@ -262,16 +268,20 @@ struct Solver {
   // the usual (|u| + c) / dx sum and A the bed acceleration term.
   double stable_dt(const State& s, double cfl, double dt_cap) const {
     double dt = dt_cap;
+    bool wet = false;
     for (int i = 0; i < G.ny; i++) for (int j = 0; j < G.nx; j++) {
       int c = G.id(i, j);
       double h = s.h[c];
       if (h <= 0.0) continue;
+      wet = true;
       double cw = std::sqrt(G.g * h);
       double B = (std::fabs(vel(h, s.hu[c])) + cw) / G.dx + (std::fabs(vel(h, s.hv[c])) + cw) / G.dy;
       double A = acc[c];
       double d = (A > 0.0) ? 2.0 * cfl / (B + std::sqrt(B * B + 4.0 * A * cfl)) : cfl / B;
       if (d < dt) dt = d;
     }
+    // a dry grid has no wave speed: take 1 s steps (rain on dry ground)
+    if (!wet) dt = std::min(dt, 1.0);
     return dt;
   }
 
@@ -288,6 +298,22 @@ struct Solver {
         s.hu[c] = s.h[c] * vel(s.h[c], s.hu[c]);
         s.hv[c] = s.h[c] * vel(s.h[c], s.hv[c]);
       }
+    }
+  }
+
+  // Coriolis as an exact rotation of the momentum vector (energy preserving).
+  // With north-positive momentum (U, V) = (hu, -hv): dU/dt = f V,
+  // dV/dt = -f U, a clockwise turn by f dt for f > 0 (northern hemisphere).
+  void coriolis(State& s, double dt) const {
+    if (!rotating) return;
+    for (int i = 0; i < G.ny; i++) for (int j = 0; j < G.nx; j++) {
+      int c = G.id(i, j);
+      double f = fcor[c];
+      if (f == 0.0 || s.h[c] <= 0.0) continue;
+      double th = f * dt, cs = std::cos(th), sn = std::sin(th);
+      double U = s.hu[c], V = -s.hv[c];
+      s.hu[c] = U * cs + V * sn;
+      s.hv[c] = -(-U * sn + V * cs);
     }
   }
 
@@ -325,7 +351,7 @@ double volume(const Grid& G, const State& s) {
 
 // [[Rcpp::export]]
 List swe_run_cpp(NumericMatrix h, NumericMatrix hu, NumericMatrix hv, NumericMatrix z,
-                 NumericMatrix manning, NumericMatrix rain,
+                 NumericMatrix manning, NumericMatrix rain, NumericMatrix fcor,
                  double dx, double dy, double g,
                  NumericVector times, double cfl, int order,
                  IntegerVector bc, double hdry, int max_steps, double dt_max) {
@@ -336,6 +362,8 @@ List swe_run_cpp(NumericMatrix h, NumericMatrix hu, NumericMatrix hv, NumericMat
   for (int k = 0; k < 4; k++) S.bc[k] = bc[k];
   from_matrix(G, z, S.z);
   from_matrix(G, manning, S.nman);
+  from_matrix(G, fcor, S.fcor);
+  for (double v : S.fcor) if (v != 0.0) { S.rotating = true; break; }
   S.fill_bed_ghosts();
   S.bed_accel();
   std::vector<double> rainv(G.size(), 0.0);
@@ -365,6 +393,7 @@ List swe_run_cpp(NumericMatrix h, NumericMatrix hu, NumericMatrix hv, NumericMat
       // taken to land exactly on an output time
       dmin = std::min(dmin, dt); dmax = std::max(dmax, dt);
       if (t + dt > target) dt = target - t;
+      S.coriolis(U, 0.5 * dt);   // Strang splitting: half turn, flow step, half turn
       S.rhs(U, R1);
       double out1 = S.outflow_rate;
       if (order == 1) {
@@ -393,6 +422,7 @@ List swe_run_cpp(NumericMatrix h, NumericMatrix hu, NumericMatrix hv, NumericMat
         rain_total += dt * rain_rate_vol;
       }
       S.friction(U, dt);
+      S.coriolis(U, 0.5 * dt);
       S.clean(U);
       t += dt;
       steps++;

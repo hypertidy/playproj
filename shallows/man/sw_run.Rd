@@ -12,7 +12,7 @@ sw_run(
   bc = "wall",
   hdry = 1e-05,
   max_steps = 1e+07,
-  dt_max = 1
+  dt_max = Inf
 )
 }
 \arguments{
@@ -25,14 +25,15 @@ sw_run(
 \item{cfl}{Courant number; 0.5 is safe for this unsplit scheme}
 
 \item{bc}{boundary per edge, named `west`, `east`, `north`, `south`,
-each "wall" or "open"; a single value applies to all}
+each "wall", "open" or "periodic"; a single value applies to all.
+Periodic edges come in pairs (west with east, north with south)}
 
 \item{hdry}{depth below which a cell's velocity is taken as zero}
 
 \item{max_steps}{safety limit on time steps}
 
-\item{dt_max}{largest time step (s), used while the grid is dry or
-still (rain on a dry grid, for example)}
+\item{dt_max}{largest time step (s); the CFL limit usually decides. A
+completely dry grid steps at 1 s (rain on dry ground)}
 }
 \value{
 list with `h`, `hu`, `hv` (lists of matrices, one per time),

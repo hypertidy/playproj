@@ -14,12 +14,13 @@ sw_run_r(state, times, cfl = 0.45, bc = "wall", hdry = 1e-05, dt_max = 1)
 \item{cfl}{Courant number; 0.5 is safe for this unsplit scheme}
 
 \item{bc}{boundary per edge, named `west`, `east`, `north`, `south`,
-each "wall" or "open"; a single value applies to all}
+each "wall", "open" or "periodic"; a single value applies to all.
+Periodic edges come in pairs (west with east, north with south)}
 
 \item{hdry}{depth below which a cell's velocity is taken as zero}
 
-\item{dt_max}{largest time step (s), used while the grid is dry or
-still (rain on a dry grid, for example)}
+\item{dt_max}{largest time step (s); the CFL limit usually decides. A
+completely dry grid steps at 1 s (rain on dry ground)}
 }
 \description{
 The same first-order scheme as [sw_run()] with `order = 1`, written as

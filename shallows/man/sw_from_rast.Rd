@@ -7,7 +7,9 @@
 sw_from_rast(dem, ...)
 }
 \arguments{
-\item{dem}{SpatRaster (projected CRS, metres)}
+\item{dem}{SpatRaster in metres: projected CRS, or none for a generated
+bed ([sw_generate()]); a `z` layer is used if there are several
+([sw_extract()])}
 
 \item{...}{passed to [sw_state()] (h, eta, manning, rain, ...)}
 }

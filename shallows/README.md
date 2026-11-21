@@ -88,11 +88,53 @@ so water ponds behind road fill that in reality has pipes through it.
   with CRS kept, results back as rasters, a budget on every run, and code
   small enough to read and extend.
 
+## Terrain: extract a real place or generate one
+
+`sw_extract(lon, lat, size, res)` gives a bed for any place as a square local
+metre grid (UTM, or polar stereographic beyond 80 S and 84 N), read through
+GDAL straight from cloud COGs. The finest source that covers a cell wins and
+gaps are filled from the next: the Tasmania 2 m DEM (LIST), then Copernicus
+GLO-30, then GEBCO for the sea floor (GLO-30 sea cells at 0 m take GEBCO
+where it is below sea level). The result has a `z` layer and a `source`
+layer saying which source each cell came from, and goes straight into
+`sw_from_rast()`.
+
+```r
+bed <- sw_extract(147.45, -43.05, size = 40000, res = 200)  # Storm Bay
+s <- sw_from_rast(bed, eta = 0)
+```
+
+`sw_generate()` makes beds you can reason about: `plane`, `valley`, `bowl`,
+`shelf`, `island` and `reservoir` (a valley with a dam, intact or breached),
+with optional fractal roughness (`noise = list(amp, scale, octaves, gain,
+seed)`). The hash and noise are written so the same shape, size and seed give
+the same bed in R and in the browser (`src/core/terrain.js`), to 1e-13.
+`sw_fill_lake()` and `sw_fill_sea()` start water standing at a level in a
+connected hollow or in everything open to the edge.
+
+```r
+z <- sw_generate("reservoir", nx = 300, ny = 80, dx = 5, breach = 20)
+lake <- sw_fill_lake(sw_generate("reservoir", nx = 300, ny = 80, dx = 5, as = "matrix"),
+                     i0 = 40, j0 = 100, level = 14)
+s <- sw_from_rast(z, h = lake)
+```
+
+## Earth rotation
+
+`sw_state(f = )` takes a Coriolis parameter (s^-1), one value or a matrix;
+`sw_coriolis()` gives it from latitudes or, per cell, from a SpatRaster's
+CRS. The rotation is applied exactly (Strang half turns around the flow
+step), so an inertial oscillation keeps its speed to rounding and turns
+clockwise in the northern hemisphere. Checks: a Kelvin wave stays trapped
+against the right-hand wall (relative L2 0.09 at order 2, 10 km cells), and
+geostrophic adjustment converges with the grid (surface error 4.5, 2.0, 0.8%
+at 10, 5, 2.5 km). Edges can be `"periodic"` (in pairs) for channels and
+doubly periodic basins.
+
 ## Limits and next steps
 
-* Cartesian grid in a projected CRS only. Ocean scales (tsunami, tide,
-  seiches in a basin on GEBCO) need Coriolis and spherical metric terms; both
-  are small additions to this scheme.
+* Cartesian grid in a projected CRS only. Coriolis is in; ocean basin
+  scales still need spherical metric terms.
 * Explicit time stepping: steps are set by the fastest, deepest water, so a
   2 m grid costs about eight times a 4 m grid per simulated minute.
 * No infiltration (Green-Ampt would be next), no land-cover roughness map
@@ -122,5 +164,9 @@ so water ponds behind road fill that in reality has pipes through it.
 
 `../shallows.html` (with `../src/core/shallows.js`) runs the same scheme in the
 browser, ported line for line from `src/swe.cpp`, with depth, speed, water
-budget, probe and section views, on McRobies Gully terrain and the analytic
-benchmarks. `../test/check-shallows.mjs` checks the port.
+budget, probe and section views. Scenarios: generated beds (dam break,
+rain on rough hills, island wave, rotating basin, make your own from any
+shape and seed), real beds (McRobies Gully, Storm Bay as extracted by
+`sw_extract()`), any GeoTIFF you open, and the analytic benchmarks.
+`../test/check-shallows.mjs` and `../test/check-terrain.mjs` check the port
+and the generator against this package.

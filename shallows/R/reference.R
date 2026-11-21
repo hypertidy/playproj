@@ -10,7 +10,8 @@
 sw_run_r <- function(state, times, cfl = 0.45, bc = "wall", hdry = 1e-5, dt_max = 1) {
   s <- state
   g <- s$g; dx <- s$dx; dy <- s$dy
-  bcv <- .bc(bc)  # 0 wall, 1 open: west, east, north, south
+  bcv <- .bc(bc)  # 0 wall, 1 open, 2 periodic: west, east, north, south
+  if (!is.null(s$f) && any(s$f != 0)) stop("the plain R reference has no Coriolis term; use sw_run()")
   h <- s$h; hu <- s$hu; hv <- s$hv; z <- s$z
   ny <- nrow(z); nx <- ncol(z)
   # desingularised velocity (Kurganov and Petrova 2007)
@@ -18,11 +19,12 @@ sw_run_r <- function(state, times, cfl = 0.45, bc = "wall", hdry = 1e-5, dt_max 
 
   # pad with one ghost cell on every side
   pad <- function(a, sign_x = 1, sign_y = 1) {
-    w <- if (bcv[1] == 1) a[, 1] else a[, 1] * sign_x
-    e <- if (bcv[2] == 1) a[, nx] else a[, nx] * sign_x
+    # 0 wall (mirror, normal momentum negated), 1 open (copy), 2 periodic (wrap)
+    w <- switch(bcv[1] + 1, a[, 1] * sign_x, a[, 1], a[, nx])
+    e <- switch(bcv[2] + 1, a[, nx] * sign_x, a[, nx], a[, 1])
     a <- cbind(w, a, e)
-    n <- if (bcv[3] == 1) a[1, ] else a[1, ] * sign_y
-    so <- if (bcv[4] == 1) a[ny, ] else a[ny, ] * sign_y
+    n <- switch(bcv[3] + 1, a[1, ] * sign_y, a[1, ], a[ny, ])
+    so <- switch(bcv[4] + 1, a[ny, ] * sign_y, a[ny, ], a[1, ])
     unname(rbind(n, a, so))
   }
   hll <- function(hl, ul, vl, hr, ur, vr) {
