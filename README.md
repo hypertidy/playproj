@@ -1183,10 +1183,12 @@ Hash keys: `lon`, `lat`, `ext` (km), `n` (cells across), `src` (`dem`,
 ## Shallow water
 
 `shallows.html` runs a two-dimensional shallow water solver live in the page.
-`src/core/shallows.js` is a port of the C++ kernel of the `shallows/` R
-package (HLL flux, hydrostatic reconstruction, wetting and drying, Manning
-friction, rain, Earth rotation, periodic edges); on the same inputs the two
-agree to 1e-12 or better. `src/core/terrain.js` generates beds (plane,
+`src/core/shallows.js` is a port of the C++ kernel of the
+[shallows](https://github.com/hypertidy/shallows) R package (HLL flux,
+hydrostatic reconstruction, wetting and drying, Manning friction, rain, Earth
+rotation, periodic edges); on the same inputs the two agree to 1e-12 or
+better. The package began here and now has its own repository; install it
+with `remotes::install_github("hypertidy/shallows")`. `src/core/terrain.js` generates beds (plane,
 valley, bowl, shelf, island, reservoir, with seeded fractal roughness)
 exactly as the R package's `sw_generate()` does, and fills lakes and seas to
 a level. Scenarios: generated beds (dam break, rain on rough hills, island

@@ -1,5 +1,6 @@
 // Terrain generator and flood fills: values match the shallows R package
-// (shallows/R/generate.R), which computed the references below.
+// (R/generate.R in https://github.com/hypertidy/shallows), which computed
+// the references below.
 import { terrain, shallows } from "../src/core/index.js";
 
 let fail = 0;
