@@ -1187,7 +1187,9 @@ Hash keys: `lon`, `lat`, `ext` (km), `n` (cells across), `src` (`dem`,
 [shallows](https://github.com/hypertidy/shallows) R package (HLL flux,
 hydrostatic reconstruction, wetting and drying, Manning friction, rain, Earth
 rotation, periodic edges); on the same inputs the two agree to 1e-12 or
-better. The package began here and now has its own repository; install it
+better, checked by `test/check-shallows-parity.mjs` against
+`test/fixtures/shallows/parity.json`, a copy of the parity file the package
+writes. The package began here and now has its own repository; install it
 with `remotes::install_github("hypertidy/shallows")`. `src/core/terrain.js` generates beds (plane,
 valley, bowl, shelf, island, reservoir, with seeded fractal roughness)
 exactly as the R package's `sw_generate()` does, and fills lakes and seas to
