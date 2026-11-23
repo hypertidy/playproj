@@ -318,6 +318,70 @@ export function oddCalendar(calendar) {
   return !["standard", "gregorian", "proleptic_gregorian", "utc", "tai"].includes(c);
 }
 
+// ---------------------------------------------------------------- fill values
+
+// A _FillValue or missing_value attribute as numbers: a number, a list of
+// them, "NaN" and the like, or a float as xarray writes it in Zarr v3
+// attributes (base64 of the 8 bytes of a little-endian double).
+export function attrFill(a) {
+  if (typeof a === "number") return [a];
+  if (typeof a === "bigint") return [Number(a)];
+  if (Array.isArray(a)) return a.flatMap(attrFill);
+  if (typeof a !== "string") return [];
+  const t = a.trim(), named = { NaN: NaN, Infinity: Infinity, "-Infinity": -Infinity };
+  if (t in named) return [named[t]];
+  if (/^[A-Za-z0-9+/]{11}=$/.test(t)) {
+    const bin = atob(t), b = new Uint8Array(8);
+    for (let i = 0; i < 8; i++) b[i] = bin.charCodeAt(i);
+    return [new DataView(b.buffer).getFloat64(0, true)];
+  }
+  return t !== "" && Number.isFinite(+t) ? [+t] : [];
+}
+
+// ---------------------------------------------------------------- profiles
+
+// A collection of profiles (a CF discrete sampling geometry, as Argo and
+// MEOP files have them): a variable on (profile, level) with one latitude
+// and longitude per profile, 1D arrays along the profile dimension. From
+// the variable's dims and attributes and the arrays beside it ({ name,
+// dims, attrs }), the names of their roles:
+//   instance  the profile dimension; level  the other one
+//   lat, lon  a position per profile; time  a CF time per profile, if any
+//   z         pressure or depth, per (profile, level) or per level, if any
+//   group     which platform or file each profile came from, if any (a
+//             trajectory_id, or an index into a source_names attribute)
+// or null where it is not one. A grid's lat(lat) and lon(lon) are each on
+// their own dimension, so a grid is never taken for one.
+export function profileRoles(vdims, vattrs, arrays) {
+  if (!Array.isArray(vdims) || vdims.length !== 2 || vdims[0] === vdims[1]) return null;
+  const listed = new Set(typeof (vattrs || {}).coordinates === "string" ? vattrs.coordinates.split(/\s+/) : []);
+  // the best-scoring array, those the variable lists as its coordinates first
+  const best = (list, score) => {
+    let top = null, hi = 0;
+    for (const a of list) {
+      const sc = score(a.attrs || {}, a.name);
+      if (sc > 0 && sc + (listed.has(a.name) ? 100 : 0) > hi) { hi = sc + (listed.has(a.name) ? 100 : 0); top = a.name; }
+    }
+    return top;
+  };
+  for (const d of vdims) {
+    const on = arrays.filter((a) => Array.isArray(a.dims) && a.dims.length === 1 && a.dims[0] === d && a.name !== d);
+    const lat = best(on, (at, n) => (axisRole(n, at) === "lat" ? 1 : 0));
+    const lon = best(on, (at, n) => (axisRole(n, at) === "lon" ? 1 : 0));
+    if (!lat || !lon) continue;
+    const level = vdims.find((x) => x !== d);
+    const time = best(on, (at, n) => (/\bsince\b/.test(String(at.units || "")) ?
+      1 + (at.standard_name === "time" ? 8 : 0) + (at.axis === "T" ? 4 : 0) + (/^(time|juld)$/i.test(n) ? 2 : 0) : 0));
+    const zs = arrays.filter((a) => Array.isArray(a.dims) && (String(a.dims) === String(vdims) || (a.dims.length === 1 && a.dims[0] === level)));
+    const z = best(zs, (at, n) => (/^(sea_water_pressure|depth|altitude|height|air_pressure)/.test(String(at.standard_name || "")) ? 8 : 0) +
+      (at.axis === "Z" ? 4 : 0) + (at.positive === "up" || at.positive === "down" ? 2 : 0) +
+      (/^(pres|pressure|depth|z|lev|level|plev|deptht)$/i.test(n) ? 2 : 0));
+    const group = best(on, (at) => (at.cf_role === "trajectory_id" || Array.isArray(at.source_names) ? 1 : 0));
+    return { instance: d, level, lat, lon, time, z, group };
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------- the grid
 
 // One description of where the cells are, from what the store gave:

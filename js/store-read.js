@@ -9,7 +9,7 @@
 import { IcechunkStore } from "icechunk-js";
 import * as zarr from "zarrita";
 import { zarrStructure, parseCrsRef } from "../src/core/structure.js";
-import { cfProj, axisRole, axisOf, unitScale, gridOf, LAT_NAMES, LON_NAMES } from "../src/core/storecrs.js";
+import { cfProj, axisRole, axisOf, unitScale, gridOf, attrFill, profileRoles, LAT_NAMES, LON_NAMES } from "../src/core/storecrs.js";
 
 const ICECHUNK = "icechunk+";
 const dec = new TextDecoder();
@@ -342,6 +342,65 @@ export async function describeVariable(s, path, opts = {}) {
   if (!grid) notes.push("nothing in the store says where the cells are: drawn in index space");
   if (!crs && !curv) notes.push("no CRS found");
   return { path, meta, dims, ix, iy, role, grid, crs, crsFrom, gm: gma, notes, abiLike };
+}
+
+// ---------------------------------------------------------------- profiles
+
+// A collection of profiles at the variable v (storecrs.profileRoles), or
+// null: the roles, the number of profiles, and the arrays beside v that
+// hold one value per profile ({ name, path, dims, attrs, dtype, shape }).
+export async function describeProfiles(s, v) {
+  if (v.grid || v.meta.shape.length !== 2 || !Array.isArray(v.meta.dims)) return null;
+  const dir = parentOf(v.path);
+  let list;
+  try { list = s.listArrays ? await s.listArrays() : s.arrays(); } catch (e) { return null; }
+  const near = list.filter((a) => parentOf(a.path) === dir && Array.isArray(a.dims) &&
+    (a.dims.length === 1 ? v.dims.includes(a.dims[0]) : String(a.dims) === String(v.dims)));
+  const arrays = [];
+  for (const a of near) {
+    const m = await nodeMeta(s, a.path).catch(() => null);
+    if (m && !m.group) arrays.push({ name: a.path.slice(dir ? dir.length + 1 : 0), path: a.path, dims: m.dims || a.dims, attrs: m.attrs, dtype: m.dtype, shape: m.shape });
+  }
+  const roles = profileRoles(v.dims, v.meta.attrs, arrays);
+  if (!roles) return null;
+  const by = Object.fromEntries(arrays.map((a) => [a.name, a]));
+  return { ...roles, n: v.meta.shape[v.dims.indexOf(roles.instance)], nLevels: v.meta.shape[v.dims.indexOf(roles.level)],
+    perProfile: arrays.filter((a) => a.dims.length === 1 && a.dims[0] === roles.instance), by };
+}
+
+// CF masking: the values a _FillValue or missing_value attribute names, as
+// NaN. Zarr's own fill_value is not among them for an array read whole (it
+// is what a missing chunk reads as, and a real 0 can share it), nor are
+// valid_min and valid_max, as xarray leaves them (a seal's -2.1 degree
+// water is real under a valid_min of -2).
+function masked(data, attrs, extra = []) {
+  const fills = new Set([...attrFill(attrs._FillValue), ...attrFill(attrs.missing_value), ...extra]);
+  return Float64Array.from(data, (x) => { x = Number(x); return fills.has(x) ? NaN : x; });
+}
+
+// One array of a value per profile, read whole (CF fill and scale applied)
+export async function readPerProfile(s, a, max = 5e6) {
+  const r = await read1d(s, a.path, max);
+  if (!r) return null;
+  return { values: masked(r.values, a.attrs), raw: r.values, attrs: a.attrs };
+}
+
+// Profile i of the collection p at v: its values along the level dimension
+// (one chunk where the store keeps a chunk per profile), and its z if the
+// collection has one per profile. Fill values, and Zarr's fill_value (what
+// a profile the store holds no chunk for reads as), come back as NaN.
+export async function readProfile(s, v, p, i) {
+  const sel = v.dims.map((d) => (d === p.instance ? i : null));
+  const read = async (path, attrs, fill) => {
+    const out = await zarr.get(await s.open(path), sel);
+    return masked(out.data, attrs, typeof fill === "number" ? [fill] : []);
+  };
+  const zArr = p.z ? p.by[p.z] : null;
+  const [values, z] = await Promise.all([
+    read(v.path, v.meta.attrs, v.meta.fill),
+    zArr && zArr.dims.length === 2 ? read(zArr.path, zArr.attrs, null) : null
+  ]);
+  return { values, z };
 }
 
 // One chunk of the variable, as { data, shape } for the grid dimensions at

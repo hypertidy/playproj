@@ -74,7 +74,7 @@
     </section>
 
     <section>
-      <label class="row" for="colour"><span>Colour the cells by</span></label>
+      <label class="row" for="colour"><span id="colour-label">Colour the cells by</span></label>
       <select id="colour" class="wide" aria-label="Colour the cells by">
         <option value="data">The data (chunks read so far)</option>
         <option value="area">Cell area on the earth</option>
@@ -111,6 +111,16 @@
     <section>
       <p id="pick-info" class="badge"></p>
       <table id="pick" class="readout"></table>
+      <div id="profile-box" hidden>
+        <canvas id="profile-plot" class="plot" hidden></canvas>
+        <details id="prof-more">
+          <summary>Everything kept per profile</summary>
+          <table id="prof-extra" class="readout"></table>
+        </details>
+        <div class="buttons"><button id="section" type="button" class="small" hidden></button></div>
+        <canvas id="section-plot" class="plot" hidden></canvas>
+        <p id="section-info" class="hint"></p>
+      </div>
     </section>
 
     <section class="about">
@@ -122,6 +132,10 @@
           on the globe, and unfolds them into another projection.</p>
         <p>Cells that are equal in the store are rarely equal on the earth. Colour by cell area to see
           by how much, or by angular distortion to see where the store's CRS bends shapes.</p>
+        <p>A collection of profiles (Argo floats, CTD tags on seals: one latitude and longitude per
+          profile, not per cell) is no grid, so it is drawn as a point per profile. A click reads that
+          profile alone, a single chunk where the store keeps one chunk per profile, and plots it; a
+          map of one depth across every profile would read every chunk.</p>
         <p>Links use gridlook's URL form, so the same address opens there too.</p>
       </details>
       <details>

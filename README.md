@@ -404,7 +404,7 @@ the square's centre. Which squares are tiles (ESA leaves out edge squares
 that are mostly outside their zone) is in `data/s2-tiles.json`, a bitmask per
 grid zone. `test/check-structure.mjs` checks the tile and overview readers against
 GDAL, tifffile and zarr-python. `test/check-storecrs.mjs` checks CF grid mappings against PROJ, cell areas
-against pyproj's Geod, CF dates on every calendar against cftime (`test/make-cftime-fixture.py`), and reading Icechunk and Zarr stores written by xarray and icechunk. `test/check-mgrs.mjs` checks UTM against PROJ, references against
+against pyproj's Geod, CF dates on every calendar against cftime (`test/make-cftime-fixture.py`), finding and reading a collection of profiles, and reading Icechunk and Zarr stores written by xarray and icechunk. `test/check-mgrs.mjs` checks UTM against PROJ, references against
 GeoTrans and tile lookups against the footprints in ESA's grid, using
 `test/fixtures/mgrs-points.json` from `test/make-mgrs-fixtures.py`, and UPS
 against PROJ and GeoTrans with `test/fixtures/ups-points.json` from
@@ -571,7 +571,17 @@ turned to read upright either way. A time slider gives dates on the store's
 CF calendar (`standard`, `proleptic_gregorian`, `julian`, `noleap`/`365_day`,
 `all_leap`/`366_day`, `360_day`), and names the calendar where its dates are not
 Gregorian ones. A dimension's coordinate that is out of
-order (files joined in the wrong order) is flagged under its slider. The hash is
+order (files joined in the wrong order) is flagged under its slider. A
+collection of profiles (Argo floats, CTD tags on seals, as CF's profile
+discrete sampling geometry: one latitude and longitude per profile, 1D along
+the variable's profile dimension) is not a grid, and is drawn as a point per
+profile, coloured by time or by the platform or file it came from. A click
+reads that profile alone (a single chunk where the store keeps one chunk per
+profile) and plots it against pressure or depth; "as a section" reads every
+profile of its platform and draws them side by side in time. The readout
+gives what one profile costs to read and what one level across all of them
+would. The MEOP preset is 126,518 seal CTD profiles from IMOS, a virtual
+Icechunk whose chunks are byte ranges in IMOS's own NetCDF files. The hash is
 [gridlook](https://github.com/d70-t/gridlook)'s,
 `#<store>::varname=..::projection=..::lat=..::lon=..::dimIndices_<dim>=..`,
 plus `t`, `colour` (`data`, `area`, `omega`, `none`), `chunks`, `cells`,
@@ -1367,7 +1377,7 @@ src/core/roms.js                  ROMS s-coordinate, synthetic grids and data, Z
 src/core/regular.js               which CRS makes a lon/lat array regular; example grids; geos scan angles
 src/core/structure.js             grid, tile and file structure of COG, Zarr, WMTS, ArcGIS, XYZ and specs
 src/core/chunkgrid.js             regular and rectilinear chunk grids: lookup, read cost, zarr.json chunk_grid, calendars, mosaics
-src/core/storecrs.js              CF grid mappings to PROJ, coordinate axes, CF calendars, cell areas, gridlook's URL hash
+src/core/storecrs.js              CF grid mappings to PROJ, coordinate axes, CF calendars, profile collections, cell areas, gridlook's URL hash
 src/core/rasterize.js             centre-in scanline fill, exact coverage fractions, runs, tiles and bytes
 src/core/grids.js                 rotated pole, tripolar, cubed sphere and Yin-Yang grids
 src/core/homage-geo.js            Robinson, Winkel tripel, Van der Grinten, cea; Dymaxion icosahedron and net
@@ -1442,7 +1452,7 @@ grid, the overlap plan and level choice, and reading tracks from GeoServer CSV a
 `test/check-rhumb.mjs` checks rhumb line and geodesic lengths and courses against PROJ, and composite sailing.
 `test/check-structure.mjs` checks the tile and overview readers against
 GDAL, tifffile and zarr-python. `test/check-storecrs.mjs` checks CF grid mappings against PROJ, cell areas
-against pyproj's Geod, CF dates on every calendar against cftime (`test/make-cftime-fixture.py`), and reading Icechunk and Zarr stores written by xarray and icechunk. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
+against pyproj's Geod, CF dates on every calendar against cftime (`test/make-cftime-fixture.py`), finding and reading a collection of profiles, and reading Icechunk and Zarr stores written by xarray and icechunk. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
 GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid.
 `test/check-aatgrid.mjs` checks the AAT grid lattice against the aatgrid R package's own tests
 (the Heard Island anchors and the Atlas Cove seam), ids, nesting and the Sentinel-2 pixel shift.

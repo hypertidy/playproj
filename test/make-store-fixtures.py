@@ -5,7 +5,8 @@
 #                    area of some lon/lat cells from pyproj's Geod
 #  store/*.icechunk  small Icechunk repositories written by xarray, with the
 #                    CRS described the ways real stores do
-#  store/*.zarr      a plain Zarr v3 store with a GeoTransform
+#  store/*.zarr      a plain Zarr v3 store with a GeoTransform, and others
+#  store/profiles.zarr  a collection of profiles (MEOP-like), not a grid
 #
 #   python3 -m pip install pyproj xarray zarr icechunk
 #   python3 test/make-store-fixtures.py
@@ -256,5 +257,35 @@ g.create_array("spatial_ref", shape=(), dtype="int64", attributes={
 zarr.consolidate_metadata(os.path.join(OUT, "huge.zarr"))
 stores.append({"name": "huge.zarr", "variable": "lclu", "nx": 1440000, "ny": 560000, "chunks": [1, 1000, 1000], "x0": -180.0, "dx": 0.00025, "y0": 80.0, "dy": -0.00025})
 
-json.dump({"stores": stores}, open(os.path.join(OUT, "manifest.json"), "w"), indent=1)
+# a collection of profiles as MEOP and Argo files have them: TEMP and PRES on
+# (N_PROF, N_LEVELS), one LATITUDE, LONGITUDE and JULD per profile, a tag per
+# profile naming its source file, a chunk per profile, and 99999 as the
+# fill (xarray writes it base64 in the attributes); profile 4 is all fill,
+# so has no chunk, and profile 6 has no position
+npf, nlv = 9, 12
+pres = np.tile(np.arange(1, nlv + 1) * 10.0, (npf, 1)).astype("float32")
+temp = (2.0 - pres / 100.0 + np.arange(npf)[:, None] * 0.1).astype("float32")
+temp[2, 8:] = 99999.0
+temp[4, :] = 99999.0
+plat = np.linspace(-65.0, -45.0, npf); plon = np.linspace(60.0, 100.0, npf)
+plat[6] = plon[6] = 99999.0
+ds = xr.Dataset({
+    "TEMP": (("N_PROF", "N_LEVELS"), temp, {"units": "degree_Celsius", "valid_min": -2.0, "valid_max": 40.0}),
+    "PRES": (("N_PROF", "N_LEVELS"), pres, {"units": "decibar", "long_name": "SEA PRESSURE"}),
+    "LATITUDE": (("N_PROF",), plat, {"units": "degree_north", "standard_name": "latitude"}),
+    "LONGITUDE": (("N_PROF",), plon, {"units": "degree_east", "standard_name": "longitude"}),
+    "JULD": (("N_PROF",), 25000.5 + np.arange(npf) * 3.0, {"units": "days since 1950-01-01 00:00:00 UTC", "calendar": "julian"}),
+    "tag": (("N_PROF",), np.array([0, 0, 0, 1, 1, 1, 2, 2, 2], dtype="int32"), {"source_names": ["seal-a", "seal-b", "seal-c"]}),
+    "DIRECTION": (("N_PROF",), np.full(npf, ord("A"), dtype="uint8"), {"conventions": "A: ascending profiles, D: descending profiles"}),
+})
+fill = {"_FillValue": 99999.0}
+ds.to_zarr(os.path.join(OUT, "profiles.zarr"), mode="w", consolidated=True, zarr_format=3,
+           encoding={"TEMP": {"chunks": (1, nlv), **fill}, "PRES": {"chunks": (1, nlv), **fill}, "LATITUDE": fill, "LONGITUDE": fill, "JULD": fill})
+# as a virtual store has it: no chunk at all for profile 4 (it reads as Zarr's fill_value)
+shutil.rmtree(os.path.join(OUT, "profiles.zarr", "TEMP", "c", "4"))
+profiles = [{"name": "profiles.zarr", "variable": "TEMP", "instance": "N_PROF", "level": "N_LEVELS", "lat": "LATITUDE", "lon": "LONGITUDE",
+             "time": "JULD", "z": "PRES", "group": "tag", "n": npf, "levels": nlv, "noPosition": 1, "pick": 2,
+             "values": [float(x) if x != 99999.0 else None for x in temp[2]], "pres": [float(x) for x in pres[2]], "empty": 4}]
+
+json.dump({"stores": stores, "profiles": profiles}, open(os.path.join(OUT, "manifest.json"), "w"), indent=1)
 print("wrote", len(cases), "CF cases and", len(stores), "stores")
