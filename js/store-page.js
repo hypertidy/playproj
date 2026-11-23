@@ -824,6 +824,9 @@ function buildDims() {
     const c0 = cur;
     coordValues(name).then(async (c) => {
       if (!c || cur !== c0) return;
+      // a calendar whose dates are not Gregorian ones (2000-02-30 on 360_day) is named by the slider
+      const cal = C.cfTime(0, c.attrs.units, c.attrs.calendar) && C.oddCalendar(c.attrs.calendar) ? String(c.attrs.calendar).trim() : "";
+      if (cal) { lab.firstChild.textContent = `${name} (${cal})`; lab.firstChild.title = `dates on the ${cal} calendar, as the store's calendar attribute says`; }
       const o = C.coordOrder(c.values);
       if (o.order !== "unordered") return;
       const [first, lo] = await Promise.all([coordLabel(name, 0), coordLabel(name, o.lo)]);
@@ -857,12 +860,13 @@ function coordValues(dim) {
   return memo.get(dim);
 }
 
-// the coordinate value at index i of a dimension, as a date where CF units say so
+// the coordinate value at index i of a dimension, as a date where CF units
+// say so, on the CF calendar the store names (noleap, 360_day, ...)
 async function coordLabel(dim, i) {
   const c = await coordValues(dim);
   if (!c || !(i >= 0 && i < c.values.length)) return null;
   const x = c.values[i];
-  return C.cfTime(x, c.attrs.units) || (Number.isFinite(x) ? fmtNum(x) : null);
+  return C.cfTime(x, c.attrs.units, c.attrs.calendar) || (Number.isFinite(x) ? fmtNum(x) : null);
 }
 
 // ---------------------------------------------------------------- readouts
