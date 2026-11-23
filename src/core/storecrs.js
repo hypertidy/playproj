@@ -311,6 +311,19 @@ export function cfTime(x, units, calendar) {
   return `${date} ${p2(hh)}:${p2(mm)}${ss ? ":" + p2(ss) : ""}`;
 }
 
+// A CF time span (units a time unit with no "since", as a forecast's lead
+// time is) as days, hours and minutes: "0 h", "3 h", "1 d 6 h", "15 d"; null
+// where the units are not a time unit.
+export function cfDuration(x, units) {
+  if (typeof x === "bigint") x = Number(x);
+  const m = /^\s*(seconds?|secs?|s|minutes?|mins?|hours?|hrs?|h|days?|d)\s*$/i.exec(units || "");
+  if (!m || !Number.isFinite(x)) return null;
+  const u = m[1].toLowerCase(), sec = Math.round(x * (u.startsWith("d") ? 86400 : u.startsWith("h") ? 3600 : u.startsWith("m") ? 60 : 1));
+  const a = Math.abs(sec), d = Math.floor(a / 86400), h = Math.floor((a % 86400) / 3600), mi = Math.floor((a % 3600) / 60), s = a % 60;
+  const parts = [d && `${d} d`, h && `${h} h`, mi && `${mi} min`, s && `${s} s`].filter(Boolean);
+  return (sec < 0 ? "-" : "") + (parts.join(" ") || "0 h");
+}
+
 // Whether a calendar's dates are not the Gregorian ones everyone keeps
 // (noleap, 360_day and the like), so that a page says which it is.
 export function oddCalendar(calendar) {

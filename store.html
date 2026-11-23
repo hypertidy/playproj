@@ -13,6 +13,7 @@
   "imports": {
     "icechunk-js": "https://cdn.jsdelivr.net/npm/icechunk-js@0.6.0/+esm",
     "zarrita": "https://cdn.jsdelivr.net/npm/zarrita@0.7.5/+esm",
+    "@napi-rs/wasm-runtime": "https://cdn.jsdelivr.net/npm/@napi-rs/wasm-runtime@1.2.7/+esm",
     "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
   }
@@ -136,6 +137,9 @@
           profile, not per cell) is no grid, so it is drawn as a point per profile. A click reads that
           profile alone, a single chunk where the store keeps one chunk per profile, and plots it; a
           map of one depth across every profile would read every chunk.</p>
+        <p>A chunk can be a whole GRIB message, as in dynamical.org's virtual stores of ECMWF and NOAA
+          forecasts: the store points at byte ranges in the agencies' own files, and gribberish, compiled to
+          WebAssembly, decodes each message here when it is read.</p>
         <p>Links use gridlook's URL form, so the same address opens there too.</p>
       </details>
       <details>
@@ -144,6 +148,10 @@
           <li><a href="https://icechunk.io">Icechunk</a> by Earthmover; read here with
             <a href="https://github.com/EarthyScience/icechunk-js">icechunk-js</a> (EarthyScience) and
             <a href="https://github.com/manzt/zarrita.js">zarrita.js</a> (Trevor Manz).</li>
+          <li><a href="https://github.com/mpiannucci/gribberish">gribberish</a> (Matthew Iannucci) decodes GRIB
+            chunks, from its WebAssembly build; <a href="https://dynamical.org">dynamical.org</a> indexes
+            <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data">ECMWF's open data</a> (CC BY 4.0)
+            as a virtual Icechunk store.</li>
           <li><a href="https://github.com/d70-t/gridlook">gridlook</a> (Max Planck Institute for Meteorology and
             DKRZ): the URL form and the projection list.</li>
           <li>CRS parameters as in the <a href="https://cfconventions.org/">CF conventions</a>, appendix F,
