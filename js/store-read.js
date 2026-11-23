@@ -43,8 +43,11 @@ export function absoluteUrl(url) {
 
 export const looksIcechunk = (url) => url.startsWith(ICECHUNK) || /\.icechunk\/?$/.test(url.split(/[?#]/)[0]);
 
+// Reads that land in the same tick and fall close together in one object
+// (a virtual store's neighbouring refs into one file: a tag's profiles, a
+// file's GRIB messages) go as one request
 async function tryIcechunk(url) {
-  try { return await IcechunkStore.open(url); } catch (e) { return null; }
+  try { return await IcechunkStore.open(url, { withRangeCoalescing: zarr.withRangeCoalescing }); } catch (e) { return null; }
 }
 
 // Open url as Icechunk (a repository root, maybe followed by a group path,
@@ -406,6 +409,57 @@ export async function readProfile(s, v, p, i) {
     zArr && zArr.dims.length === 2 ? read(zArr.path, zArr.attrs, null) : null
   ]);
   return { values, z };
+}
+
+// Many profiles of the collection p at v at once (indices in list): the
+// chunks along the profile dimension that hold them, read in runs of
+// neighbours so that a virtual store's refs into one file go as a few
+// requests. Each profile comes back to onProfile(i, { values, z }) as it
+// arrives (values and z as Float32Array, cut after the last level with a
+// value); z only where the collection has a z per profile. stop() says to
+// give up between runs. Resolves to the number of chunks read.
+export async function readProfiles(s, v, p, list, onProfile, { stop = () => false, run = 256, inFlight = 4 } = {}) {
+  const ii = v.dims.indexOf(p.instance), ci = v.meta.chunks[ii], n = v.meta.shape[ii];
+  const zArr = p.z && p.by[p.z] && p.by[p.z].dims.length === 2 ? p.by[p.z] : null;
+  const [va, za] = await Promise.all([s.open(v.path), zArr ? s.open(zArr.path) : null]);
+  const fillsOf = (attrs, extra = []) => new Set([...attrFill(attrs._FillValue), ...attrFill(attrs.missing_value), ...extra]);
+  const vFills = fillsOf(v.meta.attrs, typeof v.meta.fill === "number" ? [v.meta.fill] : []), zFills = zArr ? fillsOf(zArr.attrs) : null;
+  // the chunk rows wanted, then runs of neighbouring rows
+  const rows = [...new Set(list.map((i) => Math.floor(i / ci)))].sort((a, b) => a - b);
+  const want = new Set(list), runs = [];
+  for (const r of rows) {
+    const last = runs[runs.length - 1];
+    if (last && r === last[1] && last[1] - last[0] < run) last[1] = r + 1; else runs.push([r, r + 1]);
+  }
+  const perRow = Math.ceil(p.nLevels / v.meta.chunks[1 - ii]) * (zArr ? 2 : 1);
+  let chunks = 0, next = 0;
+  const readRun = async ([r0, r1]) => {
+    const a = r0 * ci, b = Math.min(n, r1 * ci);
+    const sel = v.dims.map((d) => (d === p.instance ? zarr.slice(a, b) : null));
+    const [vo, zo] = await Promise.all([zarr.get(va, sel), za ? zarr.get(za, sel) : null]);
+    chunks += (r1 - r0) * perRow;
+    const row = (o, k, fills) => {
+      // a row along the level dimension, wherever it is in the array
+      const st = o.stride, len = p.nLevels, out = new Float32Array(len);
+      for (let l = 0; l < len; l++) {
+        const x = Number(o.data[k * st[ii] + l * st[1 - ii]]);
+        out[l] = fills.has(x) ? NaN : x;
+      }
+      return out;
+    };
+    for (let i = a; i < b; i++) {
+      if (!want.has(i)) continue;
+      let values = row(vo, i - a, vFills), z = zo ? row(zo, i - a, zFills) : null;
+      let end = values.length;
+      while (end > 0 && !Number.isFinite(values[end - 1])) end--;
+      values = values.slice(0, end);
+      if (z) z = z.slice(0, end);
+      onProfile(i, { values, z });
+    }
+  };
+  const worker = async () => { while (next < runs.length && !stop()) await readRun(runs[next++]); };
+  await Promise.all(Array.from({ length: Math.min(inFlight, runs.length) }, worker));
+  return chunks;
 }
 
 // One chunk of the variable, as { data, shape } for the grid dimensions at

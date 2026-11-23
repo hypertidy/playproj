@@ -52,6 +52,34 @@
       <label class="row" for="var"><span>Variable</span></label>
       <select id="var" class="wide" aria-label="Variable"></select>
       <div id="dims"></div>
+      <div id="when-box" hidden>
+        <div id="when-time">
+          <label class="row" for="when"><span>When</span><output id="when-out"></output></label>
+          <canvas id="when-strip" class="strip" aria-label="Profiles over time, the whole collection: click to move the window there"></canvas>
+          <input id="when" type="range" min="0" max="1" step="1" aria-label="Start of the time window, in days">
+          <div class="buttons">
+            <button id="when-back" type="button" class="small" aria-label="Step back">&lt;</button>
+            <button id="when-play" type="button" class="small">Play</button>
+            <button id="when-fwd" type="button" class="small" aria-label="Step forward">&gt;</button>
+            <select id="window" aria-label="Time window">
+              <option value="0">Every profile</option>
+              <option value="1">1 day</option>
+              <option value="5">5 days</option>
+              <option value="30">30 days</option>
+              <option value="91">91 days</option>
+              <option value="365">365 days</option>
+            </select>
+            <input id="when-text" class="token" type="text" spellcheck="false" style="flex:none;width:7.8em" aria-label="Start of the window as YYYY-MM-DD">
+          </div>
+        </div>
+        <p id="when-info" class="hint" role="status"></p>
+        <div class="buttons"><button id="read-window" type="button" class="small" hidden></button></div>
+        <label class="row" for="depth"><span id="depth-label">Depth</span><output id="depth-out"></output></label>
+        <input id="depth" type="range" min="0" max="1" step="0.001" aria-label="Depth or pressure of the shell">
+        <div class="toggles"><label><input id="hang" type="checkbox"> Hang the profiles below their points</label></div>
+        <label class="row" for="dz"><span>Depth exaggeration</span><output id="dz-out"></output></label>
+        <input id="dz" type="range" min="0" max="3.5" step="0.05" aria-label="Depth exaggeration, as a power of ten">
+      </div>
       <div class="buttons">
         <button id="sample" type="button" class="small" disabled>Read chunks</button>
         <a id="gridlook" href="https://gridlook.pages.dev/" target="_blank" rel="noopener" hidden>Open in gridlook</a>
@@ -135,8 +163,15 @@
           by how much, or by angular distortion to see where the store's CRS bends shapes.</p>
         <p>A collection of profiles (Argo floats, CTD tags on seals: one latitude and longitude per
           profile, not per cell) is no grid, so it is drawn as a point per profile. A click reads that
-          profile alone, a single chunk where the store keeps one chunk per profile, and plots it; a
-          map of one depth across every profile would read every chunk.</p>
+          profile alone, a single chunk where the store keeps one chunk per profile, and plots it.</p>
+        <p>Time and depth come together through a window. The strip counts profiles over time; a window
+          of days picks the profiles taken in it, and Play steps it on, skipping spans with none. Colour
+          by the data, or hang the profiles, and the page reads every profile in the window, all of its
+          levels at once. A virtual store's refs to neighbouring profiles in one file are read together, so
+          a tag's month of profiles is a few requests, not hundreds. Then depth is a place, not a read:
+          moving the depth recolours the points with each profile's value there, and hung profiles go down
+          from their points, sunk by depth times the exaggeration, with a bead where each crosses that depth.
+          A map of one depth across every profile would still read every chunk.</p>
         <p>A chunk can be a whole GRIB message, as in dynamical.org's virtual stores of ECMWF and NOAA
           forecasts: the store points at byte ranges in the agencies' own files, and gribberish, compiled to
           WebAssembly, decodes each message here when it is read.</p>
