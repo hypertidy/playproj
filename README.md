@@ -568,7 +568,9 @@ angular distortion of the store's CRS. The hash is
 `#<store>::varname=..::projection=..::lat=..::lon=..::dimIndices_<dim>=..`,
 plus `t`, `colour` (`data`, `area`, `omega`, `none`), `chunks`, `cells`,
 `coast`, `grat`, `pick` (column,row) and `cam`, so a link opens in gridlook
-too. `src/core/storecrs.js` and `js/store-read.js`, checked in
+too. Equal Earth (`projection=equal_earth`), Lambert azimuthal equal-area and
+Spilhaus are not gridlook's, so its link leaves them out and gridlook opens in
+its own default. `src/core/storecrs.js` and `js/store-read.js`, checked in
 `test/check-storecrs.mjs` against PROJ (pyproj's `CRS.from_cf`) and small
 stores written by xarray, zarr-python and icechunk
 (`test/make-store-fixtures.py`). A store on another site must allow
@@ -596,8 +598,9 @@ Python; [controlledburn-rs](https://github.com/hypertidy/controlledburn-rs) in
 Rust).
 
 The grid is built round the shape in a CRS picked here (longitude and
-latitude, a local Lambert azimuthal equal-area, Web Mercator, polar
-stereographic, the UTM zone, or a typed PROJ string), with a cell count and a
+latitude, a local Lambert azimuthal equal-area, Web Mercator, Equal Earth
+(EPSG:8857, a whole-world equal-area grid, where the nominal area is the true
+one anywhere), polar stereographic, the UTM zone, or a typed PROJ string), with a cell count and a
 tile size, or it is a window on a real raster: a GeoTIFF or COG read by
 `src/core/structure.js` (GEBCO 2026 is the example) or a typed spec
 (`CRS; xmin,xmax,ymin,ymax; cols,rows; tile`). For a raster the level is the
@@ -607,7 +610,11 @@ answer touches, from the TIFF's tile offsets. Edges are straight in longitude
 and latitude, so they are densified to a quarter of a degree before they are
 projected. Areas are true areas on the WGS84 ellipsoid, each cell measured
 through an equal-area projection centred on the shape, so the error of each
-answer shows; "nominal" is the cell count times the cell size squared.
+answer shows; "nominal" is the cell count times the cell size squared. A cell
+that hangs over the edge of the map (past Equal Earth's pole line or its
+curved sides) is measured in 8 x 8 pieces: its ground is the share of piece
+centres on the map, and a coverage fraction is taken of the whole cell at the
+density of the pieces on it.
 
 The storage table compares ways to keep the answer: a dense mask, the touched
 tiles, runs along rows (row, first, last), cell numbers, dense float coverage,
@@ -1339,6 +1346,7 @@ src/core/families/conic.js        cone family with cylinder and plane limits
 src/core/families/azimuthal.js    compass (laea) and string (aeqd) constructions
 src/core/families/spilhaus.js     Spilhaus / Adams World in a Square II, from PROJ
 src/core/families/globals.js      whole-world formulas, their lobes, and the octahedral butterfly, from PROJ
+src/core/eqearth.js               Equal Earth on the sphere and the ellipsoid (EPSG:8857), from PROJ; useEqearth puts it in proj4js
 src/core/geo.js                   graticule, seeded randomness, scene frame
 src/core/landmesh.js              land triangulated from the coastlines (earcut), and ray sampling
 src/core/basemap.js               basemap sources, GEBCO and Esri reading, per-pixel reprojection
@@ -1409,7 +1417,10 @@ inverse. `test/check-azimuthal.mjs` checks the compass and string
 constructions against proj4js. proj4js has no Spilhaus, so
 `test/check-spilhaus.mjs` compares with points projected by PROJ itself, in
 `test/fixtures/spilhaus-proj.json`; `test/check-globals.mjs` does the same for the
-globals, their interruptions and the butterfly's faces. `test/check-mishaps.mjs` checks the catastrophes page's map
+globals, their interruptions and the butterfly's faces. `test/check-eqearth.mjs` checks Equal Earth
+on the sphere and on ellipsoids (EPSG:8857) against PROJ (`test/fixtures/eqearth-proj.json`, from
+`test/make-eqearth-fixture.py`), its areal scale on WGS 84, and proj4js with `useEqearth` in place
+(proj4js 2.12.1's own eqearth is the sphere only, about 20 km out on WGS 84). `test/check-mishaps.mjs` checks the catastrophes page's map
 frames against d3-geo and the areas behind its captions. `test/check-s2.mjs` checks
 cell tokens and corners against `test/fixtures/s2-cells.json`, made with
 s2sphere. `test/check-grids.mjs` checks the model grids against PROJ and proj4js.

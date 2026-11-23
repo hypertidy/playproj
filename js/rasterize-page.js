@@ -11,8 +11,10 @@ import * as S from "../src/core/structure.js";
 import { coastRings, landPolygons } from "../src/core/landmesh.js";
 import { loadCoastline } from "./data.js";
 import { readParams, hashWriter, shareLinks, copyText } from "../src/scene/index.js";
+import { useEqearth } from "../src/core/eqearth.js";
 
-const proj4 = window.proj4, d3 = window.d3;
+// proj4js's own Equal Earth is the sphere only: EPSG:8857 needs the ellipsoid
+const proj4 = useEqearth(window.proj4), d3 = window.d3;
 const $ = (id) => document.getElementById(id);
 const DEG = "\u00b0";
 const GEBCO = "https://data.source.coop/ausantarctic/gebco/GEBCO_2026.tif";
@@ -68,7 +70,7 @@ function starShape() {
 
 const defaults = { at: "tas", detail: "110m", crs: "ll", def: "", n: 24, sx: 0, sy: 0, tile: 8, left: "centre", src: GEBCO, lvl: -1 };
 const STRINGS = new Set(["at", "detail", "crs", "def", "left", "src"]);
-const CRS_KEYS = ["ll", "laea", "merc", "polar", "utm", "file", "custom"];
+const CRS_KEYS = ["ll", "laea", "merc", "eqearth", "polar", "utm", "file", "custom"];
 const state = { ...defaults };
 
 function readHash() {
@@ -190,6 +192,8 @@ function crsFor(key, [lon, lat]) {
   if (key === "ll") return "+proj=longlat +datum=WGS84 +no_defs";
   if (key === "laea") return `+proj=laea +lat_0=${+lat.toFixed(2)} +lon_0=${+lon.toFixed(2)} +x_0=0 +y_0=0 ${W84}`;
   if (key === "merc") return S.knownProj4(3857);
+  // a whole-world equal-area grid: nominal areas are true ones, anywhere
+  if (key === "eqearth") return S.knownProj4(8857);
   if (key === "polar") return S.knownProj4(lat < 0 ? 3031 : 3413);
   if (key === "utm") {
     const z = Math.max(1, Math.min(60, Math.floor((lon + 180) / 6) + 1));
@@ -375,20 +379,45 @@ function areas(c) {
     // edges are straight in the grid, so densify there (a tenth of a cell)
     shape = R.polygonArea(R.projectPolys(inside, (x, y) => { const q = toLL(x, y); return toEA(q[0], q[1]); }, 0.1));
   }
-  const cell = new Float64Array(W * H);
+  // A cell can hang over the edge of the map (past Equal Earth's pole line or
+  // curved sides, below 90 S on longitude and latitude): only part of it is
+  // ground. Such a cell is measured in 8 x 8 pieces: the ground is the share
+  // of piece centres on the map times the density of the pieces wholly on
+  // it, and that density, spread over the whole cell, is what a coverage
+  // fraction (of the whole cell) is multiplied by.
+  const tol = 1e-3 * Math.hypot(c.G.dx, c.G.dy);
+  const onMap = (x, y) => {
+    const q = c.tf.inv(x, y);
+    if (!q || !isFinite(q[0]) || !isFinite(q[1]) || Math.abs(q[1]) > 90) return null;
+    const b = c.tf.fwd(q[0], q[1]);
+    return b && Math.hypot(b[0] - x, b[1] - y) < tol ? q : null;
+  };
+  const ringArea = (lls) => Math.abs(R.ringArea2(lls.flatMap((q) => toEA(q[0], q[1])))) / 2;
+  const at = (u, v) => [c.G.x0 + u * c.G.dx, c.G.y0 + v * c.G.dy];
+  const cell = new Float64Array(W * H), dens = new Float64Array(W * H);
   const use = c.warp ? c.warp.mask : null;
+  const S8 = 8;
   for (let i = 0; i < W * H; i++) {
     if (!(c.cov[i] > 0 || c.mask[i] || (use && use[i]))) continue;
-    const ring = cellRing(c.G, i % W, Math.floor(i / W)).flatMap((p) => {
-      const q = c.tf.inv(p[0], p[1]);
-      return toEA(q[0], q[1]);
-    });
-    cell[i] = Math.abs(R.ringArea2(ring)) / 2;
+    const col = i % W, row = Math.floor(i / W);
+    const lls = cellRing(c.G, col, row).map((p) => onMap(p[0], p[1]));
+    if (lls.every(Boolean)) { cell[i] = dens[i] = ringArea(lls); continue; }
+    const node = [];
+    for (let v = 0; v <= S8; v++) for (let u = 0; u <= S8; u++) node.push(onMap(...at(col + u / S8, row + v / S8)));
+    let a = 0, whole = 0, centres = 0;
+    for (let v = 0; v < S8; v++)
+      for (let u = 0; u < S8; u++) {
+        if (onMap(...at(col + (u + 0.5) / S8, row + (v + 0.5) / S8))) centres++;
+        const k = v * (S8 + 1) + u, q = [node[k], node[k + 1], node[k + S8 + 2], node[k + S8 + 1]];
+        if (q.every(Boolean)) { a += ringArea(q); whole++; }
+      }
+    dens[i] = whole ? (a * S8 * S8) / whole : 0;
+    cell[i] = (dens[i] * centres) / (S8 * S8);
   }
   let aIn = 0, aCov = 0, aTouch = 0, aWarp = 0;
   for (let i = 0; i < W * H; i++) {
     if (c.mask[i]) aIn += cell[i];
-    if (c.cov[i] > 0) { aCov += c.cov[i] * cell[i]; aTouch += cell[i]; }
+    if (c.cov[i] > 0) { aCov += c.cov[i] * dens[i]; aTouch += cell[i]; }
     if (use && use[i]) aWarp += cell[i];
   }
   return { shape, clipped, cell, aIn, aCov, aTouch, aWarp };

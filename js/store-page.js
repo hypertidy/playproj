@@ -16,11 +16,13 @@ import { colourScale, paint, quantile } from "../src/core/distortion.js";
 import { knownProj4 } from "../src/core/structure.js";
 import { PALETTES, rampAt } from "../src/core/palette.js";
 import * as spilhaus from "../src/core/families/spilhaus.js";
+import { useEqearth } from "../src/core/eqearth.js";
 import { graticule } from "../src/core/geo.js";
 import { loadCoastline } from "./data.js";
 import { makeStage, shareLinks, copyText, isEmbed } from "../src/scene/index.js";
 
-const proj4 = window.proj4;
+// proj4js's own Equal Earth is the sphere only: a store in EPSG:8857 needs the ellipsoid
+const proj4 = useEqearth(window.proj4);
 const $ = (id) => document.getElementById(id);
 const DEG = "\u00b0";
 const D2R = Math.PI / 180;

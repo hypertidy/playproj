@@ -18,6 +18,10 @@ import { factors, proj4Forward } from "../src/core/tissot.js";
 import { FIELD, colourScale } from "../src/core/distortion.js";
 import { loadCoastline } from "./data.js";
 import { makeStage, readParams, hashWriter, shareLinks, makeMeshLayer, drawLocator, cssRamp } from "../src/scene/index.js";
+import { useEqearth } from "../src/core/eqearth.js";
+
+// proj4js's own Equal Earth is the sphere only: a scene in EPSG:8857 needs the ellipsoid
+useEqearth(window.proj4);
 
 const DEFAULT_SCENE = "data/frame/juneau/scene.json";
 const WGS84 = ellipsoid(6378137, 1 / 298.257223563);

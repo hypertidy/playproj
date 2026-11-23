@@ -52,12 +52,14 @@ export function hashString(url, params = {}) {
 // unit sphere. gridlook rotates each about lat, lon as d3 does; here lon is
 // the central meridian of all, and lat the centre of the azimuthals only.
 // Its cylindrical equal area is d3's default, standard parallel 38.58.
+// Equal Earth is not one of gridlook's; its key is in gridlook's style.
 export const DISPLAY = [
   { key: "nearside_perspective", label: "Globe", def: null },
   { key: "equirectangular", label: "Equirectangular", def: "+proj=eqc" },
   { key: "mercator", label: "Mercator", def: "+proj=merc" },
   { key: "robinson", label: "Robinson", def: "+proj=robin" },
   { key: "mollweide", label: "Mollweide", def: "+proj=moll" },
+  { key: "equal_earth", label: "Equal Earth", def: "+proj=eqearth" },
   { key: "cylindrical_equal_area", label: "Cylindrical equal area", def: "+proj=cea +lat_ts=38.58" },
   { key: "azimuthal_equidistant", label: "Azimuthal equidistant", def: "+proj=aeqd", centred: true },
   { key: "lambert_azimuthal_equal_area", label: "Lambert azimuthal equal area", def: "+proj=laea", centred: true },
