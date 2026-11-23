@@ -76,7 +76,10 @@
         <div class="buttons"><button id="read-window" type="button" class="small" hidden></button></div>
         <label class="row" for="depth"><span id="depth-label">Depth</span><output id="depth-out"></output></label>
         <input id="depth" type="range" min="0" max="1" step="0.001" aria-label="Depth or pressure of the shell">
-        <div class="toggles"><label><input id="hang" type="checkbox"> Hang the profiles below their points</label></div>
+        <div class="toggles">
+          <label><input id="hang" type="checkbox"> Hang the profiles below their points</label>
+          <label><input id="floor" type="checkbox"> Sea floor from GEBCO 2026</label>
+        </div>
         <label class="row" for="dz"><span>Depth exaggeration</span><output id="dz-out"></output></label>
         <input id="dz" type="range" min="0" max="3.5" step="0.05" aria-label="Depth exaggeration, as a power of ten">
       </div>
@@ -100,6 +103,8 @@
         <button id="play" type="button">Unfold</button>
         <button id="reset-view" type="button">Reset view</button>
       </div>
+      <p class="hint">Drag turns the view; Shift-drag or right-drag moves it; the wheel zooms toward the pointer;
+        double-click a place to turn about it.</p>
     </section>
 
     <section>
@@ -172,6 +177,10 @@
           moving the depth recolours the points with each profile's value there, and hung profiles go down
           from their points, sunk by depth times the exaggeration, with a bead where each crosses that depth.
           A map of one depth across every profile would still read every chunk.</p>
+        <p>Under them, the sea floor: GEBCO 2026 read over the window's box from the overview that suits it
+          (and at its full 15 arc seconds under a picked profile), sunk by the same exaggeration, and drawn
+          along a section; in 3D it is a swath along the window's tracks. Colour by height above the sea floor to see which profiles reach the bottom, and
+          which go deeper than GEBCO has it: a seal's dive is a sounding.</p>
         <p>A chunk can be a whole GRIB message, as in dynamical.org's virtual stores of ECMWF and NOAA
           forecasts: the store points at byte ranges in the agencies' own files, and gribberish, compiled to
           WebAssembly, decodes each message here when it is read.</p>
@@ -187,6 +196,8 @@
             chunks, from its WebAssembly build; <a href="https://dynamical.org">dynamical.org</a> indexes
             <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data">ECMWF's open data</a> (CC BY 4.0)
             as a virtual Icechunk store.</li>
+          <li>Sea floor from the GEBCO 2026 Grid (GEBCO Compilation Group), from
+            <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>.</li>
           <li><a href="https://github.com/d70-t/gridlook">gridlook</a> (Max Planck Institute for Meteorology and
             DKRZ): the URL form and the projection list.</li>
           <li>CRS parameters as in the <a href="https://cfconventions.org/">CF conventions</a>, appendix F,

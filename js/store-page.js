@@ -19,6 +19,7 @@ import * as spilhaus from "../src/core/families/spilhaus.js";
 import { useEqearth } from "../src/core/eqearth.js";
 import { graticule } from "../src/core/geo.js";
 import { loadCoastline } from "./data.js";
+import { readElevation } from "./basemap-load.js";
 import { makeStage, shareLinks, copyText, isEmbed } from "../src/scene/index.js";
 
 // proj4js's own Equal Earth is the sphere only: a store in EPSG:8857 needs the ellipsoid
@@ -38,6 +39,7 @@ const COLORS = {
   chunkFaint: "rgba(255,211,77,0.55)",
   edge: "#6ab787",
   pick: "#ff7ab8",
+  floor: "rgba(200,164,110,0.55)",
   coast: 0xd7ecff,
   grat: 0x5b7aa3
 };
@@ -57,9 +59,9 @@ const PRESETS = [
   // data, indexed by dynamical.org, opened at the newest forecast
   { label: "ECMWF ENS 2 m temperature (GRIB)", url: "https://dynamical-ecmwf-ifs-ens.s3.us-west-2.amazonaws.com/ecmwf-ifs-ens-forecast-15-day-0-25-degree-virtual/v0.1.0.icechunk", varname: "temperature_2m", projection: "equal_earth", dims: { init_time: -1 } },
   // profiles, not a grid: CTD tags on seals (MEOP, through IMOS), virtual refs into IMOS's NetCDF
-  // files; opened on a month of them (3,319 profiles) coloured at 200 dbar, hung below the map
+  // files; opened on a month of them (3,319 profiles) coloured at 200 dbar, hung below the map over GEBCO
   { label: "Seal CTD profiles, MEOP (Icechunk)", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/imos-tracking/meop-ctd-2024/icechunk", varname: "TEMP", projection: "lambert_azimuthal_equal_area", lat: -90, lon: 140,
-    also: { win: 30, when: "2019-05-01", depth: 200, colour: "data", hang: 1, t: 1, cam: [-0.2, -1.55, 2.05, -0.25, 0.22, 0.92] } }
+    also: { win: 30, when: "2019-05-01", depth: 200, colour: "data", hang: 1, floor: 1, t: 1, cam: [-0.2, -1.55, 2.05, -0.25, 0.22, 0.92] } }
 ];
 
 // ---------------------------------------------------------------- state
@@ -69,8 +71,9 @@ const PRESETS = [
 const defaults = { url: PRESETS[0].url, varname: "", projection: "mollweide", lat: null, lon: null,
   t: 0, colour: "", chunks: 1, cells: 1, coast: 1, grat: 1, pick: "", cam: null, assume: "",
   // a collection of profiles: a time window (win days from the date when, 0 for every profile), the
-  // depth of the shell, whether profiles hang below their points, and by how much depth is stretched
-  when: "", win: 0, depth: 0, hang: 0, dz: 2.5 };
+  // depth of the shell, whether profiles hang below their points, whether GEBCO's sea floor is drawn
+  // under them, and by how much depth is stretched
+  when: "", win: 0, depth: 0, hang: 0, floor: 0, dz: 2.5 };
 const state = { ...defaults, dims: {} };
 
 function readHash() {
@@ -86,10 +89,11 @@ function readHash() {
   for (const k of ["t", "chunks", "cells", "coast", "grat"]) { const v = num(k); if (v !== null) state[k] = v; }
   state.t = Math.max(0, Math.min(1, state.t));
   const c = params.get("colour");
-  if (["data", "area", "omega", "none", "time", "group"].includes(c)) state.colour = c;
+  if (["data", "area", "omega", "none", "time", "group", "gap"].includes(c)) state.colour = c;
   state.pick = params.get("pick") || "";
   if (/^-?\d{1,4}-\d{1,2}-\d{1,2}$/.test(params.get("when") || "")) state.when = params.get("when");
-  const w = num("window"), dp = num("depth"), dz = num("dz"), hang = num("hang");
+  const w = num("window"), dp = num("depth"), dz = num("dz"), hang = num("hang"), floor = num("floor");
+  if (floor !== null) state.floor = floor ? 1 : 0;
   if (w !== null && w >= 0) state.win = w;
   if (dp !== null && dp >= 0) state.depth = dp;
   if (dz !== null) state.dz = Math.max(0, Math.min(3.5, dz));
@@ -117,6 +121,7 @@ function writeHash() {
       if (state.win) { p.window = state.win; if (state.when) p.when = state.when; }
       if (state.depth) p.depth = +state.depth.toPrecision(5);
       if (state.hang) p.hang = 1;
+      if (state.floor) p.floor = 1;
       if (state.dz !== defaults.dz) p.dz = state.dz;
     }
     if (state.assume) p.assume = state.assume;
@@ -184,6 +189,8 @@ const { renderer, scene, camera, controls, setCamera, resize } = makeStage(stage
   onCamera: (c) => { state.cam = c; writeHash(); }
 });
 const DEFAULT_CAM = [0, 0, 6.4, 0, 0, 0.3];
+// the wheel zooms toward the pointer, not the middle of the view
+controls.zoomToCursor = true;
 const under = new THREE.Mesh(new THREE.SphereGeometry(0.99, 96, 48), new THREE.MeshBasicMaterial({ color: 0x0b1222, transparent: true }));
 scene.add(under);
 const coastLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: COLORS.coast, transparent: true, opacity: 0.75 }));
@@ -775,9 +782,14 @@ const profPoints = pointsMesh(2.5), profWin = pointsMesh(3.5), profShell = point
 const profCols = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }));
 profCols.visible = false;
 scene.add(profCols);
+// GEBCO 2026's sea floor under the window's profiles, sunk as they are
+const floorMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.92 }));
+floorMesh.visible = false;
+scene.add(floorMesh);
 const profTrack = pointsMesh(4, 0xffffff), profMark = pointsMesh(12, COLORS.pick);
-const PROF_MESHES = [profPoints, profWin, profCols, profShell, profTrack, profMark];
-const PROFILE_COLOURS = [["time", "Time of the profile"], ["data", "The data at the depth set below"], ["group", "Platform or file it came from"], ["none", "Nothing"]];
+const PROF_MESHES = [profPoints, profWin, profCols, profShell, floorMesh, profTrack, profMark];
+const PROFILE_COLOURS = [["time", "Time of the profile"], ["data", "The data at the depth set below"], ["gap", "Height above the sea floor (GEBCO 2026)"],
+  ["group", "Platform or file it came from"], ["none", "Nothing"]];
 const GRID_COLOURS = [["data", "The data (chunks read so far)"], ["area", "Cell area on the earth"], ["omega", "Angular distortion of the store's CRS"], ["none", "Nothing"]];
 const SECTION_MAX = 4000;
 // what a time window reads by itself, at most at once, and keeps
@@ -824,7 +836,9 @@ async function openProfiles(s, v, p, serial) {
   cur = {
     kind: "profiles", s, v, p, F: null, earth: true, lon, lat, time: p.time ? val[p.time] : null, group: p.group ? val[p.group] : null,
     mid: n ? [Math.atan2(sy, sx) / D2R, sl / n] : [0, 0], placed: n, placedIdx: placed, extra: new Map(), reads: { chunks: 0, bytes: 0 },
-    chunkBytes: v.meta.chunks.reduce((a, b) => a * b, 1) * C.dtypeBytes(v.meta.dtype), fills: new Set(), profiles: new Map(), dscale: null, zSeen: 0
+    chunkBytes: v.meta.chunks.reduce((a, b) => a * b, 1) * C.dtypeBytes(v.meta.dtype), fills: new Set(), profiles: new Map(), dscale: null, zSeen: 0,
+    // GEBCO's sea floor depth under each profile (m, 0 where it has land or ice), and the cell size it came from
+    floorAt: new Float32Array(lon.length).fill(NaN), floorRes: new Float32Array(lon.length).fill(Infinity), floor: null, sink: { cols: 0, floor: 0 }
   };
   const li = v.dims.indexOf(p.level), ii = v.dims.indexOf(p.instance);
   cur.perProfileChunks = Math.ceil(v.meta.shape[li] / v.meta.chunks[li]);
@@ -856,6 +870,7 @@ async function openProfiles(s, v, p, serial) {
   status("");
   writeHash();
   readWindow();
+  readFloor();
 }
 
 // every profile with a position on this map, on the sphere and flat
@@ -954,10 +969,11 @@ function windowChanged() {
   showLegend();
   writeHash();
   readWindow();
+  readFloor();
   redrawSection();
 }
 
-const needsProfiles = () => state.colour === "data" || !!state.hang;
+const needsProfiles = () => state.colour === "data" || state.colour === "gap" || !!state.hang;
 const readIn = (list) => list.reduce((a, i) => a + (cur.profiles.has(i) ? 1 : 0), 0);
 let winSerial = 0, drawTimer = 0;
 // read the window's profiles: by itself up to PROF_AUTO, or on the button
@@ -1054,8 +1070,26 @@ function profileColour(i, mode) {
     const x = depthValue(i);
     return Number.isFinite(x) && cur.dscale ? viridisInto(scaled(x)) : grey([0.3, 0.3, 0.37]);
   }
+  if (mode === "gap") {
+    if (!cur.profiles.has(i)) return grey([0.55, 0.58, 0.64]);
+    const h = gapOf(i);
+    if (!Number.isFinite(h)) return grey([0.3, 0.3, 0.37]);
+    // deeper than GEBCO's sea floor: a sounding GEBCO does not have
+    if (h < -GAP_TOL) return tmpColour.setRGB(1, 0.32, 0.78, THREE.SRGBColorSpace);
+    return viridisInto(1 - Math.min(1, Math.log10(1 + Math.max(0, h)) / Math.log10(1 + GAP_TOP)));
+  }
   if (mode === "group" && cur.group && Number.isFinite(cur.group.values[i])) return groupColour(cur.group.values[i]);
   return grey([0.82, 0.86, 0.92]);
+}
+// How far above GEBCO's sea floor profile i stops: the floor's depth less
+// its deepest level with a value (pressure in decibars taken as metres).
+// Negative where it went deeper than GEBCO has the floor.
+const GAP_TOL = 10, GAP_TOP = 3000;
+function gapOf(i) {
+  const r = cur.profiles.get(i), f = cur.floorAt[i];
+  if (!r || !Number.isFinite(f)) return NaN;
+  const d = C.deepestAt(r.values, zFor(i), zDown());
+  return Number.isFinite(d) ? f - d * zMetres() : NaN;
 }
 function colourInto(M, list, mode) {
   const col = M.geometry.attributes.color;
@@ -1081,6 +1115,7 @@ function drawWindow() {
     cur.winOn = list;
   }
   buildColumns();
+  buildFloor();
   colourProfiles();
 }
 // colours that follow the colour choice and the depth, and the beads at that depth
@@ -1096,14 +1131,15 @@ function colourProfiles() {
 const drawnRead = () => cur.winList.filter((i) => cur.pointOf[i] >= 0 && cur.profiles.has(i));
 function buildColumns() {
   profCols.visible = false;
-  under.scale.setScalar(1);
+  cur.sink.cols = 0;
+  fitUnder();
   if (!state.hang || !cur.dscale) return;
   const list = drawnRead(), u = profPoints.userData;
   let total = 0;
   for (const i of list) total += cur.profiles.get(i).values.length;
   if (!total) return;
-  // at most some 800,000 segments: every level, or every few
-  const step = Math.max(1, Math.ceil(total / 8e5)), cap = 2 * (Math.ceil(total / step) + list.length);
+  // at most some 400,000 segments: every level, or every few
+  const step = Math.max(1, Math.ceil(total / 4e5)), cap = 2 * (Math.ceil(total / step) + list.length);
   const sp = new Float32Array(cap * 3), fp = new Float32Array(cap * 3), cl = new Float32Array(cap * 3);
   let nv = 0, deep = 0;
   const put = (m, z, x) => {
@@ -1132,8 +1168,150 @@ function buildColumns() {
   profCols.geometry = g;
   profCols.userData = { sphere: sp.slice(0, 3 * nv), flat: fp.slice(0, 3 * nv) };
   profCols.visible = true;
-  // the dark globe drawn under the points goes below the deepest profile
+  cur.sink.cols = deep;
+  fitUnder();
+}
+// the dark globe drawn under the points goes below the deepest profile, and the sea floor
+function fitUnder() {
+  const deep = Math.max(cur.sink.cols, floorMesh.visible ? cur.sink.floor : 0);
   under.scale.setScalar(Math.max(0.3, (0.99 - deep * 1.02) / 0.99));
+}
+
+// ---------------------------------------------------------------- the sea floor
+
+// GEBCO 2026 under the profiles: read over the window's box from the
+// overview that gives about FLOOR_CELLS across it, sampled under each
+// profile (finer reads, for a section or the picked profile, are kept
+// over coarser ones), and drawn as a surface sunk as the profiles are.
+const FLOOR_CELLS = 2000, FLOOR_MESH = [360, 220];
+const resLabel = (r) => (r * 60 >= 1 ? `${+(r * 60).toPrecision(3)} arc minutes` : `${Math.round(r * 3600)} arc seconds`);
+// the box round some profiles and the GEBCO cell size that suits it
+function floorBox(list, cells = FLOOR_CELLS) {
+  const box = C.lonLatBox(list.map((i) => cur.lon[i]), list.map((i) => cur.lat[i]), 0.5);
+  if (!box) return null;
+  return { box, res: Math.max(1 / 240, Math.max(box.east - box.west, box.north - box.south) / cells) };
+}
+// sea floor depth from a GEBCO window under the profiles in list, where
+// it is finer than what each has
+function sampleFloor(g, list) {
+  const r = g.dx;
+  for (const i of list) {
+    if (!(r < cur.floorRes[i])) continue;
+    const e = C.gridSample(g, cur.lon[i], cur.lat[i]);
+    if (!Number.isFinite(e)) continue;
+    cur.floorAt[i] = Math.max(0, -e);
+    cur.floorRes[i] = r;
+  }
+}
+let floorSerial = 0;
+const floorWanted = () => !!state.floor || state.colour === "gap";
+async function readFloor() {
+  floorMesh.visible = false;
+  if (!cur || cur.kind !== "profiles" || !floorWanted()) { if (cur && cur.sink) fitUnder(); return; }
+  const fb = floorBox(cur.winList);
+  if (!fb) return;
+  const key = JSON.stringify(fb), c0 = cur, serial = ++floorSerial;
+  if (!cur.floor || cur.floor.key !== key) {
+    try {
+      const g = await readElevation(fb.box, fb.res, (t) => { if (serial === floorSerial) status(t); });
+      if (serial !== floorSerial || cur !== c0) return;
+      cur.floor = { ...g, key, box: fb.box };
+    } catch (e) {
+      if (serial === floorSerial && cur === c0) status(`GEBCO 2026 not read: ${e.message}`);
+      return;
+    }
+    status("");
+  }
+  sampleFloor(cur.floor, cur.winList);
+  buildFloor(); colourProfiles(); place(); showLegend(); redrawProfile(); redrawSection();
+}
+// a finer read under some profiles (a section's, the picked one's)
+async function floorFor(list, cells) {
+  const fb = floorBox(list, cells);
+  if (!fb || list.every((i) => cur.floorRes[i] <= fb.res * 1.01)) return;
+  const c0 = cur;
+  try {
+    const g = await readElevation(fb.box, fb.res);
+    if (cur === c0) sampleFloor(g, list);
+  } catch (e) { /* the coarser floor stays */ }
+}
+
+// The window's GEBCO as a surface, only along the tracks: a swath round
+// the window's profiles (FLOOR_SWATH mesh cells either side), as a ship's
+// sounder would leave. Each vertex is the mean of the GEBCO cells it
+// stands for, so a seamount between vertices does not make a spike; its
+// colour is GEBCO's own tint and hillshade, darkened. No triangle on land
+// or ice (where GEBCO is at or above sea level).
+const FLOOR_SWATH = 3;
+function buildFloor() {
+  floorMesh.visible = false;
+  cur.sink.floor = 0;
+  const g = cur.floor;
+  if (!state.floor || !g || !profPoints.userData.sphere) { fitUnder(); return; }
+  const sx = Math.max(1, Math.ceil(g.width / FLOOR_MESH[0])), sy = Math.max(1, Math.ceil(g.height / FLOOR_MESH[1]));
+  const nx = Math.ceil(g.width / sx), ny = Math.ceil(g.height / sy), n = nx * ny;
+  // which mesh cells the window's profiles fall in, widened
+  const near = new Uint8Array(n), wrap = Math.round(360 / g.dx);
+  for (const i of cur.winList) {
+    let gx = Math.floor((cur.lon[i] - g.west) / g.dx);
+    gx = ((gx % wrap) + wrap) % wrap;
+    const gy = Math.floor((g.north - cur.lat[i]) / g.dy);
+    if (gx >= g.width || gy < 0 || gy >= g.height) continue;
+    const ci = Math.floor(gx / sx), cj = Math.floor(gy / sy);
+    for (let dj = -FLOOR_SWATH; dj <= FLOOR_SWATH; dj++)
+      for (let di = -FLOOR_SWATH; di <= FLOOR_SWATH; di++) {
+        const a = ci + di, b = cj + dj;
+        if (a >= 0 && a < nx && b >= 0 && b < ny) near[b * nx + a] = 1;
+      }
+  }
+  const sp = new Float32Array(n * 3), fp = new Float32Array(n * 3), cl = new Float32Array(n * 3), ok = new Uint8Array(n);
+  const D = cur.D, W = cur.box ? cur.box[2] - cur.box[0] : 4;
+  let deep = 0;
+  for (let j = 0; j < ny; j++)
+    for (let i = 0; i < nx; i++) {
+      const v = j * nx + i, o = 3 * v;
+      // a vertex at a cell's corner is wanted by any of the four cells round it
+      if (!(near[v] || (i && near[v - 1]) || (j && near[v - nx]) || (i && j && near[v - nx - 1]))) continue;
+      const gi = Math.min(g.width - 1, i * sx), gj = Math.min(g.height - 1, j * sy);
+      // the mean of the sea cells in the block from here on; land if most are land
+      let sum = 0, sea = 0, all = 0;
+      for (let b = gj; b < Math.min(g.height, gj + sy); b++)
+        for (let a = gi; a < Math.min(g.width, gi + sx); a++) { const x = g.elev[b * g.width + a]; all++; if (x < 0) { sum += x; sea++; } }
+      const e = sea * 2 > all ? sum / sea : 0;
+      const lon = g.west + (gi + sx / 2) * g.dx, lat = g.north - (gj + sy / 2) * g.dy;
+      if (!(e < 0) || Math.abs(lat) > 90) continue;
+      const q = D ? D.fwd(((lon + 540) % 360) - 180, lat) : null;
+      if (D && !q) continue;
+      const s = sinkOf(-e), f = cur.frame(lon, lat, 1.003 - s);
+      sp[o] = f[0]; sp[o + 1] = f[1]; sp[o + 2] = f[2];
+      if (q) { const a = cur.place(q); fp[o] = a[0]; fp[o + 1] = a[1]; } else { fp[o] = f[0]; fp[o + 1] = f[1]; }
+      fp[o + 2] = (q ? 1.003 : f[2]) - (q ? s * cur.kFlat : 0);
+      const c = 4 * (gj * g.width + gi);
+      tmpColour.setRGB((g.data[c] / 255) * 0.8, (g.data[c + 1] / 255) * 0.8, (g.data[c + 2] / 255) * 0.8, THREE.SRGBColorSpace);
+      cl[o] = tmpColour.r; cl[o + 1] = tmpColour.g; cl[o + 2] = tmpColour.b;
+      ok[v] = 1;
+      deep = Math.max(deep, s);
+    }
+  // two triangles a cell, where all four corners are sea and the map does not tear between them
+  const idx = [], far = (a, b) => Math.hypot(fp[3 * a] - fp[3 * b], fp[3 * a + 1] - fp[3 * b + 1]) > 0.08 * W * (cur.kFlat || 1);
+  for (let j = 0; j < ny - 1; j++)
+    for (let i = 0; i < nx - 1; i++) {
+      const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
+      if (!near[a] || !(ok[a] && ok[b] && ok[c] && ok[d])) continue;
+      if (D && (far(a, b) || far(a, c) || far(b, d))) continue;
+      idx.push(a, c, b, b, c, d);
+    }
+  if (!idx.length) { fitUnder(); return; }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(sp.slice(), 3));
+  geo.setAttribute("color", new THREE.BufferAttribute(cl, 3));
+  geo.setIndex(n > 65535 ? new THREE.Uint32BufferAttribute(idx, 1) : new THREE.Uint16BufferAttribute(idx, 1));
+  floorMesh.geometry.dispose();
+  floorMesh.geometry = geo;
+  floorMesh.userData = { sphere: sp, flat: fp };
+  floorMesh.visible = true;
+  cur.sink.floor = deep;
+  fitUnder();
 }
 // a bead on each hung profile where it crosses the depth set
 function buildShell() {
@@ -1186,9 +1364,10 @@ function syncWhen() {
   $("depth-label").textContent = cur.p.z ? `Depth (${cur.p.z})` : `Depth (${cur.p.level})`;
   $("depth-out").textContent = cur.p.z ? `${fmtNum(state.depth)}${zUnits()}` : `level ${fmtNum(state.depth)}`;
   $("hang").checked = !!state.hang;
+  $("floor").checked = !!state.floor;
   $("dz").value = state.dz;
   $("dz-out").textContent = `x${Math.round(10 ** state.dz).toLocaleString("en")}`;
-  $("dz").disabled = !state.hang;
+  $("dz").disabled = !state.hang && !state.floor;
 }
 function showWhenInfo() {
   if (!cur || cur.kind !== "profiles") return;
@@ -1300,7 +1479,12 @@ $("depth").addEventListener("input", () => {
 $("dz").addEventListener("input", () => {
   if (!cur || cur.kind !== "profiles") return;
   state.dz = +$("dz").value;
-  syncWhen(); buildColumns(); buildShell(); place(); showLegend(); writeHash();
+  syncWhen(); buildColumns(); buildFloor(); buildShell(); place(); showLegend(); writeHash();
+});
+$("floor").addEventListener("change", () => {
+  if (!cur || cur.kind !== "profiles") return;
+  state.floor = $("floor").checked ? 1 : 0;
+  syncWhen(); buildFloor(); place(); showLegend(); writeHash(); readFloor();
 });
 $("hang").addEventListener("change", () => {
   if (!cur || cur.kind !== "profiles") return;
@@ -1423,8 +1607,13 @@ async function showProfilePick() {
   const tr = tbl.insertRow();
   tr.id = "pick-depth";
   tr.insertCell(); tr.insertCell();
+  const tf = tbl.insertRow();
+  tf.id = "pick-floor";
+  tf.insertCell(); tf.insertCell();
+  tf.hidden = !floorWanted();
   plot.hidden = false;
   redrawProfile();
+  if (floorWanted()) floorFor([i], 240).then(() => { if (profilePick() === i) { redrawProfile(); colourProfiles(); place(); } });
   // read now, so on the map too
   if (state.colour === "data" || state.hang) { colourProfiles(); place(); }
 }
@@ -1439,7 +1628,17 @@ function redrawProfile() {
     tr.cells[0].textContent = `At ${fmtNum(state.depth)}${zu}`;
     tr.cells[1].textContent = Number.isFinite(x) ? `${fmtNum(x)}${u}` : `none within ${fmtNum(depthTol())}${zu}`;
   }
-  drawProfile(plot, r.values, z, { title: `${v.path.split("/").pop()}${u}`, zTitle: `${p.z || p.level}${zu}`, down: zDown(), mark: state.depth });
+  const f = floorWanted() ? cur.floorAt[i] : NaN, tf = $("pick-floor");
+  if (tf) {
+    tf.hidden = !floorWanted();
+    tf.cells[0].textContent = "Sea floor (GEBCO 2026)";
+    const h = gapOf(i);
+    tf.cells[1].textContent = !Number.isFinite(f) ? "not read yet" : f === 0 ? "none: GEBCO has land or ice here" :
+      `${Math.round(f).toLocaleString("en")} m at ${resLabel(cur.floorRes[i])}` + (Number.isFinite(h) ? (h < -GAP_TOL ? `; the profile goes ${Math.round(-h).toLocaleString("en")} m deeper` : `; the profile stops ${Math.round(Math.max(0, h)).toLocaleString("en")} m above it`) : "");
+  }
+  // the floor in the profile's own units (decibars near enough metres)
+  drawProfile(plot, r.values, z, { title: `${v.path.split("/").pop()}${u}`, zTitle: `${p.z || p.level}${zu}`, down: zDown(), mark: state.depth,
+    floor: Number.isFinite(f) && f > 0 && cur.p.z ? f / zMetres() : null, floorText: `sea floor at ${Math.round(f).toLocaleString("en")} m, further down` });
 }
 
 // the z of profile i's levels: its own where z is per profile, else the
@@ -1490,12 +1689,15 @@ function plotFrame(cv) {
   ctx.font = "11px system-ui, sans-serif";
   return { ctx, W, H, L: 46, R: 10, T: 22, B: 22 };
 }
-function drawProfile(cv, x, z, { title, zTitle, down, mark = null }) {
+function drawProfile(cv, x, z, { title, zTitle, down, mark = null, floor = null, floorText = "" }) {
   const { ctx, W, H, L, R: Rm, T, B } = plotFrame(cv);
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
   for (let k = 0; k < x.length; k++) if (Number.isFinite(x[k]) && Number.isFinite(z[k])) { x0 = Math.min(x0, x[k]); x1 = Math.max(x1, x[k]); z0 = Math.min(z0, z[k]); z1 = Math.max(z1, z[k]); }
   if (!(x1 >= x0)) return;
   if (x1 === x0) { x0 -= 0.5; x1 += 0.5; }
+  // the sea floor on the axis where it is within half again of the deepest level
+  const floorOn = floor !== null && down && floor <= Math.max(z1 * 1.5, z1 + 50);
+  if (floorOn) z1 = Math.max(z1, floor * 1.04);
   if (z1 === z0) { z0 -= 0.5; z1 += 0.5; }
   const pad = (x1 - x0) * 0.05; x0 -= pad; x1 += pad;
   const X = (v) => L + ((v - x0) / (x1 - x0)) * (W - L - Rm);
@@ -1510,6 +1712,12 @@ function drawProfile(cv, x, z, { title, zTitle, down, mark = null }) {
   ctx.save(); ctx.translate(10, (T + H - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = "#8a97ab"; ctx.fillText(zTitle, 0, -4); ctx.restore();
   if (mark !== null && mark >= z0 && mark <= z1) {
     ctx.save(); ctx.strokeStyle = COLORS.pick; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(L, Y(mark)); ctx.lineTo(W - Rm, Y(mark)); ctx.stroke(); ctx.restore();
+  }
+  if (floorOn) {
+    ctx.fillStyle = COLORS.floor; ctx.fillRect(L, Y(floor), W - L - Rm, H - B - Y(floor));
+  } else if (floor !== null) {
+    ctx.fillStyle = "#c8a46e"; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    ctx.fillText(floorText, W - Rm - 2, H - B - 2);
   }
   ctx.strokeStyle = "#ffd34d"; ctx.lineWidth = 1.5; ctx.beginPath();
   let pen = false;
@@ -1555,6 +1763,8 @@ $("section").addEventListener("click", async () => {
     showReads();
   } catch (e) { if (serial === sectionSerial) info.textContent = `not read: ${e.message}`; return; }
   if (serial !== sectionSerial || cur !== c0) return;
+  if (floorWanted()) { info.textContent = "reading GEBCO 2026 along its track ..."; await floorFor(list, FLOOR_CELLS); }
+  if (serial !== sectionSerial || cur !== c0) return;
   cur.section = { list, rows: list.map((k) => (cur.profiles.has(k) ? cur.profiles.get(k).values : null)) };
   drawSection($("section-plot"), cur.section.list, cur.section.rows);
 });
@@ -1581,30 +1791,40 @@ function drawSection(cv, list, rows) {
   off.width = nx; off.height = ny;
   off.getContext("2d").putImageData(im, 0, 0);
   cv.hidden = false;
-  const { ctx, W, H, L, R: Rm, T, B } = plotFrame(cv);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(off, L, T, W - L - Rm, H - T - B);
   // the picked profile's levels, or a deeper one's where it stops short
   let z = zFor(profilePick());
   if (z.length <= deep) for (const k of list) { const e = cur.profiles.get(k); if (e && e.z && e.z.length > z.length) z = e.z; }
-  const zu = zUnits(), Y = (k) => T + (k / ny) * (H - T - B), X = (x) => L + ((x + 0.5) / nx) * (W - L - Rm);
+  // GEBCO's sea floor under each profile, as a level; the axis goes on down
+  // to take it in, as far as half again the deepest level
+  const floorLv = list.map((k) => (floorWanted() && cur.p.z && cur.floorAt[k] > 0 ? C.levelOf(z, cur.floorAt[k] / zMetres()) : NaN));
+  let axisN = ny;
+  for (const lv of floorLv) if (lv + 1 <= ny * 1.5) axisN = Math.max(axisN, lv + 1);
+  if (axisN > ny) axisN = Math.min(Math.ceil(ny * 1.5), Math.ceil(axisN * 1.03));
+  const { ctx, W, H, L, R: Rm, T, B } = plotFrame(cv);
+  const zu = zUnits(), Y = (k) => T + (k / axisN) * (H - T - B), X = (x) => L + ((x + 0.5) / nx) * (W - L - Rm), cw = (W - L - Rm) / nx;
+  // the sea floor under the data (so a profile deeper than GEBCO shows over it), its line over
+  ctx.fillStyle = COLORS.floor;
+  floorLv.forEach((lv, x) => { if (Number.isFinite(lv) && Y(lv + 0.5) < H - B) ctx.fillRect(X(x) - cw / 2, Math.max(T, Y(lv + 0.5)), cw + 0.5, H - B - Math.max(T, Y(lv + 0.5))); });
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, L, T, W - L - Rm, Y(ny) - T);
+  ctx.fillStyle = "#e0c08a";
+  floorLv.forEach((lv, x) => { if (Number.isFinite(lv) && Y(lv + 0.5) < H - B && Y(lv + 0.5) >= T) ctx.fillRect(X(x) - cw / 2, Y(lv + 0.5) - 0.5, cw + 0.5, 1); });
   // the depth set, across; the profiles in the time window, along the top
-  if (state.depth >= Math.min(z[0], z[Math.min(deep, z.length - 1)]) && state.depth <= Math.max(z[0], z[Math.min(deep, z.length - 1)])) {
-    let k = 0;
-    while (k < Math.min(deep, z.length - 1) && Math.abs(z[k + 1] - state.depth) <= Math.abs(z[k] - state.depth)) k++;
-    ctx.save(); ctx.strokeStyle = COLORS.pick; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(L, Y(k + 0.5)); ctx.lineTo(W - Rm, Y(k + 0.5)); ctx.stroke(); ctx.restore();
+  const dl = C.levelOf(z, state.depth);
+  if (dl >= -0.5 && dl <= axisN - 0.5) {
+    ctx.save(); ctx.strokeStyle = COLORS.pick; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(L, Y(dl + 0.5)); ctx.lineTo(W - Rm, Y(dl + 0.5)); ctx.stroke(); ctx.restore();
   }
   if (cur.inWin) {
     ctx.fillStyle = COLORS.pick;
-    list.forEach((k, x) => { if (cur.inWin[k]) ctx.fillRect(X(x) - 0.5, T - 4, Math.max(1, (W - L - Rm) / nx), 3); });
+    list.forEach((k, x) => { if (cur.inWin[k]) ctx.fillRect(X(x) - 0.5, T - 4, Math.max(1, cw), 3); });
   }
   // ticks at round values of z, placed where the levels reach them
   ctx.fillStyle = "#8a97ab"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
-  const z0 = Number.isFinite(z[0]) ? z[0] : 0, z1 = Number.isFinite(z[deep]) ? z[deep] : deep;
+  const zEnd = Math.min(deep, z.length - 1), z0 = Number.isFinite(z[0]) ? z[0] : 0;
+  const z1 = Number.isFinite(z[zEnd]) ? z[zEnd] + (zEnd > 0 ? ((axisN - 1 - zEnd) * (z[zEnd] - z[0])) / zEnd : 0) : axisN - 1;
   for (const t of niceTicks(Math.min(z0, z1), Math.max(z0, z1))) {
-    let k = 0;
-    while (k < deep && Math.abs(z[k + 1] - t) <= Math.abs(z[k] - t)) k++;
-    ctx.fillText(fmtNum(t), L - 4, Y(k + 0.5));
+    const k = C.levelOf(z, t);
+    if (k >= -0.5 && k <= axisN - 0.5) ctx.fillText(fmtNum(t), L - 4, Y(k + 0.5));
   }
   ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillStyle = "#dfe7f2";
   const u = cur.v.meta.attrs.units ? ` ${cur.v.meta.attrs.units}` : "";
@@ -1613,9 +1833,12 @@ function drawSection(cv, list, rows) {
   ctx.fillText(timeLabel(list[0]), L, H - B + 4);
   ctx.textAlign = "right"; ctx.fillText(timeLabel(list[list.length - 1]), W - Rm, H - B + 4);
   ctx.save(); ctx.translate(10, (T + H - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillText(`${cur.p.z || cur.p.level}${zu}`, 0, -4); ctx.restore();
+  let fl = 0, near = 0, under = 0;
+  list.forEach((k) => { const h = floorWanted() ? gapOf(k) : NaN; if (Number.isFinite(h)) { fl++; if (h < -GAP_TOL) under++; else if (h <= 20) near++; } });
   info.textContent = `${list.length} profiles of ${groupLabel(list[0])}, in time order, down to ${fmtNum(z[deep] ?? deep)}${zu}: ` +
     `colour is the value at each level, 2% to 98% of them (levels drawn as the picked profile has them)` +
-    (cur.inWin ? "; marked along the top, those in the time window" : "") + "; dashed, the depth set.";
+    (cur.inWin ? "; marked along the top, those in the time window" : "") + "; dashed, the depth set" +
+    (fl ? `; sand, GEBCO 2026's sea floor under each (where it is within half again of the deepest level), its line drawn over the data. ${near} of ${fl} stop within 20 m of it, ${under} go deeper than it.` : ".");
 }
 
 function showProfileFacts() {
@@ -1659,11 +1882,20 @@ function showProfileLegend() {
       `(2% and 98% of every level of the profiles read in the window, ${cur.dscale.when}). Light grey: not read; dark: no value within ${fmtNum(depthTol())}${zu} of ${at}` :
       `Points coloured by ${name} at ${at} as their profiles are read; light grey until then`);
   }
+  else if (state.colour === "gap") {
+    let n = 0, near = 0, under = 0;
+    for (const i of cur.winList) { const h = cur.profiles.has(i) ? gapOf(i) : NaN; if (!Number.isFinite(h)) continue; n++; if (h < -GAP_TOL) under++; else if (h <= 20) near++; }
+    parts.push(`Points coloured by how far above GEBCO 2026's sea floor each profile stops (its deepest ${cur.p.z || "level"} with a value${cur.p.z && /bar/.test(zUnits()) ? ", decibars taken as metres" : ""}): ` +
+      `yellow at the floor, purple ${GAP_TOP.toLocaleString("en")} m or more above it (log scale); pink, deeper than GEBCO has the floor, by more than ${GAP_TOL} m` +
+      (n ? `. Of the ${n.toLocaleString("en")} with both: ${near.toLocaleString("en")} stop within 20 m of the floor, ${under.toLocaleString("en")} go deeper than it` : "") +
+      (cur.floor ? ` (GEBCO here at ${resLabel(cur.floor.dx)}; a picked profile's at 15 arc seconds)` : ", once GEBCO is read"));
+  }
   if (cur.winRange) parts.push("faint points are outside the time window");
   if (state.hang && profCols.visible) {
     const E = Math.round(10 ** state.dz).toLocaleString("en");
     parts.push(`hung below each point read: its profile in the same colours, sunk by depth x${E} (1,000 m as deep as ${E} km would be), with a bead where it crosses ${cur.p.z ? `${fmtNum(state.depth)}${zu}` : "the level set"}`);
   } else if (state.hang) parts.push("profiles hang below their points once read");
+  if (state.floor && floorMesh.visible) parts.push(`under them, GEBCO 2026's sea floor in a swath along the window's tracks, from ${resLabel(cur.floor.dx)} cells, sunk by the same exaggeration (land and ice shelves left out)`);
   el.textContent = parts.map((t, k) => (k ? t : t[0].toUpperCase() + t.slice(1))).join("; ") + ". Click a point for its profile.";
 }
 
@@ -2027,7 +2259,7 @@ $("centre-grid").addEventListener("click", () => {
 $("assume").addEventListener("change", (e) => { state.assume = e.target.value; writeHash(); open(); });
 ui.colour.addEventListener("change", () => {
   state.colour = ui.colour.value;
-  if (cur) { drawTexture(); if (cur.kind === "profiles") { place(); readWindow(); } showLegend(); }
+  if (cur) { drawTexture(); if (cur.kind === "profiles") { place(); readWindow(); readFloor(); } showLegend(); }
   writeHash();
 });
 for (const k of ["chunks", "cells", "coast", "grat"])
@@ -2058,6 +2290,38 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   drawTexture(); showPick(); writeHash();
 });
 
+// A double-click turns the view about the place under the pointer: a
+// profile there, or the globe or the map. The view glides there, so the
+// place comes to the middle with the camera's direction kept.
+let glide = null;
+renderer.domElement.addEventListener("dblclick", (e) => {
+  if (!cur) return;
+  const r = renderer.domElement.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+  let p = null;
+  if (cur.kind === "profiles") {
+    const i = nearestProfile(px, py), m = i === null ? -1 : cur.pointOf[i], a = profPoints.geometry.attributes.position;
+    if (m >= 0 && a) p = new THREE.Vector3(a.array[3 * m], a.array[3 * m + 1], a.array[3 * m + 2]);
+  }
+  if (!p) {
+    ptr.set((px / r.width) * 2 - 1, -(py / r.height) * 2 + 1);
+    ray.setFromCamera(ptr, camera);
+    const hit = cur.kind === "grid" && gridMesh.visible ? ray.intersectObject(gridMesh)[0] : null;
+    if (hit) p = hit.point;
+    else if (under.visible) { const h = ray.ray.intersectSphere(new THREE.Sphere(new THREE.Vector3(), 1), new THREE.Vector3()); if (h) p = h; }
+    else { const h = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -1.003), new THREE.Vector3()); if (h) p = h; }
+  }
+  if (!p) return;
+  const d = p.clone().sub(controls.target);
+  glide = { t0: performance.now(), from: [camera.position.clone(), controls.target.clone()], d };
+});
+function stepGlide(now) {
+  if (!glide) return;
+  const f = Math.min(1, (now - glide.t0) / 350), e = ease(f);
+  camera.position.copy(glide.from[0]).addScaledVector(glide.d, e);
+  controls.target.copy(glide.from[1]).addScaledVector(glide.d, e);
+  if (f === 1) { glide = null; state.cam = [camera.position.x, camera.position.y, camera.position.z, controls.target.x, controls.target.y, controls.target.z]; writeHash(); }
+}
+
 let anim = false, dir = 1, lastT = 0;
 const playBtn = $("play");
 function stopAnim() { anim = false; playBtn.textContent = state.t >= 1 ? "Fold" : "Unfold"; }
@@ -2074,6 +2338,7 @@ function tick(now) {
     place(); syncControls(); writeHash();
   }
   lastT = now;
+  stepGlide(now);
   controls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
@@ -2083,7 +2348,7 @@ window.addEventListener("hashchange", () => {
   const before = state.url + "|" + state.varname;
   readHash(); syncControls(); setCamera(state.cam || DEFAULT_CAM);
   if (state.url + "|" + state.varname !== before || !cur) open();
-  else if (cur && cur.kind === "profiles") { setWindow(); syncWhen(); buildFlat(); place(); showPick(); showLegend(); readWindow(); }
+  else if (cur && cur.kind === "profiles") { setWindow(); syncWhen(); buildFlat(); place(); showPick(); showLegend(); readWindow(); readFloor(); }
   else if (cur) { buildFlat(); resetData(); drawTexture(); place(); autoRead(); showPick(); showLegend(); }
 });
 

@@ -454,6 +454,58 @@ export function binCounts(values, lo, hi, n) {
   return out;
 }
 
+// The smallest lon/lat box { west, east, south, north } around points,
+// padded by pad degrees: across the antimeridian where that is smaller,
+// with east then past 180 (west < east always, east - west <= 360). null
+// with no point.
+export function lonLatBox(lons, lats, pad = 0) {
+  const L = [];
+  let s = 90, n = -90;
+  for (let k = 0; k < lons.length; k++) {
+    if (!Number.isFinite(lons[k]) || !(Math.abs(lats[k]) <= 90)) continue;
+    L.push((((lons[k] + 180) % 360) + 360) % 360 - 180);
+    s = Math.min(s, lats[k]); n = Math.max(n, lats[k]);
+  }
+  if (!L.length) return null;
+  L.sort((a, b) => a - b);
+  // the box is everything but the widest gap between neighbours, round the circle
+  let gap = L[0] + 360 - L[L.length - 1], at = 0;
+  for (let k = 1; k < L.length; k++) if (L[k] - L[k - 1] > gap) { gap = L[k] - L[k - 1]; at = k; }
+  let west = L[at], east = at === 0 ? L[L.length - 1] : L[at - 1] + 360;
+  if (east - west + 2 * pad >= 360) { west = -180; east = 180; }
+  else { west -= pad; east += pad; }
+  return { west, east, south: Math.max(-90, s - pad), north: Math.min(90, n + pad) };
+}
+
+// A grid's value at lon, lat, bilinear between cell centres: the grid is
+// { elev, width, height, west, north, dx, dy } with west and north the
+// outer edges of its first cell (as GEBCO windows are read), rows going
+// south. Longitudes are taken round to the grid's own; NaN off the grid.
+export function gridSample(g, lon, lat) {
+  let fx = (lon - g.west) / g.dx - 0.5;
+  const wrap = Math.round(360 / g.dx);
+  if (fx < -0.5) fx += wrap; else if (fx > g.width - 0.5) fx -= wrap;
+  const fy = (g.north - lat) / g.dy - 0.5;
+  if (!(fx >= -0.5 && fx <= g.width - 0.5 && fy >= -0.5 && fy <= g.height - 0.5)) return NaN;
+  const x0 = Math.max(0, Math.min(g.width - 2, Math.floor(fx))), y0 = Math.max(0, Math.min(g.height - 2, Math.floor(fy)));
+  const x1 = Math.min(g.width - 1, x0 + 1), y1 = Math.min(g.height - 1, y0 + 1);
+  const u = Math.max(0, Math.min(1, fx - x0)), v = Math.max(0, Math.min(1, fy - y0)), e = g.elev, w = g.width;
+  return (e[y0 * w + x0] * (1 - u) + e[y0 * w + x1] * u) * (1 - v) + (e[y1 * w + x0] * (1 - u) + e[y1 * w + x1] * u) * v;
+}
+
+// Where value v falls along the levels z (increasing, NaN past the end),
+// as a fractional level index, carried on past the last level (and before
+// the first) at the spacing there.
+export function levelOf(z, v) {
+  let n = z.length;
+  while (n > 0 && !Number.isFinite(z[n - 1])) n--;
+  if (n === 0) return NaN;
+  if (n === 1) return v === z[0] ? 0 : NaN;
+  if (v <= z[0]) return (v - z[0]) / (z[1] - z[0]);
+  for (let k = 1; k < n; k++) if (v <= z[k]) return k - 1 + (v - z[k - 1]) / (z[k] - z[k - 1]);
+  return n - 1 + (v - z[n - 1]) / (z[n - 1] - z[n - 2]);
+}
+
 // The profiles (indices into times) in the window [t0, t1), in index order
 export function inWindow(times, t0, t1) {
   const out = [];
