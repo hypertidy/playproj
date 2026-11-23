@@ -10,6 +10,11 @@ import { IcechunkStore } from "icechunk-js";
 import * as zarr from "zarrita";
 import { zarrStructure, parseCrsRef } from "../src/core/structure.js";
 import { cfProj, axisRole, axisOf, unitScale, gridOf, attrFill, profileRoles, LAT_NAMES, LON_NAMES } from "../src/core/storecrs.js";
+import { registerGribberish } from "./gribberish.js";
+
+// GRIB messages as chunks (dynamical.org's virtual forecast stores): the
+// decoder loads the first time a chunk needs it
+registerGribberish(zarr.registry);
 
 const ICECHUNK = "icechunk+";
 const dec = new TextDecoder();
