@@ -126,6 +126,27 @@ check(C.cfTime(0, "days since 1582-10-15") === "1582-10-15" && C.cfTime(-1, "day
 check(C.cfTime(0, T0, "none") === null && C.cfTime(0, T0, "lunar") === null, "cfTime calendars CF does not define");
 check(C.cfTime(90, "seconds since 2000-01-01") === "2000-01-01 00:01:30", "cfTime seconds");
 check(!C.oddCalendar(undefined) && !C.oddCalendar("Proleptic_Gregorian") && C.oddCalendar("noleap") && C.oddCalendar("360_day") && C.oddCalendar("julian"), "oddCalendar");
+// fill values in attributes: numbers, lists, "NaN", and xarray's base64 double
+check(C.attrFill("AAAAAPBp+EA=")[0] === 99999 && Number.isNaN(C.attrFill("NaN")[0]) && String(C.attrFill([1, "2"])) === "1,2" && !C.attrFill(null).length && !C.attrFill("abc").length, "attrFill");
+// a collection of profiles, from the arrays beside the variable (MEOP's names)
+const meopArrays = [
+  { name: "LATITUDE", dims: ["N_PROF"], attrs: { standard_name: "latitude", units: "degree_north" } },
+  { name: "LONGITUDE", dims: ["N_PROF"], attrs: { standard_name: "longitude", units: "degree_east" } },
+  { name: "JULD_LOCATION", dims: ["N_PROF"], attrs: { units: "days since 1950-01-01 00:00:00 UTC" } },
+  { name: "JULD", dims: ["N_PROF"], attrs: { units: "days since 1950-01-01 00:00:00 UTC", calendar: "julian" } },
+  { name: "PRES_ADJUSTED", dims: ["N_PROF", "N_LEVELS"], attrs: { units: "decibar" } },
+  { name: "PRES", dims: ["N_PROF", "N_LEVELS"], attrs: { units: "decibar" } },
+  { name: "TEMP", dims: ["N_PROF", "N_LEVELS"], attrs: { units: "degree_Celsius" } },
+  { name: "tag", dims: ["N_PROF"], attrs: { source_names: ["a", "b"] } }
+];
+const pr = C.profileRoles(["N_PROF", "N_LEVELS"], {}, meopArrays);
+check(pr && pr.instance === "N_PROF" && pr.level === "N_LEVELS" && pr.lat === "LATITUDE" && pr.lon === "LONGITUDE" && pr.time === "JULD" && pr.z === "PRES" && pr.group === "tag", `profileRoles ${JSON.stringify(pr)}`);
+// the variable's coordinates attribute picks among candidates
+check(C.profileRoles(["N_PROF", "N_LEVELS"], { coordinates: "JULD_LOCATION LATITUDE LONGITUDE" }, meopArrays).time === "JULD_LOCATION", "profileRoles follows coordinates");
+// a grid's lat(lat) and lon(lon), and a station's lat(station) with lon on another dim: not profiles
+const gridArrays = [{ name: "lat", dims: ["lat"], attrs: { units: "degrees_north" } }, { name: "lon", dims: ["lon"], attrs: { units: "degrees_east" } }];
+check(C.profileRoles(["lat", "lon"], {}, gridArrays) === null && C.profileRoles(["time", "lat", "lon"], {}, gridArrays) === null, "profileRoles: a grid is not a collection");
+check(C.profileRoles(["station", "z"], {}, [{ name: "lat", dims: ["station"], attrs: { units: "degrees_north" } }, { name: "lon", dims: ["z"], attrs: { units: "degrees_east" } }]) === null, "profileRoles: lat and lon on different dims");
 const sc = C.sliceCost([10, 721, 1440], [1, 721, 1440], 1, 2, 4);
 check(sc.chunks === 1 && sc.bytes === 721 * 1440 * 4, "sliceCost");
 
@@ -217,8 +238,32 @@ try {
   const s = await R.openStore(`${base}/era.icechunk/1x91x180`);
   check(s.group === "1x91x180" && R.dataArrays(s.arrays()).some((x) => x.path === "2m_temperature"), "a group path after the repository");
 } catch (e) { check(false, `group path: ${e.message}`); }
+// a collection of profiles: no grid, a point per profile, and one profile read alone
+for (const t of man.profiles || []) {
+  try {
+    const s = await R.openStore(`${base}/${t.name}`);
+    const v = await R.describeVariable(s, t.variable);
+    const p = await R.describeProfiles(s, v);
+    check(!v.grid && p, `${t.name}: grid ${!!v.grid}, profiles ${!!p}`);
+    if (!p) continue;
+    for (const k of ["instance", "level", "lat", "lon", "time", "z", "group"]) check(p[k] === t[k], `${t.name}: ${k} is ${p[k]}, not ${t[k]}`);
+    check(p.n === t.n && p.nLevels === t.levels, `${t.name}: ${p.n} profiles of ${p.nLevels} levels`);
+    const lat = await R.readPerProfile(s, p.by[p.lat]);
+    check(lat.values.filter(Number.isNaN).length === t.noPosition, `${t.name}: ${lat.values.filter(Number.isNaN).length} without a position`);
+    const r = await R.readProfile(s, v, p, t.pick);
+    check(r.values.length === t.levels && t.values.every((x, k) => (x === null ? Number.isNaN(r.values[k]) : Math.abs(r.values[k] - x) < 1e-6)), `${t.name}: profile ${t.pick} ${Array.from(r.values)}`);
+    check(r.z && t.pres.every((x, k) => r.z[k] === x), `${t.name}: z of profile ${t.pick}`);
+    const e = await R.readProfile(s, v, p, t.empty);
+    check(e.values.every(Number.isNaN), `${t.name}: profile ${t.empty}, which has no chunk, reads ${Array.from(e.values).slice(0, 3)}`);
+  } catch (e) { check(false, `${t.name}: ${e.message}`); }
+}
+// a grid is never a collection of profiles
+try {
+  const s = await R.openStore(`${base}/era.icechunk`), v = await R.describeVariable(s, "1x91x180/2m_temperature");
+  check((await R.describeProfiles(s, v)) === null, "a grid taken for profiles");
+} catch (e) { check(false, `grid not profiles: ${e.message}`); }
 server.close();
 
 if (known.length) console.log(`storecrs: known proj4js 2.12.1 differences from PROJ in ${known.join(", ")}`);
-console.log(`storecrs: ${fx.cases.length} CF mappings vs PROJ ${fx.proj}, ${fx.areas.length} cell areas, ${man.stores.length} stores${fails ? `, ${fails} failing` : ", all agree"}`);
+console.log(`storecrs: ${fx.cases.length} CF mappings vs PROJ ${fx.proj}, ${fx.areas.length} cell areas, ${man.stores.length} stores, ${(man.profiles || []).length} profile collection${fails ? `, ${fails} failing` : ", all agree"}`);
 process.exit(fails ? 1 : 0);

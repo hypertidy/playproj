@@ -52,7 +52,9 @@ const PRESETS = [
   { label: "CMIP6 MPI-ESM1-2-HR tas (Gaussian)", url: "https://storage.googleapis.com/cmip6/CMIP6/CMIP/MPI-M/MPI-ESM1-2-HR/historical/r1i1p1f1/Amon/tas/gn/v20190710", varname: "tas", projection: "mollweide" },
   { label: "CMIP6 GFDL-ESM4 tos (tripolar)", url: "https://storage.googleapis.com/cmip6/CMIP6/CMIP/NOAA-GFDL/GFDL-ESM4/historical/r2i1p1f1/Omon/tos/gn/v20180701", varname: "tos", projection: "native" },
   // a virtual Icechunk on source.coop (a scratch bucket, so it may move)
-  { label: "ACCESS-ESM1.6 ocean temp (Icechunk)", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/access-esm/access-esm1-6.historical.ocean-3d-temp-1mon-mean/icechunk", varname: "temp", projection: "equal_earth" }
+  { label: "ACCESS-ESM1.6 ocean temp (Icechunk)", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/access-esm/access-esm1-6.historical.ocean-3d-temp-1mon-mean/icechunk", varname: "temp", projection: "equal_earth" },
+  // profiles, not a grid: CTD tags on seals (MEOP, through IMOS), virtual refs into IMOS's NetCDF files
+  { label: "Seal CTD profiles, MEOP (Icechunk)", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/imos-tracking/meop-ctd-2024/icechunk", varname: "TEMP", projection: "lambert_azimuthal_equal_area", lat: -90, lon: 140 }
 ];
 
 // ---------------------------------------------------------------- state
@@ -76,7 +78,7 @@ function readHash() {
   for (const k of ["t", "chunks", "cells", "coast", "grat"]) { const v = num(k); if (v !== null) state[k] = v; }
   state.t = Math.max(0, Math.min(1, state.t));
   const c = params.get("colour");
-  if (["data", "area", "omega", "none"].includes(c)) state.colour = c;
+  if (["data", "area", "omega", "none", "time", "group"].includes(c)) state.colour = c;
   state.pick = params.get("pick") || "";
   state.assume = R.ASSUME[params.get("assume")] ? params.get("assume") : "";
   const cam = (params.get("cam") || "").split(",").map(Number);
@@ -94,6 +96,8 @@ function writeHash() {
     for (const [d, i] of Object.entries(state.dims)) if (i) p[`dimIndices_${d}`] = i;
     if (state.t) p.t = +state.t.toFixed(3);
     for (const k of ["colour", "chunks", "cells", "coast", "grat"]) if (state[k] !== defaults[k]) p[k] = state[k];
+    // time is to profiles what the data is to a grid: the default, left out
+    if (cur && cur.kind === "profiles" && state.colour === "time") delete p.colour;
     if (state.pick) p.pick = state.pick;
     if (state.assume) p.assume = state.assume;
     if (state.cam) p.cam = state.cam.map((x) => +x.toFixed(2)).join(",");
@@ -246,6 +250,7 @@ function worldBox(D) {
 
 // where each vertex goes at t = 1, and the scale that fits the view
 function buildFlat() {
+  if (cur.kind === "profiles") return buildProfilesFlat();
   const { g, F, ll } = cur;
   const lon0 = state.lon ?? cur.mid[0], lat0 = state.lat ?? cur.mid[1];
   cur.frame = frameAt(lon0, lat0);
@@ -349,12 +354,15 @@ function morph(arr, sphere, flat, e) {
   for (let i = 0; i < arr.length; i++) arr[i] = sphere[i] + (flat[i] - sphere[i]) * e;
 }
 function place() {
-  if (!cur || !cur.mesh) return;
+  if (!cur || (!cur.mesh && cur.kind !== "profiles")) return;
   const e = cur.earth && cur.D ? ease(state.t) : cur.earth ? 0 : 1;
-  const pos = gridMesh.geometry.attributes.position;
-  morph(pos.array, cur.mesh.sphere, cur.mesh.flat, e);
-  pos.needsUpdate = true;
-  gridMesh.geometry.computeBoundingSphere();
+  const meshes = cur.kind === "profiles" ? PROF_MESHES.filter((M) => M.visible && M.userData.sphere).map((M) => [M, M.userData]) : [[gridMesh, cur.mesh]];
+  for (const [M, u] of meshes) {
+    const pos = M.geometry.attributes.position;
+    morph(pos.array, u.sphere, u.flat, e);
+    pos.needsUpdate = true;
+    M.geometry.computeBoundingSphere();
+  }
   for (const [L, on] of [[coastLines, state.coast], [gratLines, state.grat]]) {
     L.visible = !!(cur.earth && on);
     if (!L.visible || !L.geometry.attributes.position) continue;
@@ -389,6 +397,7 @@ function fieldImage() {
 }
 
 function drawTexture() {
+  if (cur.kind === "profiles") return colourProfiles();
   const { g } = cur;
   const [W, H] = texSize();
   if (texCanvas.width !== W || texCanvas.height !== H) { texCanvas.width = W; texCanvas.height = H; texture.dispose(); }
@@ -561,11 +570,8 @@ function fillValues(v) {
   const out = [];
   const f = v.meta.fill;
   if (typeof f === "number") out.push(f);
-  for (const k of ["_FillValue", "missing_value"]) {
-    const a = v.meta.attrs[k];
-    if (typeof a === "number") out.push(a);
-    if (Array.isArray(a)) out.push(...a.filter((x) => typeof x === "number"));
-  }
+  // numbers, lists of them, or a float as xarray writes it in Zarr v3 (base64)
+  for (const k of ["_FillValue", "missing_value"]) out.push(...C.attrFill(v.meta.attrs[k]));
   return new Set(out);
 }
 
@@ -683,6 +689,7 @@ async function readChunks(list) {
 
 function resetData() {
   readSerial++;
+  if (cur.kind === "profiles") return;
   const [W, H] = [Math.min(cur.g.nx, TEX), Math.min(cur.g.ny, TEX)];
   const cv = document.createElement("canvas");
   cv.width = W; cv.height = H;
@@ -728,6 +735,448 @@ function sampleList() {
   return list;
 }
 
+// ---------------------------------------------------------------- profiles
+
+// A collection of profiles (Argo, MEOP: storecrs.profileRoles) is not a
+// grid: it is a point per profile where it was taken, coloured by when or by
+// the platform it came from, on the same globe and projections. A click
+// reads that one profile (a row of the variable: a single chunk where the
+// store keeps one per profile) and plots it against pressure or depth.
+const pointsMesh = (size, color) => {
+  const m = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ size, sizeAttenuation: false, ...(color === undefined ? { vertexColors: true } : { color }) }));
+  m.visible = false;
+  scene.add(m);
+  return m;
+};
+const profPoints = pointsMesh(2.5), profTrack = pointsMesh(4, 0xffffff), profMark = pointsMesh(12, COLORS.pick);
+const PROF_MESHES = [profPoints, profTrack, profMark];
+const PROFILE_COLOURS = [["time", "Time of the profile"], ["group", "Platform or file it came from"], ["none", "Nothing"]];
+const GRID_COLOURS = [["data", "The data (chunks read so far)"], ["area", "Cell area on the earth"], ["omega", "Angular distortion of the store's CRS"], ["none", "Nothing"]];
+const SECTION_MAX = 4000;
+const tmpColour = new THREE.Color();
+
+// the controls each kind of store has
+function setMode(kind) {
+  const prof = kind === "profiles";
+  gridMesh.visible = !prof;
+  for (const M of PROF_MESHES) M.visible = false;
+  profPoints.visible = prof;
+  $("sample").hidden = prof;
+  for (const k of ["chunks", "cells"]) $(k).closest("label").hidden = prof;
+  $("colour-label").textContent = prof ? "Colour the profiles by" : "Colour the cells by";
+  const opts = prof ? PROFILE_COLOURS.filter(([k]) => k !== "group" || cur.group) : GRID_COLOURS;
+  ui.colour.innerHTML = "";
+  for (const [k, label] of opts) { const o = document.createElement("option"); o.value = k; o.textContent = label; ui.colour.appendChild(o); }
+  if (!opts.some(([k]) => k === state.colour)) state.colour = opts[0][0];
+  ui.colour.value = state.colour;
+  $("profile-box").hidden = !prof;
+  $("centre-grid").textContent = prof ? "On the profiles" : "On the grid";
+  if (prof) $("dims").innerHTML = "";
+}
+
+async function openProfiles(s, v, p, serial) {
+  status(`a collection of ${p.n.toLocaleString("en")} profiles: reading where each was taken ...`);
+  const names = [p.lat, p.lon, p.time, p.group].filter(Boolean);
+  const got = await Promise.all(names.map((n) => R.readPerProfile(s, p.by[n]).catch(() => null)));
+  if (serial !== openSerial) return;
+  const val = Object.fromEntries(names.map((n, i) => [n, got[i]]));
+  if (!val[p.lat] || !val[p.lon]) throw new Error(`could not read ${p.lat} and ${p.lon}, the position of each profile`);
+  const lon = val[p.lon].values, lat = val[p.lat].values;
+  // the middle: mean latitude, and the mean direction of the longitudes
+  let sx = 0, sy = 0, sl = 0, n = 0;
+  for (let i = 0; i < lon.length; i++) if (Number.isFinite(lon[i]) && Math.abs(lat[i]) <= 90) { sx += Math.cos(lon[i] * D2R); sy += Math.sin(lon[i] * D2R); sl += lat[i]; n++; }
+  cur = {
+    kind: "profiles", s, v, p, F: null, earth: true, lon, lat, time: p.time ? val[p.time] : null, group: p.group ? val[p.group] : null,
+    mid: n ? [Math.atan2(sy, sx) / D2R, sl / n] : [0, 0], placed: n, extra: new Map(), reads: { chunks: 0, bytes: 0 },
+    chunkBytes: v.meta.chunks.reduce((a, b) => a * b, 1) * C.dtypeBytes(v.meta.dtype), fills: new Set()
+  };
+  const li = v.dims.indexOf(p.level), ii = v.dims.indexOf(p.instance);
+  cur.perProfileChunks = Math.ceil(v.meta.shape[li] / v.meta.chunks[li]);
+  cur.levelChunks = Math.ceil(v.meta.shape[ii] / v.meta.chunks[ii]);
+  if (cur.time) { let lo = Infinity, hi = -Infinity; for (const t of cur.time.values) if (Number.isFinite(t)) { lo = Math.min(lo, t); hi = Math.max(hi, t); } cur.timeRange = lo <= hi ? [lo, hi] : null; }
+  if (cur.group) cur.groups = new Set(Array.from(cur.group.values).filter(Number.isFinite)).size;
+  const za = p.z && p.by[p.z];
+  if (za && za.dims.length === 1) { const r = await R.readPerProfile(s, za).catch(() => null); if (r) cur.zLevels = r.values; }
+  if (serial !== openSerial) return;
+  setMode("profiles");
+  buildFlat();
+  place();
+  showFacts();
+  showLegend();
+  showPick();
+  showReads();
+  status("");
+  writeHash();
+}
+
+// every profile with a position on this map, on the sphere and flat
+function buildProfilesFlat() {
+  const lon0 = state.lon ?? cur.mid[0], lat0 = state.lat ?? cur.mid[1];
+  cur.frame = frameAt(lon0, lat0);
+  // the store's own coordinates are longitude and latitude: drawn as they are
+  const D = displayFns(state.projection === "native" ? "equirectangular" : state.projection, lon0, lat0);
+  cur.D = D;
+  const box = D ? worldBox(D) : null;
+  const k = box ? Math.min(3.8 / (box[2] - box[0]), 2.6 / (box[3] - box[1])) : 1;
+  const cx = box ? (box[0] + box[2]) / 2 : 0, cy = box ? (box[1] + box[3]) / 2 : 0;
+  cur.place = (q) => [(q[0] - cx) * k, (q[1] - cy) * k, 1];
+  cur.box = box;
+  const n = cur.lon.length, sp = new Float32Array(n * 3), fp = new Float32Array(n * 3), on = new Int32Array(n), at = new Int32Array(n).fill(-1);
+  let m = 0;
+  for (let i = 0; i < n; i++) {
+    const lo = cur.lon[i], la = cur.lat[i];
+    if (!Number.isFinite(lo) || !(Math.abs(la) <= 90)) continue;
+    const q = D ? D.fwd(lo, la) : null;
+    if (D && !q) continue;
+    sp.set(cur.frame(lo, la, 1.003), 3 * m);
+    if (q) { const f = cur.place(q); fp[3 * m] = f[0]; fp[3 * m + 1] = f[1]; fp[3 * m + 2] = 1.003; } else fp.set(sp.subarray(3 * m, 3 * m + 3), 3 * m);
+    on[m] = i; at[i] = m; m++;
+  }
+  cur.on = on.slice(0, m); cur.pointOf = at;
+  setPoints(profPoints, sp.slice(0, 3 * m), fp.slice(0, 3 * m));
+  colourProfiles();
+  buildLines();
+  markProfiles();
+}
+
+function setPoints(M, sphere, flat, lift = 0) {
+  if (lift) for (const a of [sphere, flat]) for (let i = 0; i < a.length; i += 3) { const r = 1 + lift / Math.hypot(a[i], a[i + 1], a[i + 2]); if (a === sphere) { a[i] *= r; a[i + 1] *= r; a[i + 2] *= r; } else a[i + 2] += lift; }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(sphere.slice(), 3));
+  if (M === profPoints) g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(sphere.length), 3));
+  M.geometry.dispose();
+  M.geometry = g;
+  M.userData = { sphere, flat };
+}
+
+// a colour per platform or file, far apart around the hue circle
+const groupColour = (g) => tmpColour.setHSL((((g * 0.6180339887) % 1) + 1) % 1, 0.7, 0.6, THREE.SRGBColorSpace);
+function colourProfiles() {
+  const col = profPoints.geometry.attributes.color;
+  if (!col) return;
+  const mode = state.colour, tr = cur.timeRange;
+  for (let m = 0; m < cur.on.length; m++) {
+    const i = cur.on[m];
+    if (mode === "time" && cur.time && tr) {
+      const t = cur.time.values[i];
+      if (Number.isFinite(t)) { const rgb = rampAt(VIRIDIS, tr[1] > tr[0] ? (t - tr[0]) / (tr[1] - tr[0]) : 0.5); tmpColour.setRGB(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, THREE.SRGBColorSpace); }
+      else tmpColour.setRGB(0.5, 0.5, 0.5, THREE.SRGBColorSpace);
+    } else if (mode === "group" && cur.group && Number.isFinite(cur.group.values[i])) groupColour(cur.group.values[i]);
+    else tmpColour.setRGB(0.82, 0.86, 0.92, THREE.SRGBColorSpace);
+    col.array[3 * m] = tmpColour.r; col.array[3 * m + 1] = tmpColour.g; col.array[3 * m + 2] = tmpColour.b;
+  }
+  col.needsUpdate = true;
+}
+
+const profilePick = () => {
+  if (!cur || cur.kind !== "profiles" || !/^\d+$/.test(state.pick)) return null;
+  const i = +state.pick;
+  return i < cur.p.n ? i : null;
+};
+// the profiles of the picked one's platform or file
+function sameGroup(i) {
+  if (!cur.group || !Number.isFinite(cur.group.values[i])) return [];
+  const g = cur.group.values[i], out = [];
+  for (let k = 0; k < cur.group.values.length; k++) if (cur.group.values[k] === g) out.push(k);
+  return out;
+}
+// the picked profile, and its platform's other profiles, drawn over the rest
+function markProfiles() {
+  const i = profilePick(), u = profPoints.userData;
+  profMark.visible = profTrack.visible = false;
+  if (i === null || !u.sphere) return;
+  const pts = (list, lift, M) => {
+    const ms = list.map((k) => cur.pointOf[k]).filter((m) => m >= 0);
+    if (!ms.length) return;
+    const sp = new Float32Array(ms.length * 3), fp = new Float32Array(ms.length * 3);
+    ms.forEach((m, j) => { sp.set(u.sphere.subarray(3 * m, 3 * m + 3), 3 * j); fp.set(u.flat.subarray(3 * m, 3 * m + 3), 3 * j); });
+    setPoints(M, sp, fp, lift);
+    M.visible = true;
+  };
+  pts(sameGroup(i), 0.002, profTrack);
+  pts([i], 0.004, profMark);
+  place();
+}
+
+// the profile under the pointer: nearest on screen, within 10 px, and on
+// the globe only those on the side facing the camera
+function nearestProfile(px, py) {
+  const pos = profPoints.geometry.attributes.position;
+  if (!pos) return null;
+  const a = pos.array, r = renderer.domElement.getBoundingClientRect();
+  const M = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).elements;
+  const c = camera.position, globe = under.visible;
+  let best = -1, bd = 100;
+  for (let m = 0; m < a.length / 3; m++) {
+    const x = a[3 * m], y = a[3 * m + 1], z = a[3 * m + 2];
+    if (globe && x * c.x + y * c.y + z * c.z < x * x + y * y + z * z) continue;
+    const w = M[3] * x + M[7] * y + M[11] * z + M[15];
+    if (w <= 0) continue;
+    const sx = (((M[0] * x + M[4] * y + M[8] * z + M[12]) / w + 1) / 2) * r.width;
+    const sy = ((1 - (M[1] * x + M[5] * y + M[9] * z + M[13]) / w) / 2) * r.height;
+    const d = (sx - px) ** 2 + (sy - py) ** 2;
+    if (d < bd) { bd = d; best = m; }
+  }
+  return best < 0 ? null : cur.on[best];
+}
+
+const timeLabel = (i) => {
+  const t = cur.time && cur.time.values[i];
+  return Number.isFinite(t) ? C.cfTime(t, cur.time.attrs.units, cur.time.attrs.calendar) || fmtNum(t) : "none";
+};
+const groupLabel = (i) => {
+  const g = cur.group && cur.group.values[i];
+  if (!Number.isFinite(g)) return "none";
+  const names = cur.group.attrs.source_names;
+  return Array.isArray(names) && names[g] !== undefined ? `${names[g]} (${g})` : fmtNum(g);
+};
+// a value kept per profile: a date where CF units say so, a letter where a
+// one-byte code is one (Argo's "A", "D")
+const shown = (x, a) => (!Number.isFinite(x) ? "none" : (a && C.cfTime(x, a.attrs.units, a.attrs.calendar)) ||
+  (a && a.dtype === "uint8" && x >= 33 && x <= 126 ? `${String.fromCharCode(x)} (${x})` : fmtNum(x)));
+
+let pickSerial = 0;
+async function showProfilePick() {
+  const tbl = $("pick"), info = $("pick-info"), plot = $("profile-plot"), serial = ++pickSerial;
+  tbl.innerHTML = "";
+  markProfiles();
+  const i = profilePick();
+  plot.hidden = true;
+  showSectionButton(i);
+  if (i === null) { info.textContent = "Click a point for its profile."; $("prof-extra").innerHTML = ""; return; }
+  const { p, v } = cur;
+  info.textContent = `Profile ${i.toLocaleString("en")} of ${p.n.toLocaleString("en")}: index ${i} along ${p.instance}.`;
+  const rows = [["Lon, lat", Number.isFinite(cur.lon[i]) && Math.abs(cur.lat[i]) <= 90 ? `${cur.lon[i].toFixed(4)}${DEG}, ${cur.lat[i].toFixed(4)}${DEG}` : "none: not on the map"]];
+  if (cur.time) rows.push([`Time (${p.time})`, timeLabel(i)]);
+  if (cur.group) rows.push([`From (${p.group})`, groupLabel(i)]);
+  const idx = v.dims.map((d, k) => (d === p.instance ? Math.floor(i / v.meta.chunks[k]) : 0));
+  rows.push(["Chunk", `${C.chunkKey(idx, { version: v.meta.version, separator: v.meta.separator })}` + (cur.perProfileChunks > 1 ? ` and ${cur.perProfileChunks - 1} more` : "")]);
+  const put = (list) => { for (const [k, val] of list) { const tr = tbl.insertRow(); tr.insertCell().textContent = k; tr.insertCell().textContent = val; } };
+  put(rows);
+  showExtra(i);
+  let r;
+  try {
+    r = cur.profiles && cur.profiles.get(i);
+    if (!r) {
+      r = await R.readProfile(cur.s, v, p, i);
+      // its z too, where z is per profile (a chunk of the same size, as MEOP's PRES)
+      const k = r.z ? 2 : 1;
+      cur.reads.chunks += k * cur.perProfileChunks; cur.reads.bytes += k * cur.perProfileChunks * cur.chunkBytes;
+      (cur.profiles || (cur.profiles = new Map())).set(i, r);
+      showReads();
+    }
+  } catch (e) { if (serial === pickSerial) put([["Values", `not read: ${e.message}`]]); return; }
+  if (serial !== pickSerial || cur.kind !== "profiles") return;
+  const z = zFor(i);
+  const ok = [];
+  for (let k = 0; k < r.values.length; k++) if (Number.isFinite(r.values[k])) ok.push(k);
+  const u = v.meta.attrs.units ? ` ${v.meta.attrs.units}` : "", zu = zUnits();
+  if (!ok.length) { put([["Values", `none: every level is a fill value${cur.perProfileChunks === 1 ? " (or the store has no chunk for it)" : ""}`]]); return; }
+  let lo = Infinity, hi = -Infinity;
+  for (const k of ok) { lo = Math.min(lo, r.values[k]); hi = Math.max(hi, r.values[k]); }
+  put([["Levels with data", `${ok.length.toLocaleString("en")} of ${r.values.length.toLocaleString("en")}, ${fmtNum(z[ok[0]])} to ${fmtNum(z[ok[ok.length - 1]])}${zu}`],
+    [v.path.split("/").pop(), `${fmtNum(lo)} to ${fmtNum(hi)}${u}`]]);
+  plot.hidden = false;
+  drawProfile(plot, r.values, z, { title: `${v.path.split("/").pop()}${u}`, zTitle: `${p.z || p.level}${zu}`, down: zDown() });
+}
+
+// the z of profile i's levels: its own where z is per profile, else the
+// collection's (or, with no z, the level's index)
+const zFor = (i) => (i !== null && cur.profiles && cur.profiles.get(i) && cur.profiles.get(i).z) || zLevels();
+function zLevels() {
+  const n = cur.p.nLevels;
+  if (cur.zLevels && cur.zLevels.length === n) return cur.zLevels;
+  return Float64Array.from({ length: n }, (_, k) => k);
+}
+const zAttrs = () => (cur.p.z ? cur.p.by[cur.p.z].attrs || {} : {});
+const zUnits = () => (zAttrs().units ? ` ${zAttrs().units}` : "");
+// pressure and depth grow downwards; an altitude (positive up) does not
+const zDown = () => zAttrs().positive !== "up";
+
+// every value kept per profile, read whole the first time it is opened
+async function showExtra(i) {
+  const tbl = $("prof-extra");
+  if (!$("prof-more").open) return;
+  const skip = new Set([cur.p.lat, cur.p.lon, cur.p.time, cur.p.group]);
+  const list = cur.p.perProfile.filter((a) => !skip.has(a.name));
+  await Promise.all(list.map(async (a) => { if (!cur.extra.has(a.name)) cur.extra.set(a.name, R.readPerProfile(cur.s, a).catch(() => null)); return cur.extra.get(a.name); }));
+  if (profilePick() !== i) return;
+  tbl.innerHTML = "";
+  for (const a of list) {
+    const r = await cur.extra.get(a.name), tr = tbl.insertRow();
+    tr.insertCell().textContent = a.name;
+    tr.insertCell().textContent = r ? shown(r.values[i], a) : "not read";
+    tr.title = a.attrs.long_name || "";
+  }
+}
+$("prof-more").addEventListener("toggle", () => { const i = profilePick(); if (cur && cur.kind === "profiles" && i !== null) showExtra(i); });
+
+// values (x) against z (y, down for pressure and depth), as a line
+function niceTicks(lo, hi, n = 5) {
+  if (!(hi > lo)) return [lo];
+  const raw = (hi - lo) / n, p10 = 10 ** Math.floor(Math.log10(raw)), step = [1, 2, 5, 10].map((m) => m * p10).find((s) => s >= raw);
+  const out = [];
+  for (let t = Math.ceil(lo / step) * step; t <= hi + step * 1e-9; t += step) out.push(+t.toPrecision(12));
+  return out;
+}
+function plotFrame(cv) {
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth || 300, H = cv.clientHeight || 260;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = "11px system-ui, sans-serif";
+  return { ctx, W, H, L: 46, R: 10, T: 22, B: 22 };
+}
+function drawProfile(cv, x, z, { title, zTitle, down }) {
+  const { ctx, W, H, L, R: Rm, T, B } = plotFrame(cv);
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (let k = 0; k < x.length; k++) if (Number.isFinite(x[k]) && Number.isFinite(z[k])) { x0 = Math.min(x0, x[k]); x1 = Math.max(x1, x[k]); z0 = Math.min(z0, z[k]); z1 = Math.max(z1, z[k]); }
+  if (!(x1 >= x0)) return;
+  if (x1 === x0) { x0 -= 0.5; x1 += 0.5; }
+  if (z1 === z0) { z0 -= 0.5; z1 += 0.5; }
+  const pad = (x1 - x0) * 0.05; x0 -= pad; x1 += pad;
+  const X = (v) => L + ((v - x0) / (x1 - x0)) * (W - L - Rm);
+  const Y = (v) => (down ? T + ((v - z0) / (z1 - z0)) * (H - T - B) : H - B - ((v - z0) / (z1 - z0)) * (H - T - B));
+  ctx.strokeStyle = "#1f2a40"; ctx.fillStyle = "#8a97ab"; ctx.lineWidth = 1;
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (const t of niceTicks(x0, x1)) { ctx.beginPath(); ctx.moveTo(X(t), T); ctx.lineTo(X(t), H - B); ctx.stroke(); ctx.fillText(fmtNum(t), X(t), H - B + 4); }
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const t of niceTicks(z0, z1)) { ctx.beginPath(); ctx.moveTo(L, Y(t)); ctx.lineTo(W - Rm, Y(t)); ctx.stroke(); ctx.fillText(fmtNum(t), L - 4, Y(t)); }
+  ctx.fillStyle = "#dfe7f2"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText(title, L, 4);
+  ctx.save(); ctx.translate(10, (T + H - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = "#8a97ab"; ctx.fillText(zTitle, 0, -4); ctx.restore();
+  ctx.strokeStyle = "#ffd34d"; ctx.lineWidth = 1.5; ctx.beginPath();
+  let pen = false;
+  for (let k = 0; k < x.length; k++) {
+    if (!Number.isFinite(x[k]) || !Number.isFinite(z[k])) { pen = false; continue; }
+    if (pen) ctx.lineTo(X(x[k]), Y(z[k])); else ctx.moveTo(X(x[k]), Y(z[k]));
+    pen = true;
+  }
+  ctx.stroke();
+}
+
+// The section along one platform: all its profiles side by side, in time,
+// coloured by the value at each level. One read per profile.
+let sectionSerial = 0;
+function showSectionButton(i) {
+  const b = $("section"), list = i === null ? [] : sameGroup(i);
+  sectionSerial++;
+  $("section-plot").hidden = true; $("section-info").textContent = "";
+  b.hidden = list.length < 2;
+  if (b.hidden) return;
+  const n = Math.min(list.length, SECTION_MAX), c = n * cur.perProfileChunks;
+  b.textContent = `Read its ${plural(n, "profile")} as a section (${plural(c, "chunk")}, ${fmtBytes(c * cur.chunkBytes)})`;
+}
+$("section").addEventListener("click", async () => {
+  const i = profilePick();
+  if (!cur || cur.kind !== "profiles" || i === null) return;
+  const serial = ++sectionSerial, { s, v, p } = cur;
+  let list = sameGroup(i);
+  if (cur.time) list.sort((a, b) => (cur.time.values[a] || 0) - (cur.time.values[b] || 0));
+  list = list.slice(0, SECTION_MAX);
+  const info = $("section-info"), cv = $("section-plot"), rows = new Array(list.length);
+  let done = 0, next = 0;
+  const say = () => { info.textContent = `${done} of ${list.length} profiles read`; };
+  say();
+  const worker = async () => {
+    while (next < list.length && serial === sectionSerial) {
+      const j = next++, k = list[j];
+      try {
+        let r = cur.profiles && cur.profiles.get(k);
+        if (!r) { r = await R.readProfile(s, v, { ...p, z: null }, k); cur.reads.chunks += cur.perProfileChunks; cur.reads.bytes += cur.perProfileChunks * cur.chunkBytes; }
+        rows[j] = r.values;
+      } catch (e) { rows[j] = null; }
+      done++;
+      if (done % 20 === 0 || done === list.length) { say(); showReads(); }
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+  if (serial !== sectionSerial) return;
+  drawSection(cv, list, rows);
+});
+function drawSection(cv, list, rows) {
+  const vals = [];
+  for (const r of rows) if (r) for (let k = 0; k < r.length; k += 7) if (Number.isFinite(r[k])) vals.push(r[k]);
+  const info = $("section-info");
+  if (!vals.length) { info.textContent = `${list.length} profiles read: no values in any of them`; return; }
+  const lo = quantile(vals, 0.02), hi0 = quantile(vals, 0.98), hi = hi0 > lo ? hi0 : lo + 1;
+  // the deepest level any profile reaches
+  let deep = 0;
+  for (const r of rows) if (r) for (let k = r.length - 1; k > deep; k--) if (Number.isFinite(r[k])) { deep = k; break; }
+  const nx = list.length, ny = deep + 1, im = new ImageData(nx, ny);
+  rows.forEach((r, x) => {
+    for (let y = 0; y < ny; y++) {
+      const val = r ? r[y] : NaN, o = 4 * (y * nx + x);
+      if (!Number.isFinite(val)) continue;
+      const rgb = rampAt(VIRIDIS, (val - lo) / (hi - lo));
+      im.data[o] = rgb[0]; im.data[o + 1] = rgb[1]; im.data[o + 2] = rgb[2]; im.data[o + 3] = 255;
+    }
+  });
+  const off = document.createElement("canvas");
+  off.width = nx; off.height = ny;
+  off.getContext("2d").putImageData(im, 0, 0);
+  cv.hidden = false;
+  const { ctx, W, H, L, R: Rm, T, B } = plotFrame(cv);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, L, T, W - L - Rm, H - T - B);
+  const z = zFor(profilePick()), zu = zUnits(), Y = (k) => T + (k / ny) * (H - T - B);
+  // ticks at round values of z, placed where the levels reach them
+  ctx.fillStyle = "#8a97ab"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  const z0 = Number.isFinite(z[0]) ? z[0] : 0, z1 = Number.isFinite(z[deep]) ? z[deep] : deep;
+  for (const t of niceTicks(Math.min(z0, z1), Math.max(z0, z1))) {
+    let k = 0;
+    while (k < deep && Math.abs(z[k + 1] - t) <= Math.abs(z[k] - t)) k++;
+    ctx.fillText(fmtNum(t), L - 4, Y(k + 0.5));
+  }
+  ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillStyle = "#dfe7f2";
+  const u = cur.v.meta.attrs.units ? ` ${cur.v.meta.attrs.units}` : "";
+  ctx.fillText(`${cur.v.path.split("/").pop()}: ${lo.toPrecision(3)} to ${hi.toPrecision(3)}${u}`, L, 4);
+  ctx.fillStyle = "#8a97ab"; ctx.textBaseline = "top";
+  ctx.fillText(timeLabel(list[0]), L, H - B + 4);
+  ctx.textAlign = "right"; ctx.fillText(timeLabel(list[list.length - 1]), W - Rm, H - B + 4);
+  ctx.save(); ctx.translate(10, (T + H - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillText(`${cur.p.z || cur.p.level}${zu}`, 0, -4); ctx.restore();
+  info.textContent = `${list.length} profiles of ${groupLabel(list[0])}, in time order, down to ${fmtNum(z[deep] ?? deep)}${zu}: ` +
+    `colour is the value at each level, 2% to 98% of them (levels drawn as the picked profile has them).`;
+}
+
+function showProfileFacts() {
+  const { v, p } = cur, tbl = $("facts");
+  const rows = [
+    ["Store", cur.s.kind === "icechunk" ? "Icechunk" : cur.s.kind === "zarr3" ? "Zarr v3" : "Zarr v2"],
+    ["Array", `${v.meta.shape.map((n, i) => `${v.dims[i]} ${n}`).join(", ")}`],
+    ["Type", `${v.meta.dtype}${v.meta.codecs.length ? ", " + v.meta.codecs.join(", ") : ""}`],
+    ["Profiles", `${p.n.toLocaleString("en")} along ${p.instance}, placed by ${p.lat} and ${p.lon}` + (cur.placed < p.n ? ` (${(p.n - cur.placed).toLocaleString("en")} with no position)` : "")],
+    ["Levels", `${p.nLevels.toLocaleString("en")} along ${p.level}` + (p.z ? `, at ${p.z}` : "")]
+  ];
+  if (cur.time && cur.timeRange) {
+    const a = cur.time.attrs, cal = C.oddCalendar(a.calendar) ? `, ${a.calendar} calendar` : "";
+    rows.push(["Time", `${C.cfTime(cur.timeRange[0], a.units, a.calendar) || fmtNum(cur.timeRange[0])} to ${C.cfTime(cur.timeRange[1], a.units, a.calendar) || fmtNum(cur.timeRange[1])} (${p.time}${cal})`]);
+  }
+  if (cur.group) rows.push(["From", `${cur.groups.toLocaleString("en")} platforms or files (${p.group})`]);
+  let la0 = 90, la1 = -90;
+  for (const la of cur.lat) if (Math.abs(la) <= 90) { la0 = Math.min(la0, la); la1 = Math.max(la1, la); }
+  rows.push(["Latitudes", `${la0.toFixed(2)}${DEG} to ${la1.toFixed(2)}${DEG}`]);
+  rows.push(["Chunk", `${v.meta.chunks.join(" x ")}, ${fmtBytes(cur.chunkBytes)} decoded`]);
+  rows.push(["One profile reads", `${plural(cur.perProfileChunks, "chunk")} (${fmtBytes(cur.perProfileChunks * cur.chunkBytes)})`]);
+  rows.push(["One level everywhere reads", `${plural(cur.levelChunks, "chunk")} (${fmtBytes(cur.levelChunks * cur.chunkBytes)})`]);
+  tbl.innerHTML = "";
+  for (const [k, val] of rows) { const tr = tbl.insertRow(); tr.insertCell().textContent = k; tr.insertCell().textContent = val; }
+  $("projstring").textContent = "no CRS: a longitude and latitude per profile";
+  $("projstring").classList.add("none");
+  $("describe").textContent = "";
+  $("notes").textContent = `A collection of profiles: ${p.lat} and ${p.lon} give one position per ${p.instance}, so each profile is drawn as a point (WGS 84 assumed), not as cells.`;
+}
+
+function showProfileLegend() {
+  const el = $("legend"), p = cur.p;
+  if (state.colour === "time" && cur.time && cur.timeRange) {
+    const a = cur.time.attrs;
+    el.textContent = `Points coloured by ${p.time}, viridis from ${C.cfTime(cur.timeRange[0], a.units, a.calendar) || fmtNum(cur.timeRange[0])} (dark) to ${C.cfTime(cur.timeRange[1], a.units, a.calendar) || fmtNum(cur.timeRange[1])} (yellow). Click one for its profile.`;
+  } else if (state.colour === "group" && cur.group) el.textContent = `Points coloured by ${p.group}: a colour for each of the ${cur.groups} platforms or files. Click one for its profile.`;
+  else el.textContent = "Click a point for its profile.";
+}
+
 // ---------------------------------------------------------------- opening
 
 function status(t) { $("status").textContent = t || ""; }
@@ -767,6 +1216,9 @@ async function open() {
     // the choice of satellite, offered only where the store leaves it open
     $("assume-row").hidden = !(v.abiLike || (v.crs && v.crs.assumed));
     $("assume").value = state.assume;
+    const prof = v.grid ? null : await R.describeProfiles(s, v);
+    if (serial !== openSerial) return;
+    if (prof) { $("sample").disabled = true; $("gridlook").hidden = true; await openProfiles(s, v, prof, serial); return; }
     const F = v.grid ? await crsOf(v) : null;
     if (serial !== openSerial) return;
     const g = v.grid || { x0: 0, dx: 1, y0: 0, dy: 1, nx: v.meta.shape[v.ix], ny: v.meta.shape[v.iy] };
@@ -777,6 +1229,8 @@ async function open() {
       cost: C.sliceCost(v.meta.shape, chunks, v.iy, v.ix, C.dtypeBytes(v.meta.dtype))
     };
     cur.earth = !!(cur.F || g.kind === "curvilinear");
+    cur.kind = "grid";
+    setMode("grid");
     cur.at = makeAt();
     status(v.grid && !F && v.crs ? "proj4js could not read this CRS: drawn in index space" : "");
     buildDims();
@@ -872,6 +1326,7 @@ async function coordLabel(dim, i) {
 // ---------------------------------------------------------------- readouts
 
 function showFacts() {
+  if (cur.kind === "profiles") return showProfileFacts();
   const { v, g, F } = cur, tbl = $("facts");
   const units = F ? (F.angular ? DEG : " m") : "";
   const sz = (a) => (Math.abs(g.dx) === Math.abs(g.dy) ? `${fmtNum(Math.abs(g.dx))}${units}` : `${fmtNum(Math.abs(g.dx))} x ${fmtNum(Math.abs(g.dy))}${units}`);
@@ -924,6 +1379,7 @@ function showFacts() {
 function showLegend() {
   const el = $("legend");
   if (!cur) { el.textContent = ""; return; }
+  if (cur.kind === "profiles") return showProfileLegend();
   let t = "";
   if (state.colour === "data") {
     const u = cur.v.meta.attrs.units ? ` ${cur.v.meta.attrs.units}` : "";
@@ -949,6 +1405,7 @@ function pickCell() {
 }
 
 async function showPick() {
+  if (cur && cur.kind === "profiles") return showProfilePick();
   const tbl = $("pick"), info = $("pick-info");
   tbl.innerHTML = "";
   const p = cur && pickCell();
@@ -988,7 +1445,7 @@ async function showPick() {
 // the same view in gridlook, where it has the projection
 function updateGridlook() {
   const a = $("gridlook");
-  if (!cur || /^(https?:)?\/\/(localhost|127\.)/.test(state.url) || state.url.startsWith("local:") || location.protocol === "file:") { a.hidden = true; return; }
+  if (!cur || cur.kind === "profiles" || /^(https?:)?\/\/(localhost|127\.)/.test(state.url) || state.url.startsWith("local:") || location.protocol === "file:") { a.hidden = true; return; }
   const path = state.varname, k = path.lastIndexOf("/");
   let url = R.absoluteUrl(state.url).replace(/\/+$/, "");
   if (k > 0) url += "/" + path.slice(0, k);
@@ -1010,7 +1467,7 @@ for (const p of PRESETS) {
   const b = document.createElement("button");
   b.type = "button"; b.className = "small"; b.textContent = p.label;
   b.addEventListener("click", () => {
-    Object.assign(state, defaults, { dims: {}, url: p.url, varname: p.varname, projection: p.projection });
+    Object.assign(state, defaults, { dims: {}, url: p.url, varname: p.varname, projection: p.projection, lat: p.lat ?? null, lon: p.lon ?? null });
     syncControls(); setCamera(DEFAULT_CAM); open();
   });
   $("presets").appendChild(b);
@@ -1048,7 +1505,7 @@ $("folder").addEventListener("change", () => {
 $("src").addEventListener("keydown", (e) => { if (e.key === "Enter") $("load").click(); });
 $("var").addEventListener("change", () => { state.varname = $("var").value; state.dims = {}; state.pick = ""; open(); });
 $("sample").addEventListener("click", () => {
-  if (!cur) return;
+  if (!cur || cur.kind === "profiles") return;
   if (smallSlice()) autoRead(); else readChunks(sampleList());
 });
 ui.proj.addEventListener("change", () => {
@@ -1088,6 +1545,13 @@ renderer.domElement.addEventListener("pointerup", (e) => {
   if (!cur || !downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
   const r = renderer.domElement.getBoundingClientRect();
   ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  if (cur.kind === "profiles") {
+    const i = nearestProfile(e.clientX - r.left, e.clientY - r.top);
+    if (i === null) return;
+    state.pick = String(i);
+    showPick(); writeHash();
+    return;
+  }
   ray.setFromCamera(ptr, camera);
   const hit = ray.intersectObject(gridMesh)[0];
   if (!hit) return;
@@ -1121,6 +1585,7 @@ window.addEventListener("hashchange", () => {
   const before = state.url + "|" + state.varname;
   readHash(); syncControls(); setCamera(state.cam || DEFAULT_CAM);
   if (state.url + "|" + state.varname !== before || !cur) open();
+  else if (cur && cur.kind === "profiles") { buildFlat(); place(); showPick(); showLegend(); }
   else if (cur) { buildFlat(); resetData(); drawTexture(); place(); autoRead(); showPick(); showLegend(); }
 });
 

@@ -1,0 +1,51 @@
+{
+  "shape": [
+    9,
+    12
+  ],
+  "data_type": "float32",
+  "chunk_grid": {
+    "name": "regular",
+    "configuration": {
+      "chunk_shape": [
+        1,
+        12
+      ]
+    }
+  },
+  "chunk_key_encoding": {
+    "name": "default",
+    "configuration": {
+      "separator": "/"
+    }
+  },
+  "fill_value": "NaN",
+  "codecs": [
+    {
+      "name": "bytes",
+      "configuration": {
+        "endian": "little"
+      }
+    },
+    {
+      "name": "zstd",
+      "configuration": {
+        "level": 0,
+        "checksum": false
+      }
+    }
+  ],
+  "attributes": {
+    "units": "degree_Celsius",
+    "valid_min": -2.0,
+    "valid_max": 40.0,
+    "_FillValue": "AAAAAPBp+EA="
+  },
+  "dimension_names": [
+    "N_PROF",
+    "N_LEVELS"
+  ],
+  "zarr_format": 3,
+  "node_type": "array",
+  "storage_transformers": []
+}
