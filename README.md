@@ -404,7 +404,7 @@ the square's centre. Which squares are tiles (ESA leaves out edge squares
 that are mostly outside their zone) is in `data/s2-tiles.json`, a bitmask per
 grid zone. `test/check-structure.mjs` checks the tile and overview readers against
 GDAL, tifffile and zarr-python. `test/check-storecrs.mjs` checks CF grid mappings against PROJ, cell areas
-against pyproj's Geod, CF dates on every calendar against cftime (`test/make-cftime-fixture.py`), finding and reading a collection of profiles, and reading Icechunk and Zarr stores written by xarray and icechunk. `test/check-mgrs.mjs` checks UTM against PROJ, references against
+against pyproj's Geod, CF dates on every calendar against cftime (`test/make-cftime-fixture.py`), finding and reading a collection of profiles, the gribberish codec around a stand-in decoder, and reading Icechunk and Zarr stores written by xarray and icechunk. `test/check-mgrs.mjs` checks UTM against PROJ, references against
 GeoTrans and tile lookups against the footprints in ESA's grid, using
 `test/fixtures/mgrs-points.json` from `test/make-mgrs-fixtures.py`, and UPS
 against PROJ and GeoTrans with `test/fixtures/ups-points.json` from
@@ -581,7 +581,12 @@ profile) and plots it against pressure or depth; "as a section" reads every
 profile of its platform and draws them side by side in time. The readout
 gives what one profile costs to read and what one level across all of them
 would. The MEOP preset is 126,518 seal CTD profiles from IMOS, a virtual
-Icechunk whose chunks are byte ranges in IMOS's own NetCDF files. The hash is
+Icechunk whose chunks are byte ranges in IMOS's own NetCDF files. A chunk can
+also be a whole GRIB message under the `gribberish` codec, as in
+dynamical.org's virtual stores of ECMWF and NOAA forecasts; `js/gribberish.js`
+decodes it with gribberish's WebAssembly build, loaded only when a chunk
+needs it and run on the page's own thread. The ECMWF preset opens the newest
+ENS forecast's 2 m temperature; lead times read as spans ("1 d 6 h"). The hash is
 [gridlook](https://github.com/d70-t/gridlook)'s,
 `#<store>::varname=..::projection=..::lat=..::lon=..::dimIndices_<dim>=..`,
 plus `t`, `colour` (`data`, `area`, `omega`, `none`), `chunks`, `cells`,
@@ -1315,6 +1320,7 @@ structure.html, js/structure-page.js   tiles and overviews page
 rectilinear.html, js/rectilinear.js    rectilinear chunks: regular and rectilinear Zarr chunk grids, calendars, files, mosaics
 store.html, js/store-page.js           Icechunk and Zarr: a store's grid and chunks on the globe and in other projections
 js/store-read.js                       opening Icechunk and Zarr stores, describing a variable's grid and CRS
+js/gribberish.js                       the gribberish codec: a GRIB message per chunk, decoded with gribberish's WebAssembly build
 regular.html, js/regular-page.js       regular in what? storyline: geostationary, lon/lat arrays
 rasterize.html, js/rasterize-page.js   rasterize page
 affine.html, js/affine.js              Affine: the geotransform, world file, registering an image by two points
@@ -1452,7 +1458,7 @@ grid, the overlap plan and level choice, and reading tracks from GeoServer CSV a
 `test/check-rhumb.mjs` checks rhumb line and geodesic lengths and courses against PROJ, and composite sailing.
 `test/check-structure.mjs` checks the tile and overview readers against
 GDAL, tifffile and zarr-python. `test/check-storecrs.mjs` checks CF grid mappings against PROJ, cell areas
-against pyproj's Geod, CF dates on every calendar against cftime (`test/make-cftime-fixture.py`), finding and reading a collection of profiles, and reading Icechunk and Zarr stores written by xarray and icechunk. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
+against pyproj's Geod, CF dates on every calendar against cftime (`test/make-cftime-fixture.py`), finding and reading a collection of profiles, the gribberish codec around a stand-in decoder, and reading Icechunk and Zarr stores written by xarray and icechunk. `test/check-mgrs.mjs` checks UTM against PROJ, MGRS references against
 GeoTrans, and Sentinel-2 tile lookups against ESA's tiling grid.
 `test/check-aatgrid.mjs` checks the AAT grid lattice against the aatgrid R package's own tests
 (the Heard Island anchors and the Atlas Cove seam), ids, nesting and the Sentinel-2 pixel shift.

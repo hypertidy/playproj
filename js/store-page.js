@@ -54,6 +54,9 @@ const PRESETS = [
   // a virtual Icechunk on source.coop (a scratch bucket, so it may move)
   { label: "ACCESS-ESM1.6 ocean temp (Icechunk)", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/access-esm/access-esm1-6.historical.ocean-3d-temp-1mon-mean/icechunk", varname: "temp", projection: "equal_earth" },
   // profiles, not a grid: CTD tags on seals (MEOP, through IMOS), virtual refs into IMOS's NetCDF files
+  // GRIB messages as chunks, decoded here by gribberish (js/gribberish.js): ECMWF's open
+  // data, indexed by dynamical.org, opened at the newest forecast
+  { label: "ECMWF ENS 2 m temperature (GRIB)", url: "https://dynamical-ecmwf-ifs-ens.s3.us-west-2.amazonaws.com/ecmwf-ifs-ens-forecast-15-day-0-25-degree-virtual/v0.1.0.icechunk", varname: "temperature_2m", projection: "equal_earth", dims: { init_time: -1 } },
   { label: "Seal CTD profiles, MEOP (Icechunk)", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/imos-tracking/meop-ctd-2024/icechunk", varname: "TEMP", projection: "lambert_azimuthal_equal_area", lat: -90, lon: 140 }
 ];
 
@@ -1266,6 +1269,8 @@ function buildDims() {
     lab.firstChild.textContent = name;
     const inp = document.createElement("input");
     inp.type = "range"; inp.min = 0; inp.max = n - 1; inp.step = 1;
+    // a preset may count from the end (-1: the last, as the newest forecast)
+    if (state.dims[name] < 0) state.dims[name] = Math.max(0, n + state.dims[name]);
     inp.value = Math.min(n - 1, state.dims[name] || 0);
     inp.setAttribute("aria-label", name);
     const out = lab.lastChild;
@@ -1320,7 +1325,7 @@ async function coordLabel(dim, i) {
   const c = await coordValues(dim);
   if (!c || !(i >= 0 && i < c.values.length)) return null;
   const x = c.values[i];
-  return C.cfTime(x, c.attrs.units, c.attrs.calendar) || (Number.isFinite(x) ? fmtNum(x) : null);
+  return C.cfTime(x, c.attrs.units, c.attrs.calendar) || C.cfDuration(x, c.attrs.units) || (Number.isFinite(x) ? fmtNum(x) : null);
 }
 
 // ---------------------------------------------------------------- readouts
@@ -1384,6 +1389,8 @@ function showLegend() {
   if (state.colour === "data") {
     const u = cur.v.meta.attrs.units ? ` ${cur.v.meta.attrs.units}` : "";
     t = cur.scale ? `viridis from ${fmtNum(cur.scale.lo)} to ${fmtNum(cur.scale.hi)}${u} (2% and 98% of ${cur.scale.from > 1 ? `the ${cur.scale.from} chunks first read` : "the first chunk read"})` :
+      // read, and nothing in them: a store with no chunk there (a field that starts later) reads as its fill value
+      cur.painted && cur.painted.size ? `No values in the ${plural(cur.painted.size, "chunk")} read: every cell is the fill value, as where the store holds no chunk at all` :
       smallSlice() ? "" : notReadHint();
   } else if (state.colour === "area" && cur.dist) {
     const sc = distortionImage("area").scale;
@@ -1467,7 +1474,7 @@ for (const p of PRESETS) {
   const b = document.createElement("button");
   b.type = "button"; b.className = "small"; b.textContent = p.label;
   b.addEventListener("click", () => {
-    Object.assign(state, defaults, { dims: {}, url: p.url, varname: p.varname, projection: p.projection, lat: p.lat ?? null, lon: p.lon ?? null });
+    Object.assign(state, defaults, { dims: { ...(p.dims || {}) }, url: p.url, varname: p.varname, projection: p.projection, lat: p.lat ?? null, lon: p.lon ?? null });
     syncControls(); setCamera(DEFAULT_CAM); open();
   });
   $("presets").appendChild(b);

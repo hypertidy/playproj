@@ -257,6 +257,30 @@ for (const t of man.profiles || []) {
     check(e.values.every(Number.isNaN), `${t.name}: profile ${t.empty}, which has no chunk, reads ${Array.from(e.values).slice(0, 3)}`);
   } catch (e) { check(false, `${t.name}: ${e.message}`); }
 }
+// the gribberish codec (js/gribberish.js) around a stand-in decoder: its
+// settings, zarrita 0.7's dataType, the size check, and a lazy registry entry
+{
+  const G = await import("../js/gribberish.js");
+  const calls = [];
+  const Codec = G.gribberishCodec((bytes, v, lon, up) => { calls.push([bytes.length, v, lon, up]); return Float64Array.from({ length: 6 }, (_, i) => 270 + i); });
+  const c = Codec.fromConfig({ var: "2t", adjust_longitude_range: true, north_up: true }, { dataType: "float32", shape: [1, 2, 3] });
+  const out = c.decode(new Uint8Array(10));
+  check(c.kind === "array_to_bytes" && out.data instanceof Float32Array && out.data[5] === 275 && String(out.stride) === "6,3,1" && String(calls[0]) === "10,2t,true,true", `gribberish codec ${JSON.stringify(calls)} ${out.stride}`);
+  check(Codec.fromConfig({}, { data_type: "float64", shape: [2, 3] }).decode(new Uint8Array(1)).data instanceof Float64Array, "gribberish codec takes data_type too");
+  let bad = 0;
+  for (const f of [() => Codec.fromConfig({ nope: 1 }, { dataType: "float64", shape: [6] }), () => Codec.fromConfig({}, { dataType: "int16", shape: [6] }), () => Codec.fromConfig({}, { dataType: "float64", shape: [7] }).decode(new Uint8Array(1))]) {
+    try { f(); } catch (e) { bad++; }
+  }
+  check(bad === 3, `gribberish codec refuses bad settings, types and sizes (${bad} of 3)`);
+  const reg = new Map();
+  let loads = 0;
+  G.registerGribberish(reg, async () => { loads++; return { decodeZarrChunk: () => new Float64Array(1) }; });
+  check(loads === 0 && reg.has("gribberish"), "gribberish registers without loading");
+  const K = await reg.get("gribberish")();
+  check(loads === 1 && K.fromConfig({}, { dataType: "float64", shape: [1] }).decode(new Uint8Array(1)).data.length === 1, "gribberish loads when a chunk needs it");
+}
+check(C.cfDuration(0, "seconds") === "0 h" && C.cfDuration(97200, "seconds") === "1 d 3 h" && C.cfDuration(1296000, "seconds") === "15 d" && C.cfDuration(1.5, "days") === "1 d 12 h" &&
+  C.cfDuration(-3600, "s") === "-1 h" && C.cfDuration(3, "m") === null && C.cfDuration(3, "days since 2000-01-01") === null, "cfDuration");
 // a grid is never a collection of profiles
 try {
   const s = await R.openStore(`${base}/era.icechunk`), v = await R.describeVariable(s, "1x91x180/2m_temperature");
