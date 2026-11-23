@@ -255,6 +255,22 @@ for (const t of man.profiles || []) {
     check(r.z && t.pres.every((x, k) => r.z[k] === x), `${t.name}: z of profile ${t.pick}`);
     const e = await R.readProfile(s, v, p, t.empty);
     check(e.values.every(Number.isNaN), `${t.name}: profile ${t.empty}, which has no chunk, reads ${Array.from(e.values).slice(0, 3)}`);
+    // many at once, as a time window reads them: the same values, cut after the last level with one
+    const got = new Map();
+    const all = Array.from({ length: p.n }, (_, k) => k);
+    const nc = await R.readProfiles(s, v, p, all, (i, x) => got.set(i, x), { run: 4 });
+    const last = t.values.reduce((a, x, k) => (x === null ? a : k), -1);
+    const g2 = got.get(t.pick);
+    check(got.size === p.n && nc === 2 * p.n, `${t.name}: readProfiles gave ${got.size} profiles, ${nc} chunks`);
+    check(g2 && g2.values instanceof Float32Array && g2.values.length === last + 1 && t.values.slice(0, last + 1).every((x, k) => Math.abs(g2.values[k] - x) < 1e-6) &&
+      g2.z && g2.z.length === last + 1 && t.pres.slice(0, last + 1).every((x, k) => g2.z[k] === x), `${t.name}: readProfiles profile ${t.pick} ${g2 && Array.from(g2.values)}`);
+    check(got.get(t.empty).values.length === 0, `${t.name}: readProfiles profile ${t.empty}, which has no chunk`);
+    const some = new Map();
+    await R.readProfiles(s, v, p, [t.pick, t.empty], (i, x) => some.set(i, x));
+    check(some.size === 2 && some.get(t.pick).values.length === last + 1, `${t.name}: readProfiles of two`);
+    let stops = 0;
+    await R.readProfiles(s, v, p, all, () => {}, { run: 1, inFlight: 1, stop: () => ++stops > 3 });
+    check(stops === 4, `${t.name}: readProfiles stops between runs (${stops})`);
   } catch (e) { check(false, `${t.name}: ${e.message}`); }
 }
 // the gribberish codec (js/gribberish.js) around a stand-in decoder: its
@@ -278,6 +294,26 @@ for (const t of man.profiles || []) {
   check(loads === 0 && reg.has("gribberish"), "gribberish registers without loading");
   const K = await reg.get("gribberish")();
   check(loads === 1 && K.fromConfig({}, { dataType: "float64", shape: [1] }).decode(new Uint8Array(1)).data.length === 1, "gribberish loads when a chunk needs it");
+}
+// dates back to CF values, for the time window
+{
+  const U = "days since 1950-01-01 00:00:00 UTC";
+  const round = [["2019-03-01", U, "julian"], ["2012-06-12 09:54", U, "julian"], ["2000-02-30", "days since 2000-01-01", "360_day"],
+    ["1582-10-04", "days since 1582-10-15", "standard"], ["2014-01-16 12:00", "hours since 1850-01-01", "noleap"], ["2020-01-01 00:00:30", "seconds since 1970-01-01", "proleptic_gregorian"]];
+  const bad = round.filter(([d, u, c]) => C.cfTime(C.cfValue(d, u, c), u, c) !== d);
+  check(!bad.length, `cfValue round trip: ${bad.map(([d, u, c]) => `${d} ${c} -> ${C.cfTime(C.cfValue(d, u, c), u, c)}`).join(", ")}`);
+  check(C.cfValue("1950-01-02", U, "julian") === 1 && C.cfValue("1850-01-02", "hours since 1850-01-01") === 24 && C.cfValue("2000-01-01T06:00", "days since 2000-01-01") === 0.25, "cfValue values");
+  check(C.cfValue("2000-13-01x", U) === null && C.cfValue("2000-01-01", "m") === null && C.cfValue("2000-01-01", U, "none") === null, "cfValue refuses");
+  check(C.cfPerDay(U) === 1 && C.cfPerDay("hours since 1850-01-01") === 24 && C.cfPerDay("seconds since 1970-01-01") === 86400 && C.cfPerDay("m") === null, "cfPerDay");
+}
+// a profile at one depth, its deepest value, profiles per time, a window of them
+{
+  const z = [10, 20, 30, 40, 50], x = [NaN, 2, 1.5, NaN, NaN];
+  check(C.valueAt(x, z, 20, 5) === 2 && C.valueAt(x, z, 27, 5) === 1.5 && C.valueAt(x, z, 12, 9) === 2 && Number.isNaN(C.valueAt(x, z, 10, 5)), "valueAt: nearest level with a value");
+  check(Number.isNaN(C.valueAt(x, z, 45, 5)) && C.valueAt(x, z, 45, 20) === 1.5 && Number.isNaN(C.valueAt([], [], 0, 1)), "valueAt: none that close");
+  check(C.deepestAt(x, z) === 30 && C.deepestAt(x, z, false) === 20 && Number.isNaN(C.deepestAt([NaN], [1])), "deepestAt");
+  check(String(C.binCounts([0, 1, 2, 9.99, 10, 11, NaN], 0, 10, 5)) === "2,1,0,0,2" && String(C.binCounts([3, 3], 3, 3, 2)) === "2,0", "binCounts");
+  check(String(C.inWindow([5, 1, 3, NaN, 2], 2, 5)) === "2,4", "inWindow");
 }
 check(C.cfDuration(0, "seconds") === "0 h" && C.cfDuration(97200, "seconds") === "1 d 3 h" && C.cfDuration(1296000, "seconds") === "15 d" && C.cfDuration(1.5, "days") === "1 d 12 h" &&
   C.cfDuration(-3600, "s") === "-1 h" && C.cfDuration(3, "m") === null && C.cfDuration(3, "days since 2000-01-01") === null, "cfDuration");

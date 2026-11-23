@@ -580,8 +580,22 @@ reads that profile alone (a single chunk where the store keeps one chunk per
 profile) and plots it against pressure or depth; "as a section" reads every
 profile of its platform and draws them side by side in time. The readout
 gives what one profile costs to read and what one level across all of them
-would. The MEOP preset is 126,518 seal CTD profiles from IMOS, a virtual
-Icechunk whose chunks are byte ranges in IMOS's own NetCDF files. A chunk can
+would. Time and depth work through a window: a strip counts the profiles over
+the whole collection, a window of days (`window`, from the date `when`) picks
+the ones taken in it and leaves the rest faint, and Play steps it on, skipping
+spans with none. Colouring by the data, or hanging the profiles (`hang`),
+reads every profile in the window whole, all of its levels, up to 48 MB by
+itself, so that moving the depth (`depth`, in the units of the profile's z)
+costs nothing more: the points take each profile's value nearest that depth,
+and hung profiles go down from their points, coloured along their levels and
+sunk by depth times an exaggeration (`dz`, a power of ten), with a bead
+where each crosses the depth set. Icechunk stores are opened with zarrita's
+range coalescing, so reads that fall close together in one file (a tag's
+profiles, all neighbours in its NetCDF file) go as one request: a month of
+MEOP, 3,319 profiles with their pressures, is under a hundred requests. The
+MEOP preset is 126,518 seal CTD profiles from IMOS, a virtual Icechunk whose
+chunks are byte ranges in IMOS's own NetCDF files, opened on May 2019 at
+200 dbar, hung below the map. A chunk can
 also be a whole GRIB message under the `gribberish` codec, as in
 dynamical.org's virtual stores of ECMWF and NOAA forecasts; `js/gribberish.js`
 decodes it with gribberish's WebAssembly build, loaded only when a chunk
@@ -589,9 +603,10 @@ needs it and run on the page's own thread. The ECMWF preset opens the newest
 ENS forecast's 2 m temperature; lead times read as spans ("1 d 6 h"). The hash is
 [gridlook](https://github.com/d70-t/gridlook)'s,
 `#<store>::varname=..::projection=..::lat=..::lon=..::dimIndices_<dim>=..`,
-plus `t`, `colour` (`data`, `area`, `omega`, `none`), `chunks`, `cells`,
-`coast`, `grat`, `pick` (column,row) and `cam`, so a link opens in gridlook
-too. Equal Earth (`projection=equal_earth`), Lambert azimuthal equal-area and
+plus `t`, `colour` (`data`, `area`, `omega`, `none`; for profiles `time`,
+`data`, `group`, `none`), `chunks`, `cells`, `coast`, `grat`, `pick`
+(column,row, or a profile's index), `cam`, and for profiles `window`, `when`,
+`depth`, `hang` and `dz`, so a link opens in gridlook too. Equal Earth (`projection=equal_earth`), Lambert azimuthal equal-area and
 Spilhaus are not gridlook's, so its link leaves them out and gridlook opens in
 its own default. `src/core/storecrs.js` and `js/store-read.js`, checked in
 `test/check-storecrs.mjs` against PROJ (pyproj's `CRS.from_cf`) and small

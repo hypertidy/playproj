@@ -53,11 +53,13 @@ const PRESETS = [
   { label: "CMIP6 GFDL-ESM4 tos (tripolar)", url: "https://storage.googleapis.com/cmip6/CMIP6/CMIP/NOAA-GFDL/GFDL-ESM4/historical/r2i1p1f1/Omon/tos/gn/v20180701", varname: "tos", projection: "native" },
   // a virtual Icechunk on source.coop (a scratch bucket, so it may move)
   { label: "ACCESS-ESM1.6 ocean temp (Icechunk)", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/access-esm/access-esm1-6.historical.ocean-3d-temp-1mon-mean/icechunk", varname: "temp", projection: "equal_earth" },
-  // profiles, not a grid: CTD tags on seals (MEOP, through IMOS), virtual refs into IMOS's NetCDF files
   // GRIB messages as chunks, decoded here by gribberish (js/gribberish.js): ECMWF's open
   // data, indexed by dynamical.org, opened at the newest forecast
   { label: "ECMWF ENS 2 m temperature (GRIB)", url: "https://dynamical-ecmwf-ifs-ens.s3.us-west-2.amazonaws.com/ecmwf-ifs-ens-forecast-15-day-0-25-degree-virtual/v0.1.0.icechunk", varname: "temperature_2m", projection: "equal_earth", dims: { init_time: -1 } },
-  { label: "Seal CTD profiles, MEOP (Icechunk)", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/imos-tracking/meop-ctd-2024/icechunk", varname: "TEMP", projection: "lambert_azimuthal_equal_area", lat: -90, lon: 140 }
+  // profiles, not a grid: CTD tags on seals (MEOP, through IMOS), virtual refs into IMOS's NetCDF
+  // files; opened on a month of them (3,319 profiles) coloured at 200 dbar, hung below the map
+  { label: "Seal CTD profiles, MEOP (Icechunk)", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/imos-tracking/meop-ctd-2024/icechunk", varname: "TEMP", projection: "lambert_azimuthal_equal_area", lat: -90, lon: 140,
+    also: { win: 30, when: "2019-05-01", depth: 200, colour: "data", hang: 1, t: 1, cam: [-0.2, -1.55, 2.05, -0.25, 0.22, 0.92] } }
 ];
 
 // ---------------------------------------------------------------- state
@@ -65,7 +67,10 @@ const PRESETS = [
 // gridlook's keys (url, varname, projection, lat, lon, dimIndices_<dim>) and
 // this page's own, which gridlook ignores
 const defaults = { url: PRESETS[0].url, varname: "", projection: "mollweide", lat: null, lon: null,
-  t: 0, colour: "data", chunks: 1, cells: 1, coast: 1, grat: 1, pick: "", cam: null, assume: "" };
+  t: 0, colour: "", chunks: 1, cells: 1, coast: 1, grat: 1, pick: "", cam: null, assume: "",
+  // a collection of profiles: a time window (win days from the date when, 0 for every profile), the
+  // depth of the shell, whether profiles hang below their points, and by how much depth is stretched
+  when: "", win: 0, depth: 0, hang: 0, dz: 2.5 };
 const state = { ...defaults, dims: {} };
 
 function readHash() {
@@ -83,6 +88,12 @@ function readHash() {
   const c = params.get("colour");
   if (["data", "area", "omega", "none", "time", "group"].includes(c)) state.colour = c;
   state.pick = params.get("pick") || "";
+  if (/^-?\d{1,4}-\d{1,2}-\d{1,2}$/.test(params.get("when") || "")) state.when = params.get("when");
+  const w = num("window"), dp = num("depth"), dz = num("dz"), hang = num("hang");
+  if (w !== null && w >= 0) state.win = w;
+  if (dp !== null && dp >= 0) state.depth = dp;
+  if (dz !== null) state.dz = Math.max(0, Math.min(3.5, dz));
+  if (hang !== null) state.hang = hang ? 1 : 0;
   state.assume = R.ASSUME[params.get("assume")] ? params.get("assume") : "";
   const cam = (params.get("cam") || "").split(",").map(Number);
   state.cam = cam.length === 6 && cam.every(isFinite) ? cam : null;
@@ -98,10 +109,16 @@ function writeHash() {
     if (state.lon !== null) p.lon = +state.lon.toFixed(3);
     for (const [d, i] of Object.entries(state.dims)) if (i) p[`dimIndices_${d}`] = i;
     if (state.t) p.t = +state.t.toFixed(3);
-    for (const k of ["colour", "chunks", "cells", "coast", "grat"]) if (state[k] !== defaults[k]) p[k] = state[k];
-    // time is to profiles what the data is to a grid: the default, left out
-    if (cur && cur.kind === "profiles" && state.colour === "time") delete p.colour;
+    // colour by time is to profiles what the data is to a grid: the default, left out
+    if (state.colour && state.colour !== (cur && cur.kind === "profiles" ? "time" : "data")) p.colour = state.colour;
+    for (const k of ["chunks", "cells", "coast", "grat"]) if (state[k] !== defaults[k]) p[k] = state[k];
     if (state.pick) p.pick = state.pick;
+    if (cur && cur.kind === "profiles") {
+      if (state.win) { p.window = state.win; if (state.when) p.when = state.when; }
+      if (state.depth) p.depth = +state.depth.toPrecision(5);
+      if (state.hang) p.hang = 1;
+      if (state.dz !== defaults.dz) p.dz = state.dz;
+    }
     if (state.assume) p.assume = state.assume;
     if (state.cam) p.cam = state.cam.map((x) => +x.toFixed(2)).join(",");
     history.replaceState(null, "", "#" + C.hashString(state.url, p));
@@ -751,11 +768,21 @@ const pointsMesh = (size, color) => {
   scene.add(m);
   return m;
 };
-const profPoints = pointsMesh(2.5), profTrack = pointsMesh(4, 0xffffff), profMark = pointsMesh(12, COLORS.pick);
-const PROF_MESHES = [profPoints, profTrack, profMark];
-const PROFILE_COLOURS = [["time", "Time of the profile"], ["group", "Platform or file it came from"], ["none", "Nothing"]];
+// every profile (faint under a time window), those in the window, each one
+// read hung below its point, a bead where each crosses the shell's depth,
+// and the picked profile's platform and the picked one
+const profPoints = pointsMesh(2.5), profWin = pointsMesh(3.5), profShell = pointsMesh(5);
+const profCols = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }));
+profCols.visible = false;
+scene.add(profCols);
+const profTrack = pointsMesh(4, 0xffffff), profMark = pointsMesh(12, COLORS.pick);
+const PROF_MESHES = [profPoints, profWin, profCols, profShell, profTrack, profMark];
+const PROFILE_COLOURS = [["time", "Time of the profile"], ["data", "The data at the depth set below"], ["group", "Platform or file it came from"], ["none", "Nothing"]];
 const GRID_COLOURS = [["data", "The data (chunks read so far)"], ["area", "Cell area on the earth"], ["omega", "Angular distortion of the store's CRS"], ["none", "Nothing"]];
 const SECTION_MAX = 4000;
+// what a time window reads by itself, at most at once, and keeps
+const PROF_AUTO = 48 * 2 ** 20, PROF_MAX = 25000, PROF_KEEP = 40000;
+const R_EARTH = 6371000;
 const tmpColour = new THREE.Color();
 
 // the controls each kind of store has
@@ -764,15 +791,20 @@ function setMode(kind) {
   gridMesh.visible = !prof;
   for (const M of PROF_MESHES) M.visible = false;
   profPoints.visible = prof;
+  under.scale.setScalar(1);
+  if (!prof) setPlay(false);
   $("sample").hidden = prof;
   for (const k of ["chunks", "cells"]) $(k).closest("label").hidden = prof;
   $("colour-label").textContent = prof ? "Colour the profiles by" : "Colour the cells by";
   const opts = prof ? PROFILE_COLOURS.filter(([k]) => k !== "group" || cur.group) : GRID_COLOURS;
   ui.colour.innerHTML = "";
   for (const [k, label] of opts) { const o = document.createElement("option"); o.value = k; o.textContent = label; ui.colour.appendChild(o); }
+  // none chosen (""), or one this kind has not: its own default, the first
   if (!opts.some(([k]) => k === state.colour)) state.colour = opts[0][0];
   ui.colour.value = state.colour;
   $("profile-box").hidden = !prof;
+  $("when-box").hidden = !prof;
+  if (prof) $("when-time").hidden = !cur.perDay;
   $("centre-grid").textContent = prof ? "On the profiles" : "On the grid";
   if (prof) $("dims").innerHTML = "";
 }
@@ -787,29 +819,43 @@ async function openProfiles(s, v, p, serial) {
   const lon = val[p.lon].values, lat = val[p.lat].values;
   // the middle: mean latitude, and the mean direction of the longitudes
   let sx = 0, sy = 0, sl = 0, n = 0;
-  for (let i = 0; i < lon.length; i++) if (Number.isFinite(lon[i]) && Math.abs(lat[i]) <= 90) { sx += Math.cos(lon[i] * D2R); sy += Math.sin(lon[i] * D2R); sl += lat[i]; n++; }
+  const placed = [];
+  for (let i = 0; i < lon.length; i++) if (Number.isFinite(lon[i]) && Math.abs(lat[i]) <= 90) { sx += Math.cos(lon[i] * D2R); sy += Math.sin(lon[i] * D2R); sl += lat[i]; n++; placed.push(i); }
   cur = {
     kind: "profiles", s, v, p, F: null, earth: true, lon, lat, time: p.time ? val[p.time] : null, group: p.group ? val[p.group] : null,
-    mid: n ? [Math.atan2(sy, sx) / D2R, sl / n] : [0, 0], placed: n, extra: new Map(), reads: { chunks: 0, bytes: 0 },
-    chunkBytes: v.meta.chunks.reduce((a, b) => a * b, 1) * C.dtypeBytes(v.meta.dtype), fills: new Set()
+    mid: n ? [Math.atan2(sy, sx) / D2R, sl / n] : [0, 0], placed: n, placedIdx: placed, extra: new Map(), reads: { chunks: 0, bytes: 0 },
+    chunkBytes: v.meta.chunks.reduce((a, b) => a * b, 1) * C.dtypeBytes(v.meta.dtype), fills: new Set(), profiles: new Map(), dscale: null, zSeen: 0
   };
   const li = v.dims.indexOf(p.level), ii = v.dims.indexOf(p.instance);
   cur.perProfileChunks = Math.ceil(v.meta.shape[li] / v.meta.chunks[li]);
   cur.levelChunks = Math.ceil(v.meta.shape[ii] / v.meta.chunks[ii]);
   if (cur.time) { let lo = Infinity, hi = -Infinity; for (const t of cur.time.values) if (Number.isFinite(t)) { lo = Math.min(lo, t); hi = Math.max(hi, t); } cur.timeRange = lo <= hi ? [lo, hi] : null; }
+  // a window of days needs the time's units in days, hours or seconds since a date
+  cur.perDay = cur.time && cur.timeRange ? C.cfPerDay(cur.time.attrs.units) : null;
+  if (cur.perDay && C.cfValue(dateOf(cur.timeRange[0]), cur.time.attrs.units, cur.time.attrs.calendar) === null) cur.perDay = null;
+  if (cur.perDay) cur.sortedT = Float64Array.from(cur.time.values.filter(Number.isFinite)).sort();
   if (cur.group) cur.groups = new Set(Array.from(cur.group.values).filter(Number.isFinite)).size;
   const za = p.z && p.by[p.z];
   if (za && za.dims.length === 1) { const r = await R.readPerProfile(s, za).catch(() => null); if (r) cur.zLevels = r.values; }
   if (serial !== openSerial) return;
+  // what one profile costs, with its z where z is per profile (MEOP's PRES)
+  cur.profChunks = cur.perProfileChunks * (za && za.dims.length === 2 ? 2 : 1);
+  cur.profBytes = cur.profChunks * cur.chunkBytes;
+  let z1 = 0;
+  for (const z of cur.zLevels || []) if (Number.isFinite(z)) z1 = Math.max(z1, Math.abs(z));
+  cur.zTop = niceUp(z1 || p.nLevels);
   setMode("profiles");
+  setWindow();
   buildFlat();
   place();
   showFacts();
   showLegend();
   showPick();
   showReads();
+  syncWhen();
   status("");
   writeHash();
+  readWindow();
 }
 
 // every profile with a position on this map, on the sphere and flat
@@ -824,6 +870,8 @@ function buildProfilesFlat() {
   const cx = box ? (box[0] + box[2]) / 2 : 0, cy = box ? (box[1] + box[3]) / 2 : 0;
   cur.place = (q) => [(q[0] - cx) * k, (q[1] - cy) * k, 1];
   cur.box = box;
+  // scene units per earth radius on the map, so depth goes down from it as on the globe
+  cur.kFlat = D ? k : 1;
   const n = cur.lon.length, sp = new Float32Array(n * 3), fp = new Float32Array(n * 3), on = new Int32Array(n), at = new Int32Array(n).fill(-1);
   let m = 0;
   for (let i = 0; i < n; i++) {
@@ -837,39 +885,429 @@ function buildProfilesFlat() {
   }
   cur.on = on.slice(0, m); cur.pointOf = at;
   setPoints(profPoints, sp.slice(0, 3 * m), fp.slice(0, 3 * m));
-  colourProfiles();
   buildLines();
+  drawWindow();
   markProfiles();
 }
 
-function setPoints(M, sphere, flat, lift = 0) {
+function setPoints(M, sphere, flat, lift = 0, colours = null) {
   if (lift) for (const a of [sphere, flat]) for (let i = 0; i < a.length; i += 3) { const r = 1 + lift / Math.hypot(a[i], a[i + 1], a[i + 2]); if (a === sphere) { a[i] *= r; a[i + 1] *= r; a[i + 2] *= r; } else a[i + 2] += lift; }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(sphere.slice(), 3));
-  if (M === profPoints) g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(sphere.length), 3));
+  if (M.material.vertexColors) g.setAttribute("color", new THREE.BufferAttribute(colours || new Float32Array(sphere.length), 3));
   M.geometry.dispose();
   M.geometry = g;
   M.userData = { sphere, flat };
 }
 
+// ---------------------------------------------------------------- time and depth
+
+// A time window is win days from the date when: the profiles taken in it
+// are drawn over the rest, which go faint. Without one (win 0) every
+// profile is in it. Colouring by the data, or hanging the profiles, reads
+// the window's profiles whole, every level, so that depth is then free.
+const dateOf = (t) => (C.cfTime(t, cur.time.attrs.units, cur.time.attrs.calendar) || "").split(" ")[0];
+const dayOf = (t) => C.cfValue(dateOf(t), cur.time.attrs.units, cur.time.attrs.calendar);
+function setWindow() {
+  cur.winRange = null;
+  cur.inWin = null;
+  if (cur.perDay && state.win > 0) {
+    const a = cur.time.attrs;
+    let t0 = state.when ? C.cfValue(state.when, a.units, a.calendar) : null;
+    if (t0 === null || !Number.isFinite(t0)) { t0 = dayOf(cur.timeRange[0]); state.when = dateOf(t0); }
+    cur.winRange = [t0, t0 + state.win * cur.perDay];
+    const inWin = new Uint8Array(cur.p.n), list = [];
+    for (const i of cur.placedIdx) { const t = cur.time.values[i]; if (t >= cur.winRange[0] && t < cur.winRange[1]) { inWin[i] = 1; list.push(i); } }
+    cur.inWin = inWin;
+    cur.winList = list;
+  } else cur.winList = cur.placedIdx;
+}
+// the first sorted time at or after t
+function lowerBound(a, t) {
+  let lo = 0, hi = a.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < t) lo = m + 1; else hi = m; }
+  return lo;
+}
+// the window moved on by its own width (dir 1) or back, past spans with no
+// profile in them; false at either end
+function stepWindow(dir) {
+  if (!cur.perDay) return false;
+  if (!state.win) { state.win = 30; setWindow(); return true; }
+  const [t0, t1] = cur.winRange, w = t1 - t0, T = cur.sortedT;
+  let n0 = t0 + dir * w;
+  const k0 = lowerBound(T, n0), k1 = lowerBound(T, n0 + w);
+  if (k1 === k0) {
+    // nothing in it: on to the next profile's day, or back to the last one's
+    if (dir > 0) { if (k1 >= T.length) return false; n0 = dayOf(T[k1]); }
+    else { if (k0 === 0) return false; n0 = dayOf(T[k0 - 1]) + cur.perDay - w; }
+  }
+  if (n0 + w <= cur.timeRange[0] || n0 > cur.timeRange[1]) return false;
+  state.when = dateOf(n0);
+  setWindow();
+  return true;
+}
+function windowChanged() {
+  setWindow();
+  syncWhen();
+  drawWindow();
+  place();
+  showLegend();
+  writeHash();
+  readWindow();
+  redrawSection();
+}
+
+const needsProfiles = () => state.colour === "data" || !!state.hang;
+const readIn = (list) => list.reduce((a, i) => a + (cur.profiles.has(i) ? 1 : 0), 0);
+let winSerial = 0, drawTimer = 0;
+// read the window's profiles: by itself up to PROF_AUTO, or on the button
+async function readWindow(force = false) {
+  const btn = $("read-window"), c0 = cur;
+  btn.hidden = true;
+  if (!needsProfiles()) { winSerial++; cur.reading = null; showWhenInfo(); return; }
+  const todo = cur.winList.filter((i) => !cur.profiles.has(i)), bytes = todo.length * cur.profBytes;
+  if (!todo.length) { showWhenInfo(); return; }
+  if (todo.length > PROF_MAX || (!force && bytes > PROF_AUTO)) {
+    winSerial++; cur.reading = null;
+    btn.hidden = false;
+    btn.disabled = todo.length > PROF_MAX;
+    btn.textContent = todo.length > PROF_MAX ? `${plural(todo.length, "profile")} not read: narrow the window (${PROF_MAX.toLocaleString("en")} at most at once)` :
+      `Read the window's ${plural(todo.length, "profile")} (${plural(todo.length * cur.profChunks, "chunk")}, ${fmtBytes(bytes)})`;
+    showWhenInfo();
+    return;
+  }
+  keepWithin(PROF_KEEP - todo.length);
+  const serial = ++winSerial;
+  cur.reading = { done: 0, of: todo.length };
+  showWhenInfo();
+  let last = performance.now();
+  try {
+    const chunks = await R.readProfiles(c0.s, c0.v, c0.p, todo, (i, r) => {
+      c0.profiles.set(i, r);
+      if (r.z) c0.zSeen = Math.max(c0.zSeen, C.deepestAt(r.values, r.z, zDown()) || 0);
+      if (serial === winSerial) c0.reading.done++;
+      const now = performance.now();
+      if (now - last > 500 && cur === c0) { last = now; clearTimeout(drawTimer); drawTimer = setTimeout(() => { if (!cur.dscale) fitScale(); drawWindow(); place(); showWhenInfo(); }, 0); }
+    }, { stop: () => serial !== winSerial || cur !== c0 });
+    c0.reads.chunks += chunks; c0.reads.bytes += chunks * c0.chunkBytes;
+  } catch (e) {
+    if (cur === c0 && serial === winSerial) { cur.reading = null; $("when-info").textContent = `profiles not read: ${e.message}`; }
+    return;
+  }
+  if (cur !== c0) return;
+  clearTimeout(drawTimer);
+  if (serial === winSerial) {
+    cur.reading = null;
+    // the colour scale stays put while the window plays
+    if (!playing || !cur.dscale) fitScale();
+  }
+  if (cur.zSeen > cur.zTop) cur.zTop = niceUp(cur.zSeen);
+  drawWindow(); place(); showReads(); showLegend(); showWhenInfo(); syncWhen(); redrawProfile();
+}
+$("read-window").addEventListener("click", () => { if (cur && cur.kind === "profiles") readWindow(true); });
+
+// profiles read before, outside the window and not picked, let go of
+function keepWithin(n) {
+  if (cur.profiles.size <= n) return;
+  const pick = profilePick();
+  for (const k of cur.profiles.keys()) {
+    if (cur.profiles.size <= Math.max(0, n)) break;
+    if (k !== pick && !(cur.inWin ? cur.inWin[k] : true)) cur.profiles.delete(k);
+  }
+}
+
+// one colour scale for every level of the window's profiles, so the
+// points at one depth and the hung profiles agree, and moving the depth
+// does not move the scale
+function fitScale() {
+  const vals = [];
+  for (const i of cur.winList) {
+    const r = cur.profiles.get(i);
+    if (r) for (let k = 0; k < r.values.length; k += 3) if (Number.isFinite(r.values[k])) vals.push(r.values[k]);
+  }
+  if (vals.length < 10) return;
+  const lo = quantile(vals, 0.02), hi = quantile(vals, 0.98);
+  cur.dscale = { lo, hi: hi > lo ? hi : lo + 1, when: cur.winRange ? `${dateOf(cur.winRange[0])} + ${state.win} d` : "every profile" };
+}
+
+// how near the depth a profile needs a value to count
+const depthTol = () => (cur.p.z ? Math.max(5, 0.05 * state.depth) : 0.5);
+const depthValue = (i) => { const r = cur.profiles.get(i); return r ? C.valueAt(r.values, zFor(i), state.depth, depthTol()) : NaN; };
+// z (metres, or decibars, near enough) as the distance down, in earth radii
+const zMetres = () => (/^\s*km\b/i.test(zAttrs().units || "") ? 1000 : 1);
+const sinkOf = (z) => (Math.abs(z) * zMetres() * 10 ** state.dz) / R_EARTH;
+
+const viridisInto = (x) => { const rgb = rampAt(VIRIDIS, x); tmpColour.setRGB(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, THREE.SRGBColorSpace); };
+const scaled = (x) => (x - cur.dscale.lo) / (cur.dscale.hi - cur.dscale.lo);
 // a colour per platform or file, far apart around the hue circle
 const groupColour = (g) => tmpColour.setHSL((((g * 0.6180339887) % 1) + 1) % 1, 0.7, 0.6, THREE.SRGBColorSpace);
-function colourProfiles() {
-  const col = profPoints.geometry.attributes.color;
+function profileColour(i, mode) {
+  const grey = (v) => tmpColour.setRGB(v[0], v[1], v[2], THREE.SRGBColorSpace);
+  if (mode === "faint") return grey([0.19, 0.23, 0.31]);
+  if (mode === "time" && cur.time && cur.timeRange) {
+    // across the window, under one; across everything, without
+    const t = cur.time.values[i], [lo, hi] = cur.winRange || cur.timeRange;
+    return Number.isFinite(t) ? viridisInto(hi > lo ? (t - lo) / (hi - lo) : 0.5) : grey([0.5, 0.5, 0.5]);
+  }
+  if (mode === "data") {
+    if (!cur.profiles.has(i)) return grey([0.55, 0.58, 0.64]);
+    const x = depthValue(i);
+    return Number.isFinite(x) && cur.dscale ? viridisInto(scaled(x)) : grey([0.3, 0.3, 0.37]);
+  }
+  if (mode === "group" && cur.group && Number.isFinite(cur.group.values[i])) return groupColour(cur.group.values[i]);
+  return grey([0.82, 0.86, 0.92]);
+}
+function colourInto(M, list, mode) {
+  const col = M.geometry.attributes.color;
   if (!col) return;
-  const mode = state.colour, tr = cur.timeRange;
-  for (let m = 0; m < cur.on.length; m++) {
-    const i = cur.on[m];
-    if (mode === "time" && cur.time && tr) {
-      const t = cur.time.values[i];
-      if (Number.isFinite(t)) { const rgb = rampAt(VIRIDIS, tr[1] > tr[0] ? (t - tr[0]) / (tr[1] - tr[0]) : 0.5); tmpColour.setRGB(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, THREE.SRGBColorSpace); }
-      else tmpColour.setRGB(0.5, 0.5, 0.5, THREE.SRGBColorSpace);
-    } else if (mode === "group" && cur.group && Number.isFinite(cur.group.values[i])) groupColour(cur.group.values[i]);
-    else tmpColour.setRGB(0.82, 0.86, 0.92, THREE.SRGBColorSpace);
+  for (let m = 0; m < list.length; m++) {
+    profileColour(list[m], mode);
     col.array[3 * m] = tmpColour.r; col.array[3 * m + 1] = tmpColour.g; col.array[3 * m + 2] = tmpColour.b;
   }
   col.needsUpdate = true;
 }
+
+// the window's points over the rest, their hung profiles and beads
+function drawWindow() {
+  const u = profPoints.userData;
+  if (!u.sphere) return;
+  profWin.visible = false;
+  cur.winOn = null;
+  if (cur.winRange) {
+    const list = cur.winList.filter((i) => cur.pointOf[i] >= 0), sp = new Float32Array(list.length * 3), fp = new Float32Array(list.length * 3);
+    list.forEach((i, j) => { const m = cur.pointOf[i]; sp.set(u.sphere.subarray(3 * m, 3 * m + 3), 3 * j); fp.set(u.flat.subarray(3 * m, 3 * m + 3), 3 * j); });
+    setPoints(profWin, sp, fp, 0.001);
+    profWin.visible = true;
+    cur.winOn = list;
+  }
+  buildColumns();
+  colourProfiles();
+}
+// colours that follow the colour choice and the depth, and the beads at that depth
+function colourProfiles() {
+  colourInto(profPoints, cur.on, cur.winRange ? "faint" : state.colour);
+  if (cur.winOn) colourInto(profWin, cur.winOn, state.colour);
+  buildShell();
+}
+
+// The window's profiles read, each hung below its point: a line down
+// through its levels, coloured by its values, sunk by depth times the
+// exaggeration, towards the centre on the globe and down from the map
+const drawnRead = () => cur.winList.filter((i) => cur.pointOf[i] >= 0 && cur.profiles.has(i));
+function buildColumns() {
+  profCols.visible = false;
+  under.scale.setScalar(1);
+  if (!state.hang || !cur.dscale) return;
+  const list = drawnRead(), u = profPoints.userData;
+  let total = 0;
+  for (const i of list) total += cur.profiles.get(i).values.length;
+  if (!total) return;
+  // at most some 800,000 segments: every level, or every few
+  const step = Math.max(1, Math.ceil(total / 8e5)), cap = 2 * (Math.ceil(total / step) + list.length);
+  const sp = new Float32Array(cap * 3), fp = new Float32Array(cap * 3), cl = new Float32Array(cap * 3);
+  let nv = 0, deep = 0;
+  const put = (m, z, x) => {
+    const s = sinkOf(z), r = (1.003 - s) / 1.003, o = 3 * nv;
+    sp[o] = u.sphere[3 * m] * r; sp[o + 1] = u.sphere[3 * m + 1] * r; sp[o + 2] = u.sphere[3 * m + 2] * r;
+    fp[o] = u.flat[3 * m]; fp[o + 1] = u.flat[3 * m + 1]; fp[o + 2] = 1.003 - s * cur.kFlat;
+    viridisInto(scaled(x));
+    cl[o] = tmpColour.r; cl[o + 1] = tmpColour.g; cl[o + 2] = tmpColour.b;
+    nv++;
+    deep = Math.max(deep, s);
+  };
+  for (const i of list) {
+    const r = cur.profiles.get(i), z = zFor(i), m = cur.pointOf[i];
+    let prev = -1;
+    for (let k = 0; k < r.values.length; k += step) {
+      if (!Number.isFinite(r.values[k]) || !Number.isFinite(z[k])) { prev = -1; continue; }
+      if (prev >= 0) { put(m, z[prev], r.values[prev]); put(m, z[k], r.values[k]); }
+      prev = k;
+    }
+  }
+  if (!nv) return;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(sp.slice(0, 3 * nv), 3));
+  g.setAttribute("color", new THREE.BufferAttribute(cl.slice(0, 3 * nv), 3));
+  profCols.geometry.dispose();
+  profCols.geometry = g;
+  profCols.userData = { sphere: sp.slice(0, 3 * nv), flat: fp.slice(0, 3 * nv) };
+  profCols.visible = true;
+  // the dark globe drawn under the points goes below the deepest profile
+  under.scale.setScalar(Math.max(0.3, (0.99 - deep * 1.02) / 0.99));
+}
+// a bead on each hung profile where it crosses the depth set
+function buildShell() {
+  profShell.visible = false;
+  if (!state.hang || !cur.dscale) return;
+  const u = profPoints.userData, list = [], vals = [];
+  for (const i of drawnRead()) { const x = depthValue(i); if (Number.isFinite(x)) { list.push(i); vals.push(x); } }
+  if (!list.length) return;
+  const s = sinkOf(state.depth), r = (1.003 - s) / 1.003;
+  const sp = new Float32Array(list.length * 3), fp = new Float32Array(list.length * 3), cl = new Float32Array(list.length * 3);
+  list.forEach((i, j) => {
+    const m = cur.pointOf[i], o = 3 * j;
+    sp[o] = u.sphere[3 * m] * r; sp[o + 1] = u.sphere[3 * m + 1] * r; sp[o + 2] = u.sphere[3 * m + 2] * r;
+    fp[o] = u.flat[3 * m]; fp[o + 1] = u.flat[3 * m + 1]; fp[o + 2] = 1.003 - s * cur.kFlat + 0.0005;
+    viridisInto(scaled(vals[j]));
+    cl[o] = tmpColour.r; cl[o + 1] = tmpColour.g; cl[o + 2] = tmpColour.b;
+  });
+  setPoints(profShell, sp, fp, 0, cl);
+  profShell.visible = true;
+}
+
+// a round number at or above x: 1, 2 or 5 times a power of ten
+function niceUp(x) {
+  if (!(x > 0)) return 1;
+  const p10 = 10 ** Math.floor(Math.log10(x));
+  return [1, 2, 5, 10].map((m) => m * p10).find((v) => v >= x * (1 - 1e-9));
+}
+
+// the controls, from the state
+const DAY_BIN = 7;
+function syncWhen() {
+  if (!cur || cur.kind !== "profiles") return;
+  const sl = $("when"), out = $("when-out");
+  if (cur.perDay) {
+    const base = dayOf(cur.timeRange[0]), days = Math.ceil((cur.timeRange[1] - base) / cur.perDay);
+    sl.max = Math.max(1, days);
+    sl.value = cur.winRange ? Math.round((cur.winRange[0] - base) / cur.perDay) : 0;
+    // a window from a link that the list does not have
+    const ws = $("window");
+    if (![...ws.options].some((o) => +o.value === state.win)) { const o = document.createElement("option"); o.value = String(state.win); o.textContent = plural(state.win, "day"); ws.appendChild(o); }
+    ws.value = String(state.win);
+    $("when-text").value = cur.winRange ? state.when : "";
+    $("when-text").placeholder = dateOf(cur.timeRange[0]);
+    out.textContent = !cur.winRange ? `every profile, ${dateOf(cur.timeRange[0])} to ${dateOf(cur.timeRange[1])}` :
+      state.win === 1 ? state.when : `${state.when} to ${dateOf(cur.winRange[1] - cur.perDay)}`;
+    drawStrip();
+  }
+  const d = $("depth");
+  d.value = Math.sqrt(Math.min(1, state.depth / cur.zTop));
+  $("depth-label").textContent = cur.p.z ? `Depth (${cur.p.z})` : `Depth (${cur.p.level})`;
+  $("depth-out").textContent = cur.p.z ? `${fmtNum(state.depth)}${zUnits()}` : `level ${fmtNum(state.depth)}`;
+  $("hang").checked = !!state.hang;
+  $("dz").value = state.dz;
+  $("dz-out").textContent = `x${Math.round(10 ** state.dz).toLocaleString("en")}`;
+  $("dz").disabled = !state.hang;
+}
+function showWhenInfo() {
+  if (!cur || cur.kind !== "profiles") return;
+  const list = cur.winList, el = $("when-info");
+  if (!list.length) { el.textContent = cur.winRange ? "No profiles in the window: > steps on to the next ones." : "No profile has a position."; return; }
+  const plats = cur.group ? new Set(list.map((i) => cur.group.values[i])).size : 0;
+  let t = cur.winRange ? `${plural(list.length, "profile")} in the window` + (plats ? `, from ${plural(plats, "platform")}` : "") : `${plural(list.length, "profile")} with a position`;
+  if (needsProfiles()) {
+    const got = readIn(list);
+    t += `: ${got.toLocaleString("en")} read` + (cur.reading ? `, reading ${cur.reading.done.toLocaleString("en")} of ${cur.reading.of.toLocaleString("en")} ...` : "");
+  } else t += ". Colour by the data, or hang the profiles, to read them.";
+  el.textContent = t;
+}
+
+// profiles over time, the whole collection, with the window on it
+function stripRange() {
+  const base = dayOf(cur.timeRange[0]);
+  return [base, Math.max(base + cur.perDay, cur.timeRange[1] + cur.perDay)];
+}
+function drawStrip() {
+  const cv = $("when-strip");
+  if (!cur.perDay || cv.closest("[hidden]")) return;
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth || 300, H = cv.clientHeight || 46;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const [lo, hi] = stripRange(), B = 12, a = cur.time.attrs;
+  const days = (hi - lo) / cur.perDay, nb = Math.max(1, Math.min(Math.floor(W / 2), Math.ceil(days / DAY_BIN)));
+  const counts = C.binCounts(cur.time.values, lo, hi, nb), X = (t) => ((t - lo) / (hi - lo)) * W;
+  let top = 1;
+  for (const c of counts) top = Math.max(top, c);
+  ctx.fillStyle = "#6f86a8";
+  for (let b = 0; b < nb; b++) if (counts[b]) { const h = Math.max(1, Math.sqrt(counts[b] / top) * (H - B - 3)); ctx.fillRect((b / nb) * W, H - B - h, Math.max(1, W / nb - 0.5), h); }
+  // years
+  ctx.fillStyle = "#8a97ab"; ctx.strokeStyle = "#2a3956"; ctx.font = "10px system-ui, sans-serif"; ctx.textBaseline = "top"; ctx.textAlign = "center";
+  const y0 = +dateOf(lo).slice(0, 4), y1 = +dateOf(hi).slice(0, 4), every = Math.max(1, Math.ceil((y1 - y0 + 1) * 30 / W));
+  for (let y = y0 + 1; y <= y1; y++) {
+    const t = C.cfValue(`${String(y).padStart(4, "0")}-01-01`, a.units, a.calendar);
+    if (t === null) continue;
+    ctx.beginPath(); ctx.moveTo(X(t), 0); ctx.lineTo(X(t), H - B); ctx.stroke();
+    if ((y - y0) % every === 0) ctx.fillText(String(y), X(t), H - B + 1);
+  }
+  if (cur.winRange) {
+    const x0 = X(cur.winRange[0]), x1 = Math.max(x0 + 2, X(cur.winRange[1]));
+    ctx.fillStyle = "rgba(255,122,184,0.28)"; ctx.fillRect(x0, 0, x1 - x0, H - B);
+    ctx.strokeStyle = COLORS.pick; ctx.strokeRect(x0 + 0.5, 0.5, x1 - x0 - 1, H - B - 1);
+  }
+  cv.title = `${plural(cur.time.values.length, "profile")}, ${dateOf(cur.timeRange[0])} to ${dateOf(cur.timeRange[1])}; each bar is ${plural(Math.round(days / nb), "day")}, its height the square root of its count`;
+}
+// a click or drag on the strip puts the window there (30 days, if there was none)
+let stripDown = false;
+const stripAt = (e) => {
+  if (!cur || cur.kind !== "profiles" || !cur.perDay) return;
+  const r = $("when-strip").getBoundingClientRect(), [lo, hi] = stripRange();
+  const t = lo + Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * (hi - lo);
+  if (!state.win) state.win = 30;
+  const when = dateOf(dayOf(t - (state.win * cur.perDay) / 2));
+  if (when === state.when && cur.winRange) return;
+  state.when = when;
+  windowChanged();
+};
+$("when-strip").addEventListener("pointerdown", (e) => { stripDown = true; $("when-strip").setPointerCapture(e.pointerId); stripAt(e); });
+$("when-strip").addEventListener("pointermove", (e) => { if (stripDown) stripAt(e); });
+$("when-strip").addEventListener("pointerup", () => { stripDown = false; });
+let whenTimer = 0;
+$("when").addEventListener("input", () => {
+  if (!cur || cur.kind !== "profiles" || !cur.perDay) return;
+  if (!state.win) state.win = 30;
+  state.when = dateOf(dayOf(cur.timeRange[0]) + +$("when").value * cur.perDay);
+  setWindow(); syncWhen(); drawWindow(); place(); showWhenInfo();
+  clearTimeout(whenTimer);
+  whenTimer = setTimeout(windowChanged, 250);
+});
+$("window").addEventListener("change", () => { if (!cur || cur.kind !== "profiles") return; state.win = +$("window").value; windowChanged(); });
+$("when-text").addEventListener("change", () => {
+  if (!cur || cur.kind !== "profiles" || !cur.perDay) return;
+  const t = C.cfValue($("when-text").value, cur.time.attrs.units, cur.time.attrs.calendar);
+  if (t === null) { syncWhen(); return; }
+  if (!state.win) state.win = 30;
+  state.when = dateOf(t);
+  windowChanged();
+});
+$("when-back").addEventListener("click", () => { setPlay(false); if (cur && cur.kind === "profiles" && stepWindow(-1)) windowChanged(); });
+$("when-fwd").addEventListener("click", () => { setPlay(false); if (cur && cur.kind === "profiles" && stepWindow(1)) windowChanged(); });
+// Play steps the window on once its profiles are read (where they are needed)
+let playing = false, playTimer = 0;
+function setPlay(on) {
+  playing = on;
+  clearTimeout(playTimer);
+  $("when-play").textContent = on ? "Stop" : "Play";
+  if (on) playTimer = setTimeout(playStep, 0);
+}
+function playStep() {
+  if (!playing || !cur || cur.kind !== "profiles") return setPlay(false);
+  if (cur.reading) { playTimer = setTimeout(playStep, 120); return; }
+  if (!stepWindow(1)) return setPlay(false);
+  windowChanged();
+  playTimer = setTimeout(playStep, 700);
+}
+$("when-play").addEventListener("click", () => { if (cur && cur.kind === "profiles") setPlay(!playing); });
+
+$("depth").addEventListener("input", () => {
+  if (!cur || cur.kind !== "profiles") return;
+  const f = +$("depth").value, d = cur.zTop * f * f;
+  state.depth = d >= 20 ? Math.round(d) : +d.toPrecision(2);
+  syncWhen(); colourProfiles(); place(); showLegend(); redrawProfile(); redrawSection(); writeHash();
+});
+$("dz").addEventListener("input", () => {
+  if (!cur || cur.kind !== "profiles") return;
+  state.dz = +$("dz").value;
+  syncWhen(); buildColumns(); buildShell(); place(); showLegend(); writeHash();
+});
+$("hang").addEventListener("change", () => {
+  if (!cur || cur.kind !== "profiles") return;
+  state.hang = $("hang").checked ? 1 : 0;
+  syncWhen(); drawWindow(); place(); showLegend(); writeHash(); readWindow();
+});
+window.addEventListener("resize", () => { if (cur && cur.kind === "profiles") drawStrip(); });
 
 const profilePick = () => {
   if (!cur || cur.kind !== "profiles" || !/^\d+$/.test(state.pick)) return null;
@@ -902,9 +1340,12 @@ function markProfiles() {
 }
 
 // the profile under the pointer: nearest on screen, within 10 px, and on
-// the globe only those on the side facing the camera
+// the globe only those on the side facing the camera; the window's first
 function nearestProfile(px, py) {
-  const pos = profPoints.geometry.attributes.position;
+  return (profWin.visible && cur.winOn && nearestIn(profWin, cur.winOn, px, py)) ?? nearestIn(profPoints, cur.on, px, py);
+}
+function nearestIn(Mesh, which, px, py) {
+  const pos = Mesh.geometry.attributes.position;
   if (!pos) return null;
   const a = pos.array, r = renderer.domElement.getBoundingClientRect();
   const M = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).elements;
@@ -920,7 +1361,7 @@ function nearestProfile(px, py) {
     const d = (sx - px) ** 2 + (sy - py) ** 2;
     if (d < bd) { bd = d; best = m; }
   }
-  return best < 0 ? null : cur.on[best];
+  return best < 0 ? null : which[best];
 }
 
 const timeLabel = (i) => {
@@ -977,10 +1418,28 @@ async function showProfilePick() {
   if (!ok.length) { put([["Values", `none: every level is a fill value${cur.perProfileChunks === 1 ? " (or the store has no chunk for it)" : ""}`]]); return; }
   let lo = Infinity, hi = -Infinity;
   for (const k of ok) { lo = Math.min(lo, r.values[k]); hi = Math.max(hi, r.values[k]); }
-  put([["Levels with data", `${ok.length.toLocaleString("en")} of ${r.values.length.toLocaleString("en")}, ${fmtNum(z[ok[0]])} to ${fmtNum(z[ok[ok.length - 1]])}${zu}`],
+  put([["Levels with data", `${ok.length.toLocaleString("en")} of ${p.nLevels.toLocaleString("en")}, ${fmtNum(z[ok[0]])} to ${fmtNum(z[ok[ok.length - 1]])}${zu}`],
     [v.path.split("/").pop(), `${fmtNum(lo)} to ${fmtNum(hi)}${u}`]]);
+  const tr = tbl.insertRow();
+  tr.id = "pick-depth";
+  tr.insertCell(); tr.insertCell();
   plot.hidden = false;
-  drawProfile(plot, r.values, z, { title: `${v.path.split("/").pop()}${u}`, zTitle: `${p.z || p.level}${zu}`, down: zDown() });
+  redrawProfile();
+  // read now, so on the map too
+  if (state.colour === "data" || state.hang) { colourProfiles(); place(); }
+}
+
+// the picked profile's plot, with the depth set across it, and its value there
+function redrawProfile() {
+  const i = profilePick(), plot = $("profile-plot"), r = i !== null && cur.profiles.get(i);
+  if (!r || plot.hidden) return;
+  const { p, v } = cur, z = zFor(i), u = v.meta.attrs.units ? ` ${v.meta.attrs.units}` : "", zu = zUnits(), x = depthValue(i);
+  const tr = $("pick-depth");
+  if (tr) {
+    tr.cells[0].textContent = `At ${fmtNum(state.depth)}${zu}`;
+    tr.cells[1].textContent = Number.isFinite(x) ? `${fmtNum(x)}${u}` : `none within ${fmtNum(depthTol())}${zu}`;
+  }
+  drawProfile(plot, r.values, z, { title: `${v.path.split("/").pop()}${u}`, zTitle: `${p.z || p.level}${zu}`, down: zDown(), mark: state.depth });
 }
 
 // the z of profile i's levels: its own where z is per profile, else the
@@ -1031,7 +1490,7 @@ function plotFrame(cv) {
   ctx.font = "11px system-ui, sans-serif";
   return { ctx, W, H, L: 46, R: 10, T: 22, B: 22 };
 }
-function drawProfile(cv, x, z, { title, zTitle, down }) {
+function drawProfile(cv, x, z, { title, zTitle, down, mark = null }) {
   const { ctx, W, H, L, R: Rm, T, B } = plotFrame(cv);
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
   for (let k = 0; k < x.length; k++) if (Number.isFinite(x[k]) && Number.isFinite(z[k])) { x0 = Math.min(x0, x[k]); x1 = Math.max(x1, x[k]); z0 = Math.min(z0, z[k]); z1 = Math.max(z1, z[k]); }
@@ -1049,6 +1508,9 @@ function drawProfile(cv, x, z, { title, zTitle, down }) {
   ctx.fillStyle = "#dfe7f2"; ctx.textAlign = "left"; ctx.textBaseline = "top";
   ctx.fillText(title, L, 4);
   ctx.save(); ctx.translate(10, (T + H - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = "#8a97ab"; ctx.fillText(zTitle, 0, -4); ctx.restore();
+  if (mark !== null && mark >= z0 && mark <= z1) {
+    ctx.save(); ctx.strokeStyle = COLORS.pick; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(L, Y(mark)); ctx.lineTo(W - Rm, Y(mark)); ctx.stroke(); ctx.restore();
+  }
   ctx.strokeStyle = "#ffd34d"; ctx.lineWidth = 1.5; ctx.beginPath();
   let pen = false;
   for (let k = 0; k < x.length; k++) {
@@ -1060,44 +1522,43 @@ function drawProfile(cv, x, z, { title, zTitle, down }) {
 }
 
 // The section along one platform: all its profiles side by side, in time,
-// coloured by the value at each level. One read per profile.
+// coloured by the value at each level. Neighbouring profiles are read
+// together, so a tag's profiles in one file are a few requests.
 let sectionSerial = 0;
+const sectionList = (i) => {
+  let list = sameGroup(i);
+  if (cur.time) list.sort((a, b) => (cur.time.values[a] || 0) - (cur.time.values[b] || 0));
+  return list.slice(0, SECTION_MAX);
+};
 function showSectionButton(i) {
-  const b = $("section"), list = i === null ? [] : sameGroup(i);
+  const b = $("section"), list = i === null ? [] : sectionList(i);
   sectionSerial++;
+  cur.section = null;
   $("section-plot").hidden = true; $("section-info").textContent = "";
   b.hidden = list.length < 2;
   if (b.hidden) return;
-  const n = Math.min(list.length, SECTION_MAX), c = n * cur.perProfileChunks;
-  b.textContent = `Read its ${plural(n, "profile")} as a section (${plural(c, "chunk")}, ${fmtBytes(c * cur.chunkBytes)})`;
+  const todo = list.filter((k) => !cur.profiles.has(k)).length, c = todo * cur.profChunks;
+  b.textContent = `Read its ${plural(list.length, "profile")} as a section` + (todo ? ` (${plural(c, "chunk")}, ${fmtBytes(c * cur.chunkBytes)})` : " (read already)");
 }
 $("section").addEventListener("click", async () => {
   const i = profilePick();
   if (!cur || cur.kind !== "profiles" || i === null) return;
-  const serial = ++sectionSerial, { s, v, p } = cur;
-  let list = sameGroup(i);
-  if (cur.time) list.sort((a, b) => (cur.time.values[a] || 0) - (cur.time.values[b] || 0));
-  list = list.slice(0, SECTION_MAX);
-  const info = $("section-info"), cv = $("section-plot"), rows = new Array(list.length);
-  let done = 0, next = 0;
+  const serial = ++sectionSerial, c0 = cur, list = sectionList(i);
+  const info = $("section-info"), todo = list.filter((k) => !cur.profiles.has(k));
+  let done = list.length - todo.length;
   const say = () => { info.textContent = `${done} of ${list.length} profiles read`; };
   say();
-  const worker = async () => {
-    while (next < list.length && serial === sectionSerial) {
-      const j = next++, k = list[j];
-      try {
-        let r = cur.profiles && cur.profiles.get(k);
-        if (!r) { r = await R.readProfile(s, v, { ...p, z: null }, k); cur.reads.chunks += cur.perProfileChunks; cur.reads.bytes += cur.perProfileChunks * cur.chunkBytes; }
-        rows[j] = r.values;
-      } catch (e) { rows[j] = null; }
-      done++;
-      if (done % 20 === 0 || done === list.length) { say(); showReads(); }
-    }
-  };
-  await Promise.all(Array.from({ length: 6 }, worker));
-  if (serial !== sectionSerial) return;
-  drawSection(cv, list, rows);
+  try {
+    const chunks = await R.readProfiles(c0.s, c0.v, c0.p, todo, (k, r) => { c0.profiles.set(k, r); if (++done % 50 === 0) say(); },
+      { stop: () => serial !== sectionSerial || cur !== c0 });
+    c0.reads.chunks += chunks; c0.reads.bytes += chunks * c0.chunkBytes;
+    showReads();
+  } catch (e) { if (serial === sectionSerial) info.textContent = `not read: ${e.message}`; return; }
+  if (serial !== sectionSerial || cur !== c0) return;
+  cur.section = { list, rows: list.map((k) => (cur.profiles.has(k) ? cur.profiles.get(k).values : null)) };
+  drawSection($("section-plot"), cur.section.list, cur.section.rows);
 });
+const redrawSection = () => { if (cur && cur.section) drawSection($("section-plot"), cur.section.list, cur.section.rows); };
 function drawSection(cv, list, rows) {
   const vals = [];
   for (const r of rows) if (r) for (let k = 0; k < r.length; k += 7) if (Number.isFinite(r[k])) vals.push(r[k]);
@@ -1123,7 +1584,20 @@ function drawSection(cv, list, rows) {
   const { ctx, W, H, L, R: Rm, T, B } = plotFrame(cv);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(off, L, T, W - L - Rm, H - T - B);
-  const z = zFor(profilePick()), zu = zUnits(), Y = (k) => T + (k / ny) * (H - T - B);
+  // the picked profile's levels, or a deeper one's where it stops short
+  let z = zFor(profilePick());
+  if (z.length <= deep) for (const k of list) { const e = cur.profiles.get(k); if (e && e.z && e.z.length > z.length) z = e.z; }
+  const zu = zUnits(), Y = (k) => T + (k / ny) * (H - T - B), X = (x) => L + ((x + 0.5) / nx) * (W - L - Rm);
+  // the depth set, across; the profiles in the time window, along the top
+  if (state.depth >= Math.min(z[0], z[Math.min(deep, z.length - 1)]) && state.depth <= Math.max(z[0], z[Math.min(deep, z.length - 1)])) {
+    let k = 0;
+    while (k < Math.min(deep, z.length - 1) && Math.abs(z[k + 1] - state.depth) <= Math.abs(z[k] - state.depth)) k++;
+    ctx.save(); ctx.strokeStyle = COLORS.pick; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(L, Y(k + 0.5)); ctx.lineTo(W - Rm, Y(k + 0.5)); ctx.stroke(); ctx.restore();
+  }
+  if (cur.inWin) {
+    ctx.fillStyle = COLORS.pick;
+    list.forEach((k, x) => { if (cur.inWin[k]) ctx.fillRect(X(x) - 0.5, T - 4, Math.max(1, (W - L - Rm) / nx), 3); });
+  }
   // ticks at round values of z, placed where the levels reach them
   ctx.fillStyle = "#8a97ab"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
   const z0 = Number.isFinite(z[0]) ? z[0] : 0, z1 = Number.isFinite(z[deep]) ? z[deep] : deep;
@@ -1140,7 +1614,8 @@ function drawSection(cv, list, rows) {
   ctx.textAlign = "right"; ctx.fillText(timeLabel(list[list.length - 1]), W - Rm, H - B + 4);
   ctx.save(); ctx.translate(10, (T + H - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillText(`${cur.p.z || cur.p.level}${zu}`, 0, -4); ctx.restore();
   info.textContent = `${list.length} profiles of ${groupLabel(list[0])}, in time order, down to ${fmtNum(z[deep] ?? deep)}${zu}: ` +
-    `colour is the value at each level, 2% to 98% of them (levels drawn as the picked profile has them).`;
+    `colour is the value at each level, 2% to 98% of them (levels drawn as the picked profile has them)` +
+    (cur.inWin ? "; marked along the top, those in the time window" : "") + "; dashed, the depth set.";
 }
 
 function showProfileFacts() {
@@ -1172,12 +1647,24 @@ function showProfileFacts() {
 }
 
 function showProfileLegend() {
-  const el = $("legend"), p = cur.p;
+  const el = $("legend"), p = cur.p, parts = [];
+  const name = cur.v.path.split("/").pop(), u = cur.v.meta.attrs.units ? ` ${cur.v.meta.attrs.units}` : "", zu = zUnits();
   if (state.colour === "time" && cur.time && cur.timeRange) {
-    const a = cur.time.attrs;
-    el.textContent = `Points coloured by ${p.time}, viridis from ${C.cfTime(cur.timeRange[0], a.units, a.calendar) || fmtNum(cur.timeRange[0])} (dark) to ${C.cfTime(cur.timeRange[1], a.units, a.calendar) || fmtNum(cur.timeRange[1])} (yellow). Click one for its profile.`;
-  } else if (state.colour === "group" && cur.group) el.textContent = `Points coloured by ${p.group}: a colour for each of the ${cur.groups} platforms or files. Click one for its profile.`;
-  else el.textContent = "Click a point for its profile.";
+    const a = cur.time.attrs, [lo, hi] = cur.winRange ? [cur.winRange[0], cur.winRange[1] - (cur.perDay || 0) / 1440] : cur.timeRange;
+    parts.push(`Points coloured by ${p.time}, viridis from ${C.cfTime(lo, a.units, a.calendar) || fmtNum(lo)} (dark) to ${C.cfTime(hi, a.units, a.calendar) || fmtNum(hi)} (yellow)`);
+  } else if (state.colour === "group" && cur.group) parts.push(`Points coloured by ${p.group}: a colour for each of the ${cur.groups} platforms or files`);
+  else if (state.colour === "data") {
+    const at = cur.p.z ? `${fmtNum(state.depth)}${zu}` : `level ${fmtNum(state.depth)}`;
+    parts.push(cur.dscale ? `Points coloured by ${name} at ${at}, viridis from ${cur.dscale.lo.toPrecision(3)} to ${cur.dscale.hi.toPrecision(3)}${u} ` +
+      `(2% and 98% of every level of the profiles read in the window, ${cur.dscale.when}). Light grey: not read; dark: no value within ${fmtNum(depthTol())}${zu} of ${at}` :
+      `Points coloured by ${name} at ${at} as their profiles are read; light grey until then`);
+  }
+  if (cur.winRange) parts.push("faint points are outside the time window");
+  if (state.hang && profCols.visible) {
+    const E = Math.round(10 ** state.dz).toLocaleString("en");
+    parts.push(`hung below each point read: its profile in the same colours, sunk by depth x${E} (1,000 m as deep as ${E} km would be), with a bead where it crosses ${cur.p.z ? `${fmtNum(state.depth)}${zu}` : "the level set"}`);
+  } else if (state.hang) parts.push("profiles hang below their points once read");
+  el.textContent = parts.map((t, k) => (k ? t : t[0].toUpperCase() + t.slice(1))).join("; ") + ". Click a point for its profile.";
 }
 
 // ---------------------------------------------------------------- opening
@@ -1189,7 +1676,7 @@ const fmtArea = (km2) => (km2 >= 100 ? `${Math.round(km2).toLocaleString("en")} 
 function showReads() {
   if (!cur) { $("reads").textContent = ""; return; }
   const r = cur.reads;
-  $("reads").textContent = r.chunks ? `${r.chunks} chunk${r.chunks > 1 ? "s" : ""} read, ${fmtBytes(r.bytes)} decoded` : "";
+  $("reads").textContent = r.chunks ? `${plural(r.chunks, "chunk")} read, ${fmtBytes(r.bytes)} decoded` : "";
 }
 
 let openSerial = 0, openedUrl = "", opened = null;
@@ -1474,8 +1961,8 @@ for (const p of PRESETS) {
   const b = document.createElement("button");
   b.type = "button"; b.className = "small"; b.textContent = p.label;
   b.addEventListener("click", () => {
-    Object.assign(state, defaults, { dims: { ...(p.dims || {}) }, url: p.url, varname: p.varname, projection: p.projection, lat: p.lat ?? null, lon: p.lon ?? null });
-    syncControls(); setCamera(DEFAULT_CAM); open();
+    Object.assign(state, defaults, { dims: { ...(p.dims || {}) }, url: p.url, varname: p.varname, projection: p.projection, lat: p.lat ?? null, lon: p.lon ?? null }, p.also || {});
+    syncControls(); setCamera(state.cam || DEFAULT_CAM); open();
   });
   $("presets").appendChild(b);
 }
@@ -1496,7 +1983,7 @@ function syncControls() {
 $("load").addEventListener("click", () => {
   const u = $("src").value.trim();
   if (!u) return;
-  if (u !== state.url) { state.url = u; state.varname = ""; state.dims = {}; state.pick = ""; }
+  if (u !== state.url) { state.url = u; state.varname = ""; state.dims = {}; state.pick = ""; state.colour = ""; }
   open();
 });
 $("folder-btn").addEventListener("click", () => $("folder").click());
@@ -1538,7 +2025,11 @@ $("centre-grid").addEventListener("click", () => {
   writeHash();
 });
 $("assume").addEventListener("change", (e) => { state.assume = e.target.value; writeHash(); open(); });
-ui.colour.addEventListener("change", () => { state.colour = ui.colour.value; if (cur) { drawTexture(); showLegend(); } writeHash(); });
+ui.colour.addEventListener("change", () => {
+  state.colour = ui.colour.value;
+  if (cur) { drawTexture(); if (cur.kind === "profiles") { place(); readWindow(); } showLegend(); }
+  writeHash();
+});
 for (const k of ["chunks", "cells", "coast", "grat"])
   $(k).addEventListener("change", () => { state[k] = $(k).checked ? 1 : 0; if (cur) { drawTexture(); place(); showLegend(); } writeHash(); });
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(DEFAULT_CAM); writeHash(); });
@@ -1592,7 +2083,7 @@ window.addEventListener("hashchange", () => {
   const before = state.url + "|" + state.varname;
   readHash(); syncControls(); setCamera(state.cam || DEFAULT_CAM);
   if (state.url + "|" + state.varname !== before || !cur) open();
-  else if (cur && cur.kind === "profiles") { buildFlat(); place(); showPick(); showLegend(); }
+  else if (cur && cur.kind === "profiles") { setWindow(); syncWhen(); buildFlat(); place(); showPick(); showLegend(); readWindow(); }
   else if (cur) { buildFlat(); resetData(); drawTexture(); place(); autoRead(); showPick(); showLegend(); }
 });
 

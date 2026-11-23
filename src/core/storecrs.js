@@ -311,6 +311,30 @@ export function cfTime(x, units, calendar) {
   return `${date} ${p2(hh)}:${p2(mm)}${ss ? ":" + p2(ss) : ""}`;
 }
 
+// The other way: a date ("YYYY-MM-DD", maybe " HH:MM[:SS]" or "THH:MM")
+// as a value in CF time units on the calendar named, or null where either
+// is not one cfTime reads. cfTime(cfValue(d, u, c), u, c) is d again.
+export function cfValue(date, units, calendar) {
+  const cal = CALENDARS[String(calendar || "standard").trim().toLowerCase()];
+  const re = /^\s*(-?\d{1,4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}(?:\.\d*)?))?)?\s*$/;
+  const m = /^\s*(seconds?|minutes?|hours?|days?)\s+since\s+(.*)$/.exec(units || "");
+  const d = re.exec(String(date || "")), e = m && re.exec(m[2].replace(/\s*(UTC|Z|[+-]00(:?00)?)\s*$/i, ""));
+  if (!cal || !d || !e) return null;
+  const secs = (p) => {
+    let Y = +p[1];
+    if (!cal.yearZero && Y < 0) Y++;
+    return cal.days(Y, +p[2], +p[3]) * 86400 + (+p[4] || 0) * 3600 + (+p[5] || 0) * 60 + (+p[6] || 0);
+  };
+  return (secs(d) - secs(e)) / { s: 1, m: 60, h: 3600, d: 86400 }[m[1][0]];
+}
+
+// How many of a CF time's units make a day (1 for days, 24 for hours), or
+// null where the units are not a time since a date.
+export function cfPerDay(units) {
+  const m = /^\s*(seconds?|minutes?|hours?|days?)\s+since\s/.exec(units || "");
+  return m ? 86400 / { s: 1, m: 60, h: 3600, d: 86400 }[m[1][0]] : null;
+}
+
 // A CF time span (units a time unit with no "since", as a forecast's lead
 // time is) as days, hours and minutes: "0 h", "3 h", "1 d 6 h", "15 d"; null
 // where the units are not a time unit.
@@ -393,6 +417,48 @@ export function profileRoles(vdims, vattrs, arrays) {
     return { instance: d, level, lat, lon, time, z, group };
   }
   return null;
+}
+
+// A profile's value at depth (or pressure) target: at the level whose z is
+// nearest, among levels with a value, if that level is within tol of the
+// target; NaN where the profile has no value that close (it stops short,
+// or starts below). z is the profile's own z, or the collection's.
+export function valueAt(values, z, target, tol) {
+  let best = NaN, bd = Infinity;
+  const n = Math.min(values.length, z.length);
+  for (let k = 0; k < n; k++) {
+    const d = Math.abs(z[k] - target);
+    if (d < bd && Number.isFinite(values[k])) { bd = d; best = values[k]; }
+  }
+  return bd <= tol ? best : NaN;
+}
+
+// The deepest z a profile has a value at (the largest, for pressure and
+// depth; the smallest where z grows upwards), or NaN where it has none.
+export function deepestAt(values, z, down = true) {
+  let out = NaN;
+  const n = Math.min(values.length, z.length);
+  for (let k = 0; k < n; k++)
+    if (Number.isFinite(values[k]) && Number.isFinite(z[k]) && !(down ? z[k] <= out : z[k] >= out)) out = z[k];
+  return out;
+}
+
+// How many of the values (times, one per profile) fall in each of n equal
+// bins from lo to hi (hi in the last bin); values outside are not counted.
+export function binCounts(values, lo, hi, n) {
+  const out = new Uint32Array(n), w = (hi - lo) / n;
+  for (const t of values) {
+    if (!(t >= lo && t <= hi)) continue;
+    out[w > 0 ? Math.min(n - 1, Math.floor((t - lo) / w)) : 0]++;
+  }
+  return out;
+}
+
+// The profiles (indices into times) in the window [t0, t1), in index order
+export function inWindow(times, t0, t1) {
+  const out = [];
+  for (let i = 0; i < times.length; i++) if (times[i] >= t0 && times[i] < t1) out.push(i);
+  return out;
 }
 
 // ---------------------------------------------------------------- the grid
