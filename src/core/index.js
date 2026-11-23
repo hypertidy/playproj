@@ -15,6 +15,7 @@ export * as azimuthal from "./families/azimuthal.js";
 export * as conic from "./families/conic.js";
 export * as spilhaus from "./families/spilhaus.js";
 export * as globals from "./families/globals.js";
+export * as eqearth from "./eqearth.js";
 
 export * as tissot from "./tissot.js";
 export * as distortion from "./distortion.js";

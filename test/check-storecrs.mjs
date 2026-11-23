@@ -74,6 +74,8 @@ const back = C.parseHash("#" + C.hashString("https://x.org/s 1.icechunk", { varn
 check(back.url === "https://x.org/s 1.icechunk" && back.params.get("varname") === "a/b c" && !back.params.has("lon"), "hashString round trip");
 check(C.displayDef("robinson", 30) === "+proj=robin +lon_0=30 +lat_0=0 +x_0=0 +y_0=0 +R=1 +no_defs", C.displayDef("robinson", 30));
 check(C.displayDef("nearside_perspective") === null, "the globe has no PROJ string");
+check(C.displayDef("equal_earth", 150) === "+proj=eqearth +lon_0=150 +lat_0=0 +x_0=0 +y_0=0 +R=1 +no_defs", C.displayDef("equal_earth", 150));
+check(C.parseHash("#https://x.org/a.icechunk::projection=equal_earth").params.get("projection") === "equal_earth" && C.DISPLAY_KEYS.includes("equal_earth"), "equal_earth is a display key");
 check(C.chunkKey([0, 3, 5]) === "c/0/3/5" && C.chunkKey([0, 3, 5], { version: 2 }) === "0.3.5", "chunkKey");
 const sc = C.sliceCost([10, 721, 1440], [1, 721, 1440], 1, 2, 4);
 check(sc.chunks === 1 && sc.bytes === 721 * 1440 * 4, "sliceCost");

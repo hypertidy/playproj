@@ -17,6 +17,10 @@ import { drawIndicatrix, drawInset, drawContours } from "./tissot-draw.js";
 import { writeFloatGeoTIFF, esriGeoKeys, proj4Wkt } from "../src/core/geotiff-write.js";
 import { saveBlob } from "./download.js";
 import { makeStage, readParams, hashWriter, oneOf, shareLinks, copyText } from "../src/scene/index.js";
+import { useEqearth } from "../src/core/eqearth.js";
+
+// proj4js's own Equal Earth is the sphere only: a typed +proj=eqearth +ellps=.. needs the ellipsoid
+useEqearth(window.proj4);
 
 const D2R = Math.PI / 180;
 const DEG = "\u00b0";

@@ -11,6 +11,10 @@ import * as S from "../src/core/structure.js";
 import { loadCoastline } from "./data.js";
 import { graticule } from "../src/core/geo.js";
 import { makeStage, readParams, hashWriter, shareLinks, copyText } from "../src/scene/index.js";
+import { useEqearth } from "../src/core/eqearth.js";
+
+// proj4js's own Equal Earth is the sphere only: EPSG:8857 rasters need the ellipsoid
+useEqearth(window.proj4);
 
 const DEG = "\u00b0";
 const D2R = Math.PI / 180;

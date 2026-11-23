@@ -16,11 +16,13 @@ import { colourScale, paint, quantile } from "../src/core/distortion.js";
 import { knownProj4 } from "../src/core/structure.js";
 import { PALETTES, rampAt } from "../src/core/palette.js";
 import * as spilhaus from "../src/core/families/spilhaus.js";
+import { useEqearth } from "../src/core/eqearth.js";
 import { graticule } from "../src/core/geo.js";
 import { loadCoastline } from "./data.js";
 import { makeStage, shareLinks, copyText, isEmbed } from "../src/scene/index.js";
 
-const proj4 = window.proj4;
+// proj4js's own Equal Earth is the sphere only: a store in EPSG:8857 needs the ellipsoid
+const proj4 = useEqearth(window.proj4);
 const $ = (id) => document.getElementById(id);
 const DEG = "\u00b0";
 const D2R = Math.PI / 180;
@@ -48,7 +50,9 @@ const PRESETS = [
   { label: "Rotated pole (synthetic)", url: fixture("rotated.icechunk"), varname: "tas", projection: "robinson" },
   { label: "GeoTransform, plain Zarr (synthetic)", url: fixture("glad.zarr"), varname: "lclu", projection: "mercator" },
   { label: "CMIP6 MPI-ESM1-2-HR tas (Gaussian)", url: "https://storage.googleapis.com/cmip6/CMIP6/CMIP/MPI-M/MPI-ESM1-2-HR/historical/r1i1p1f1/Amon/tas/gn/v20190710", varname: "tas", projection: "mollweide" },
-  { label: "CMIP6 GFDL-ESM4 tos (tripolar)", url: "https://storage.googleapis.com/cmip6/CMIP6/CMIP/NOAA-GFDL/GFDL-ESM4/historical/r2i1p1f1/Omon/tos/gn/v20180701", varname: "tos", projection: "native" }
+  { label: "CMIP6 GFDL-ESM4 tos (tripolar)", url: "https://storage.googleapis.com/cmip6/CMIP6/CMIP/NOAA-GFDL/GFDL-ESM4/historical/r2i1p1f1/Omon/tos/gn/v20180701", varname: "tos", projection: "native" },
+  // a virtual Icechunk on source.coop (a scratch bucket, so it may move)
+  { label: "ACCESS-ESM1.6 ocean temp (Icechunk)", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/access-esm/access-esm1-6.historical.ocean-3d-temp-1mon-mean/icechunk", varname: "temp", projection: "equal_earth" }
 ];
 
 // ---------------------------------------------------------------- state
