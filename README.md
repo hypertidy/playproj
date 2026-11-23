@@ -562,8 +562,13 @@ coordinates (in km where their units say so; uneven 1D coordinates, as on a
 Gaussian grid, keep their spacing). A curvilinear grid (2D latitude and longitude
 per cell, as CMIP6 ocean grids ship) is drawn from those, with no CRS. Colour the cells by the data
 (chunks read on demand: the whole slice when it is small, a spread of chunks or
-the one clicked when it is not), by each cell's area on the earth, or by the
-angular distortion of the store's CRS. The hash is
+the one clicked when it is not, with what a slice costs and why, as when each
+chunk holds hundreds of time steps), by each cell's area on the earth, or by the
+angular distortion of the store's CRS. The cells and chunks are drawn as the
+array is stored, row 0 first; the readout says whether rows run south first (as
+model output usually does) or north first (as an image), and chunk labels are
+turned to read upright either way. A dimension's coordinate that is out of
+order (files joined in the wrong order) is flagged under its slider. The hash is
 [gridlook](https://github.com/d70-t/gridlook)'s,
 `#<store>::varname=..::projection=..::lat=..::lon=..::dimIndices_<dim>=..`,
 plus `t`, `colour` (`data`, `area`, `omega`, `none`), `chunks`, `cells`,

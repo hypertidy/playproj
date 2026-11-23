@@ -198,6 +198,41 @@ export function axisOf(values, { lon = false } = {}) {
   return { n, step, edge0: v[0] - step / 2, c0: v[0], c1: v[n - 1], regular: dev < 1e-3, dev };
 }
 
+// The order of a 1D coordinate along its index: "increasing", "decreasing",
+// "constant" or "unordered", with the steps that go against the overall
+// direction and the indexes of the smallest and largest values. A time axis
+// joined from files in the wrong order comes out unordered.
+export function coordOrder(values) {
+  const v = Array.from(values, Number), n = v.length;
+  let up = 0, down = 0, lo = 0, hi = 0;
+  for (let i = 0; i < n; i++) {
+    if (v[i] < v[lo]) lo = i;
+    if (v[i] > v[hi]) hi = i;
+    if (i) { if (v[i] > v[i - 1]) up++; else if (v[i] < v[i - 1]) down++; }
+  }
+  const order = !up && !down ? "constant" : !down ? "increasing" : !up ? "decreasing" : "unordered";
+  return { order, n, against: Math.min(up, down), lo, hi };
+}
+
+// A CF time value as a date and time, for units "<unit> since <date>[
+// <time>]" (seconds to days), on the proleptic Gregorian calendar
+// JavaScript's Date keeps; null where the units are not a time.
+export function cfTime(x, units) {
+  if (typeof x === "bigint") x = Number(x);
+  const m = /^\s*(seconds?|minutes?|hours?|days?)\s+since\s+(-?\d{1,4}-\d{1,2}-\d{1,2})(?:[ T](\d{1,2}:\d{2}(?::\d{2}(?:\.\d*)?)?))?/.exec(units || "");
+  if (!m || !Number.isFinite(x)) return null;
+  const unit = { s: 1e3, m: 6e4, h: 3.6e6, d: 8.64e7 }[m[1][0]];
+  const [Y, M, D] = m[2].split("-").map(Number);
+  const [hh = 0, mm = 0, ss = 0] = m[3] ? m[3].split(":").map(Number) : [];
+  const t0 = new Date(0);
+  t0.setUTCFullYear(Y, M - 1, D);
+  t0.setUTCHours(hh, mm, 0, Math.round(ss * 1e3));
+  const d = new Date(t0.getTime() + x * unit);
+  if (!Number.isFinite(d.getTime())) return null;
+  const s = d.toISOString();
+  return s.endsWith("T00:00:00.000Z") ? s.slice(0, 10) : s.slice(0, 16).replace("T", " ");
+}
+
 // ---------------------------------------------------------------- the grid
 
 // One description of where the cells are, from what the store gave:
@@ -285,6 +320,28 @@ export function chunkOf(idx, chunks) { return idx.map((v, d) => Math.floor(v / c
 export function chunkKey(c, { version = 3, separator } = {}) {
   const sep = separator || (version === 3 ? "/" : ".");
   return (version === 3 ? "c" + sep : "") + c.join(sep);
+}
+
+// Which way a grid's rows and columns run on the earth, from the longitude
+// and latitude at its lattice nodes (row by row, nu + 1 to a row, null where
+// a node is not on the earth). rows is "north" when latitude grows with the
+// row index between most neighbours (south first, as model output usually
+// is), "south" when it falls (north first, as an image), and null when
+// neither has two thirds of the votes (a polar grid, whose rows cross the
+// pole). cols is "east", "west" or null the same way, across the antimeridian.
+export function gridDirections(ll, nu, nv) {
+  let rn = 0, rs = 0, ce = 0, cw = 0;
+  const at = (i, j) => ll[j * (nu + 1) + i];
+  for (let j = 0; j <= nv; j++)
+    for (let i = 0; i <= nu; i++) {
+      const p = at(i, j);
+      if (!p) continue;
+      const r = j < nv ? at(i, j + 1) : null, c = i < nu ? at(i + 1, j) : null;
+      if (r) { const d = r[1] - p[1]; if (d > 1e-9) rn++; else if (d < -1e-9) rs++; }
+      if (c) { let d = c[0] - p[0]; d -= 360 * Math.round(d / 360); if (d > 1e-9) ce++; else if (d < -1e-9) cw++; }
+    }
+  const win = (a, b, A, B) => (a + b === 0 ? null : a >= 2 * b ? A : b >= 2 * a ? B : null);
+  return { rows: win(rn, rs, "north", "south"), cols: win(ce, cw, "east", "west") };
 }
 
 // ---------------------------------------------------------------- cell size on the earth

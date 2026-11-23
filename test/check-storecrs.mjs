@@ -77,6 +77,33 @@ check(C.displayDef("nearside_perspective") === null, "the globe has no PROJ stri
 check(C.displayDef("equal_earth", 150) === "+proj=eqearth +lon_0=150 +lat_0=0 +x_0=0 +y_0=0 +R=1 +no_defs", C.displayDef("equal_earth", 150));
 check(C.parseHash("#https://x.org/a.icechunk::projection=equal_earth").params.get("projection") === "equal_earth" && C.DISPLAY_KEYS.includes("equal_earth"), "equal_earth is a display key");
 check(C.chunkKey([0, 3, 5]) === "c/0/3/5" && C.chunkKey([0, 3, 5], { version: 2 }) === "0.3.5", "chunkKey");
+
+// which way rows and columns run, from a lattice of lon/lat nodes
+const lattice = (nu, nv, f) => { const ll = []; for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) ll.push(f(i, j)); return ll; };
+const dir = (nu, nv, f) => { const d = C.gridDirections(lattice(nu, nv, f), nu, nv); return `${d.rows} ${d.cols}`; };
+check(dir(8, 4, (i, j) => [-180 + 45 * i, -90 + 45 * j]) === "north east", "south-first longlat rows run north");
+check(dir(8, 4, (i, j) => [-180 + 45 * i, 90 - 45 * j]) === "south east", "north-first rows run south");
+check(dir(8, 4, (i, j) => [180 - 45 * i, 90 - 45 * j]) === "south west", "columns running west");
+check(dir(8, 4, (i, j) => [(100 + 30 * i) % 360, -60 + 30 * j]) === "north east", "columns across the antimeridian run east");
+check(dir(8, 4, (i, j) => (j === 2 ? null : [10 * i, 10 * j])) === "north east", "nodes off the earth are skipped");
+// a south polar stereographic grid, north first in y: its rows cross the pole
+{
+  const P = proj4("+proj=stere +lat_0=-90 +lat_ts=-71 +lon_0=0 +datum=WGS84 +units=m +no_defs");
+  const polar = (i, j) => P.inverse([-3e6 + 6e5 * i, 3e6 - 6e5 * j]);
+  check(dir(10, 10, polar) === "null null", `polar grid ${dir(10, 10, polar)}`);
+}
+
+// coordinate order: MPI-ESM1-2-HR historical tas as the CMIP6 bucket has it,
+// 5-year files joined out of order (hours since 1915-01-16 12:00)
+const T0 = "hours since 1915-01-16 12:00:00.000000";
+const mpi = [0, 708, 1416, 43092, -175320, -174612, 35064, -569760, -569016];
+const ord = C.coordOrder(mpi);
+check(ord.order === "unordered" && ord.lo === 7 && ord.hi === 3 && ord.against === 2, `coordOrder ${JSON.stringify(ord)}`);
+check(C.coordOrder([1, 2, 2, 3]).order === "increasing" && C.coordOrder([3, 1]).order === "decreasing" && C.coordOrder([4, 4]).order === "constant", "coordOrder directions");
+check(C.cfTime(0, T0) === "1915-01-16 12:00" && C.cfTime(-569760, T0) === "1850-01-16 12:00", `cfTime ${C.cfTime(-569760, T0)}`);
+check(C.cfTime(15.5, "days since 1850-01-01") === "1850-01-16 12:00" && C.cfTime(0n, "days since 2000-1-1") === "2000-01-01", "cfTime days, bigint");
+check(C.cfTime(31, "days since 0001-01-01 00:00:00") === "0001-02-01", `cfTime before year 100: ${C.cfTime(31, "days since 0001-01-01 00:00:00")}`);
+check(C.cfTime(3, "m") === null && C.cfTime(NaN, T0) === null, "cfTime off units");
 const sc = C.sliceCost([10, 721, 1440], [1, 721, 1440], 1, 2, 4);
 check(sc.chunks === 1 && sc.bytes === 721 * 1440 * 4, "sliceCost");
 
