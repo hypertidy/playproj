@@ -227,7 +227,9 @@ function buildLattice() {
   let la0 = 90, la1 = -90;
   for (const q of ll) if (q) { la0 = Math.min(la0, q[1]); la1 = Math.max(la1, q[1]); }
   cur.lat = { lo: la0, hi: la1 };
-  Object.assign(cur, { MU, MV, ll, mid: mid || [0, 0] });
+  // which way rows and columns run on the earth (nowhere on it: as stored)
+  const dirs = cur.earth ? C.gridDirections(ll, MU, MV) : { rows: null, cols: null };
+  Object.assign(cur, { MU, MV, ll, dirs, mid: mid || [0, 0] });
 }
 
 // The display's world: its outline's box, so a regional grid sits in context
@@ -435,13 +437,22 @@ function drawTexture() {
     cl(cxs, g.nx, true); cl(cys, g.ny, false);
     ctx.restore();
     if (every > 1) cur.drawNote = (cur.drawNote ? cur.drawNote + "; " : "") + `every ${every}th chunk boundary drawn`;
-    // labels where there is room
+    // labels where there is room. The texture is the array as stored (row 0
+    // at the top), so on a grid stored south first each label is turned
+    // over to read upright on the earth, and mirrored where columns run west.
     if (!faint && tx >= 60 && ty >= 24 && cur.cx * cur.cy > 1 && cur.cx * cur.cy <= 2000) {
       ctx.fillStyle = "rgba(255,230,160,0.9)";
       ctx.font = `${Math.min(ty * 0.3, tx * 0.14, 34 * lw)}px ui-monospace, monospace`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const dirs = cur.dirs || {}, fx = dirs.cols === "west" ? -1 : 1, fy = dirs.rows === "north" ? -1 : 1;
       for (let r = 0; r < cur.cy; r++)
-        for (let c = 0; c < cur.cx; c++) ctx.fillText(`${r}, ${c}`, Math.min(W, (c + 0.5) * tx), Math.min(H, (r + 0.5) * ty));
+        for (let c = 0; c < cur.cx; c++) {
+          ctx.save();
+          ctx.translate(Math.min(W, (c + 0.5) * tx), Math.min(H, (r + 0.5) * ty));
+          ctx.scale(fx, fy);
+          ctx.fillText(`${r}, ${c}`, 0, 0);
+          ctx.restore();
+        }
     }
   }
   ctx.strokeStyle = COLORS.edge; ctx.lineWidth = 3 * lw;
@@ -681,14 +692,33 @@ function resetData() {
 }
 
 // read the whole slice when it is small, else a spread of chunks
+const smallSlice = () => cur.cost.chunks <= AUTO_CHUNKS && cur.cost.bytes <= AUTO_BYTES;
+const plural = (n, w) => `${n.toLocaleString("en")} ${w}${n === 1 ? "" : "s"}`;
 function autoRead() {
   const { cx, cy } = cur;
-  const cost = cur.cost;
-  if (cost.chunks <= AUTO_CHUNKS && cost.bytes <= AUTO_BYTES) {
+  if (smallSlice()) {
     const list = [];
     for (let r = 0; r < cy; r++) for (let c = 0; c < cx; c++) list.push([r, c]);
     readChunks(list);
   }
+}
+// the read button: the slice, or a spread of chunks across it, and its size
+function sampleLabel() {
+  const c = cur.cost;
+  if (smallSlice()) return `Read the slice (${plural(c.chunks, "chunk")})`;
+  const n = sampleList().length;
+  return n >= c.chunks ? `Read the slice (${plural(c.chunks, "chunk")}, ${fmtBytes(c.bytes)})` :
+    `Read ${plural(n, "chunk")} across the grid (${fmtBytes(n * c.chunkBytes)})`;
+}
+
+// why a slice is not read by itself: its size, and what else its chunks hold
+function notReadHint() {
+  const { v, cost } = cur;
+  const also = v.meta.shape.map((len, d) => [d, v.meta.chunks[d]]).filter(([d, k]) => d !== v.ix && d !== v.iy && k > 1)
+    .map(([d, k]) => `${k} ${v.dims[d]} steps`);
+  return `Not read yet: this slice is ${plural(cost.chunks, "chunk")}, ${fmtBytes(cost.bytes)} decoded` +
+    (also.length ? `, because each chunk also holds ${also.join(" and ")}` : "") +
+    `. The page reads a slice by itself only up to ${fmtBytes(AUTO_BYTES)} and ${AUTO_CHUNKS} chunks: use the button above, or click the grid to read the chunk there.`;
 }
 function sampleList() {
   const { cx, cy } = cur, n = Math.max(1, Math.round(Math.sqrt((SAMPLE * cx) / cy))), m = Math.max(1, Math.round(SAMPLE / n));
@@ -760,7 +790,7 @@ async function open() {
     showLegend();
     showReads();
     $("sample").disabled = false;
-    $("sample").textContent = cur.cost.chunks <= AUTO_CHUNKS && cur.cost.bytes <= AUTO_BYTES ? `Read the slice (${cur.cost.chunks} chunk${cur.cost.chunks > 1 ? "s" : ""})` : `Read ${Math.min(SAMPLE, cur.cost.chunks)} chunks across the grid`;
+    $("sample").textContent = sampleLabel();
     autoRead();
     writeHash();
   } catch (e) {
@@ -787,6 +817,23 @@ function buildDims() {
     const out = lab.lastChild;
     const label = () => { out.textContent = `${inp.value} of ${n}`; coordLabel(name, +inp.value).then((t) => { if (t && +inp.value === (state.dims[name] || 0)) out.textContent = `${t} (${inp.value})`; }); };
     label();
+    // a coordinate out of order (files joined in the wrong order): the slider steps through it as stored
+    const warn = document.createElement("p");
+    warn.className = "hint";
+    warn.hidden = true;
+    const c0 = cur;
+    coordValues(name).then(async (c) => {
+      if (!c || cur !== c0) return;
+      // a calendar whose dates are not Gregorian ones (2000-02-30 on 360_day) is named by the slider
+      const cal = C.cfTime(0, c.attrs.units, c.attrs.calendar) && C.oddCalendar(c.attrs.calendar) ? String(c.attrs.calendar).trim() : "";
+      if (cal) { lab.firstChild.textContent = `${name} (${cal})`; lab.firstChild.title = `dates on the ${cal} calendar, as the store's calendar attribute says`; }
+      const o = C.coordOrder(c.values);
+      if (o.order !== "unordered") return;
+      const [first, lo] = await Promise.all([coordLabel(name, 0), coordLabel(name, o.lo)]);
+      warn.textContent = `${name} is not in order in this store: it turns back ${plural(o.against, "time")}. Index 0 is ${first}; ` +
+        `the earliest, ${lo}, is at index ${o.lo}. The slider steps through it as stored.`;
+      warn.hidden = false;
+    });
     let timer = 0;
     inp.addEventListener("input", () => {
       state.dims[name] = +inp.value;
@@ -794,30 +841,32 @@ function buildDims() {
       clearTimeout(timer);
       timer = setTimeout(() => { resetData(); drawTexture(); autoRead(); showPick(); writeHash(); }, 150);
     });
-    box.append(lab, inp);
+    box.append(lab, inp, warn);
   });
 }
 
-// the coordinate value at index i of a dimension, as a date where CF units say so
+// a dimension's 1D coordinate, read whole once per variable (null if it has none)
+function coordValues(dim) {
+  const memo = cur.coords || (cur.coords = new Map());
+  if (!memo.has(dim)) memo.set(dim, (async () => {
+    try {
+      const dir = cur.v.path.split("/").slice(0, -1).join("/");
+      const a = await cur.s.open(dir ? `${dir}/${dim}` : dim);
+      if (a.shape.length !== 1 || a.shape[0] > 1e6) return null;
+      const out = await zarr.get(a);
+      return { values: Array.from(out.data, Number), attrs: a.attrs };
+    } catch (e) { return null; }
+  })());
+  return memo.get(dim);
+}
+
+// the coordinate value at index i of a dimension, as a date where CF units
+// say so, on the CF calendar the store names (noleap, 360_day, ...)
 async function coordLabel(dim, i) {
-  try {
-    const dir = cur.v.path.split("/").slice(0, -1).join("/");
-    const p = dir ? `${dir}/${dim}` : dim;
-    const a = await cur.s.open(p);
-    if (a.shape.length !== 1) return null;
-    const out = await zarr.get(a, [zarr.slice(i, i + 1)]);
-    let x = out.data[0];
-    if (typeof x === "bigint") x = Number(x);
-    const m = /^\s*(seconds?|minutes?|hours?|days?)\s+since\s+(\d{4}-\d{1,2}-\d{1,2})(?:[ T](\d{1,2}:\d{2}(?::\d{2})?))?/.exec(a.attrs.units || "");
-    if (m && Number.isFinite(x)) {
-      const unit = { s: 1e3, m: 6e4, h: 3.6e6, d: 8.64e7 }[m[1][0]];
-      const [Y, M, D] = m[2].split("-").map(Number);
-      const t0 = Date.UTC(Y, M - 1, D) + (m[3] ? (() => { const [hh, mm, ss = 0] = m[3].split(":").map(Number); return ((hh * 60 + mm) * 60 + ss) * 1e3; })() : 0);
-      const s = new Date(t0 + x * unit).toISOString();
-      return s.endsWith("T00:00:00.000Z") ? s.slice(0, 10) : s.slice(0, 16).replace("T", " ");
-    }
-    return Number.isFinite(x) ? fmtNum(x) : null;
-  } catch (e) { return null; }
+  const c = await coordValues(dim);
+  if (!c || !(i >= 0 && i < c.values.length)) return null;
+  const x = c.values[i];
+  return C.cfTime(x, c.attrs.units, c.attrs.calendar) || (Number.isFinite(x) ? fmtNum(x) : null);
 }
 
 // ---------------------------------------------------------------- readouts
@@ -844,6 +893,11 @@ function showFacts() {
       ["Source chunk", `${hc.join(" x ")}, ${fmtBytes(one)} decoded; one slice reads ${n.toLocaleString("en")} of them (${fmtBytes(n * one)})`]);
   }
   if (cur.earth) {
+    // the order the rows and columns are stored in, on the earth
+    const od = cur.dirs || {};
+    rows.push(["Rows", od.rows === "north" ? "south first: row 0 is the southern edge (chunk labels are turned to read upright)" :
+      od.rows === "south" ? "north first: row 0 is the northern edge, as in an image" : "neither north nor south first (they cross a pole)"]);
+    if (od.cols === "west") rows.push(["Columns", "east first: column 0 is the eastern edge (chunk labels are mirrored to read)"]);
     const e = C.gridExtent(g);
     if (F) rows.push(["Extent", `${fmtNum(e[0])} to ${fmtNum(e[2])}, ${fmtNum(e[1])} to ${fmtNum(e[3])}`]);
     rows.push(["Latitudes", `${cur.lat.lo.toFixed(2)}${DEG} to ${cur.lat.hi.toFixed(2)}${DEG}`]);
@@ -874,7 +928,7 @@ function showLegend() {
   if (state.colour === "data") {
     const u = cur.v.meta.attrs.units ? ` ${cur.v.meta.attrs.units}` : "";
     t = cur.scale ? `viridis from ${fmtNum(cur.scale.lo)} to ${fmtNum(cur.scale.hi)}${u} (2% and 98% of ${cur.scale.from > 1 ? `the ${cur.scale.from} chunks first read` : "the first chunk read"})` :
-      cur.cost.chunks <= AUTO_CHUNKS ? "" : "Read chunks to see the data, or click the grid to read the chunk there.";
+      smallSlice() ? "" : notReadHint();
   } else if (state.colour === "area" && cur.dist) {
     const sc = distortionImage("area").scale;
     t = `cell area on the earth as a share of the largest cell (${fmtArea(sc.max)}): dark is small, yellow is the largest`;
@@ -936,7 +990,7 @@ function updateGridlook() {
   const a = $("gridlook");
   if (!cur || /^(https?:)?\/\/(localhost|127\.)/.test(state.url) || state.url.startsWith("local:") || location.protocol === "file:") { a.hidden = true; return; }
   const path = state.varname, k = path.lastIndexOf("/");
-  let url = state.url.replace(/\/+$/, "");
+  let url = R.absoluteUrl(state.url).replace(/\/+$/, "");
   if (k > 0) url += "/" + path.slice(0, k);
   if (cur.s.kind === "icechunk" && !/\.icechunk$/.test(state.url)) url = "icechunk+" + url;
   const gl = ["nearside_perspective", "equirectangular", "mercator", "robinson", "mollweide", "cylindrical_equal_area", "azimuthal_equidistant"];
@@ -995,7 +1049,7 @@ $("src").addEventListener("keydown", (e) => { if (e.key === "Enter") $("load").c
 $("var").addEventListener("change", () => { state.varname = $("var").value; state.dims = {}; state.pick = ""; open(); });
 $("sample").addEventListener("click", () => {
   if (!cur) return;
-  if (cur.cost.chunks <= AUTO_CHUNKS && cur.cost.bytes <= AUTO_BYTES) autoRead(); else readChunks(sampleList());
+  if (smallSlice()) autoRead(); else readChunks(sampleList());
 });
 ui.proj.addEventListener("change", () => {
   state.projection = ui.proj.value;

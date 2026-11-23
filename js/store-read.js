@@ -27,6 +27,15 @@ export function httpUrl(url) {
   return u;
 }
 
+// A relative address (a store next to the page, as the fixtures are) made
+// absolute against the page, since zarrita's FetchStore builds chunk URLs
+// with new URL(); left as it is where there is no page (Node).
+export function absoluteUrl(url) {
+  const base = globalThis.location && globalThis.location.href;
+  if (!base || /^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
+  try { return new URL(url, base).href; } catch (e) { return url; }
+}
+
 export const looksIcechunk = (url) => url.startsWith(ICECHUNK) || /\.icechunk\/?$/.test(url.split(/[?#]/)[0]);
 
 async function tryIcechunk(url) {
@@ -37,7 +46,7 @@ async function tryIcechunk(url) {
 // as gridlook allows) or as Zarr. Returns
 // { kind, url, group, store, getJson(path), arrays() -> [{ path, shape, dims }] }.
 export async function openStore(raw) {
-  let url = trim(httpUrl(raw.replace(/^icechunk\+/, "")));
+  let url = trim(absoluteUrl(httpUrl(raw.replace(/^icechunk\+/, ""))));
   const forceIce = looksIcechunk(raw);
   let ice = null, group = "";
   // a Zarr store answers with metadata at its root; an Icechunk one does not

@@ -198,6 +198,126 @@ export function axisOf(values, { lon = false } = {}) {
   return { n, step, edge0: v[0] - step / 2, c0: v[0], c1: v[n - 1], regular: dev < 1e-3, dev };
 }
 
+// The order of a 1D coordinate along its index: "increasing", "decreasing",
+// "constant" or "unordered", with the steps that go against the overall
+// direction and the indexes of the smallest and largest values. A time axis
+// joined from files in the wrong order comes out unordered.
+export function coordOrder(values) {
+  const v = Array.from(values, Number), n = v.length;
+  let up = 0, down = 0, lo = 0, hi = 0;
+  for (let i = 0; i < n; i++) {
+    if (v[i] < v[lo]) lo = i;
+    if (v[i] > v[hi]) hi = i;
+    if (i) { if (v[i] > v[i - 1]) up++; else if (v[i] < v[i - 1]) down++; }
+  }
+  const order = !up && !down ? "constant" : !down ? "increasing" : !up ? "decreasing" : "unordered";
+  return { order, n, against: Math.min(up, down), lo, hi };
+}
+
+// ---------------------------------------------------------------- CF calendars
+
+// Days from 1970-01-01 on the proleptic Gregorian calendar and back, for
+// any year (Hinnant's days_from_civil), with year 0 the year before 1.
+const fdiv = (a, b) => Math.floor(a / b);
+function gregorianDays(y, m, d) {
+  y -= m <= 2;
+  const era = fdiv(y, 400), yoe = y - era * 400;
+  const doy = fdiv(153 * (m > 2 ? m - 3 : m + 9) + 2, 5) + d - 1;
+  return era * 146097 + yoe * 365 + fdiv(yoe, 4) - fdiv(yoe, 100) + doy - 719468;
+}
+function gregorianDate(n) {
+  n += 719468;
+  const era = fdiv(n, 146097), doe = n - era * 146097;
+  const yoe = fdiv(doe - fdiv(doe, 1460) + fdiv(doe, 36524) - fdiv(doe, 146096), 365);
+  return marchDate(yoe + era * 400, doe - (365 * yoe + fdiv(yoe, 4) - fdiv(yoe, 100)));
+}
+// the same on the Julian calendar (a leap year every 4), counted so that a
+// day has the same number on both: Julian 1582-10-05 is Gregorian 1582-10-15
+function julianRaw(y, m, d) {
+  y -= m <= 2;
+  const era = fdiv(y, 4), yoe = y - era * 4;
+  return era * 1461 + yoe * 365 + fdiv(153 * (m > 2 ? m - 3 : m + 9) + 2, 5) + d - 1;
+}
+const CUTOVER = gregorianDays(1582, 10, 15), JULIAN = CUTOVER - julianRaw(1582, 10, 5);
+const julianDays = (y, m, d) => julianRaw(y, m, d) + JULIAN;
+function julianDate(n) {
+  n -= JULIAN;
+  const era = fdiv(n, 1461), doe = n - era * 1461, yoe = fdiv(doe - fdiv(doe, 1460), 365);
+  return marchDate(yoe + era * 4, doe - 365 * yoe);
+}
+// year, month, day from a year that starts on 1 March and the day in it
+function marchDate(y, doy) {
+  const mp = fdiv(5 * doy + 2, 153), d = doy - fdiv(153 * mp + 2, 5) + 1, m = mp < 10 ? mp + 3 : mp - 9;
+  return [y + (m <= 2), m, d];
+}
+// calendars with years all one length: noleap, all_leap and 360_day
+function fixedYear(months) {
+  const start = [0];
+  months.forEach((n, i) => start.push(start[i] + n));
+  const len = start[12];
+  return {
+    days: (y, m, d) => y * len + start[m - 1] + d - 1,
+    date(n) {
+      const y = fdiv(n, len), r = n - y * len;
+      let m = 0;
+      while (start[m + 1] <= r) m++;
+      return [y, m + 1, r - start[m] + 1];
+    }
+  };
+}
+const NOLEAP = fixedYear([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]);
+const ALL_LEAP = fixedYear([31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]);
+const DAY360 = fixedYear(Array(12).fill(30));
+const PROLEPTIC = { days: gregorianDays, date: gregorianDate, yearZero: true };
+// the CF default: Julian up to 1582-10-04, Gregorian from the next day,
+// 1582-10-15. It and julian have no year 0 (year -1 comes before year 1),
+// as cftime has them; the others count year 0.
+const STANDARD = {
+  days: (y, m, d) => (y > 1582 || (y === 1582 && (m > 10 || (m === 10 && d >= 15))) ? gregorianDays(y, m, d) : julianDays(y, m, d)),
+  date: (n) => (n >= CUTOVER ? gregorianDate(n) : julianDate(n))
+};
+const CALENDARS = {
+  standard: STANDARD, gregorian: STANDARD, utc: PROLEPTIC, tai: PROLEPTIC,
+  proleptic_gregorian: PROLEPTIC, julian: { days: julianDays, date: julianDate },
+  noleap: { ...NOLEAP, yearZero: true }, "365_day": { ...NOLEAP, yearZero: true },
+  all_leap: { ...ALL_LEAP, yearZero: true }, "366_day": { ...ALL_LEAP, yearZero: true },
+  "360_day": { ...DAY360, yearZero: true }
+};
+
+// The CF calendars this reads, by the names the calendar attribute uses.
+export const CF_CALENDARS = Object.keys(CALENDARS);
+
+// A CF time value as a date and time, for units "<unit> since <date>[
+// <time>]" (seconds to days) on the CF calendar named (any case; none
+// given is "standard"), to the second; null where the units are not a time
+// or the calendar is not one CF defines (such as "none").
+export function cfTime(x, units, calendar) {
+  if (typeof x === "bigint") x = Number(x);
+  const cal = CALENDARS[String(calendar || "standard").trim().toLowerCase()];
+  const m = /^\s*(seconds?|minutes?|hours?|days?)\s+since\s+(-?\d{1,4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}(?:\.\d*)?))?)?/.exec(units || "");
+  if (!cal || !m || !Number.isFinite(x)) return null;
+  const unit = { s: 1, m: 60, h: 3600, d: 86400 }[m[1][0]];
+  let Y = +m[2];
+  if (!cal.yearZero && Y < 0) Y++;
+  const t = Math.round(cal.days(Y, +m[3], +m[4]) * 86400 + (+m[5] || 0) * 3600 + (+m[6] || 0) * 60 + (+m[7] || 0) + x * unit);
+  if (!Number.isSafeInteger(t)) return null;
+  const n = fdiv(t, 86400), sec = t - n * 86400;
+  let [y, mo, d] = cal.date(n);
+  if (!cal.yearZero && y <= 0) y--;
+  const p2 = (v) => String(v).padStart(2, "0");
+  const date = `${y < 0 ? "-" : ""}${String(Math.abs(y)).padStart(4, "0")}-${p2(mo)}-${p2(d)}`;
+  if (!sec) return date;
+  const hh = fdiv(sec, 3600), mm = fdiv(sec % 3600, 60), ss = sec % 60;
+  return `${date} ${p2(hh)}:${p2(mm)}${ss ? ":" + p2(ss) : ""}`;
+}
+
+// Whether a calendar's dates are not the Gregorian ones everyone keeps
+// (noleap, 360_day and the like), so that a page says which it is.
+export function oddCalendar(calendar) {
+  const c = String(calendar || "standard").trim().toLowerCase();
+  return !["standard", "gregorian", "proleptic_gregorian", "utc", "tai"].includes(c);
+}
+
 // ---------------------------------------------------------------- the grid
 
 // One description of where the cells are, from what the store gave:
@@ -285,6 +405,28 @@ export function chunkOf(idx, chunks) { return idx.map((v, d) => Math.floor(v / c
 export function chunkKey(c, { version = 3, separator } = {}) {
   const sep = separator || (version === 3 ? "/" : ".");
   return (version === 3 ? "c" + sep : "") + c.join(sep);
+}
+
+// Which way a grid's rows and columns run on the earth, from the longitude
+// and latitude at its lattice nodes (row by row, nu + 1 to a row, null where
+// a node is not on the earth). rows is "north" when latitude grows with the
+// row index between most neighbours (south first, as model output usually
+// is), "south" when it falls (north first, as an image), and null when
+// neither has two thirds of the votes (a polar grid, whose rows cross the
+// pole). cols is "east", "west" or null the same way, across the antimeridian.
+export function gridDirections(ll, nu, nv) {
+  let rn = 0, rs = 0, ce = 0, cw = 0;
+  const at = (i, j) => ll[j * (nu + 1) + i];
+  for (let j = 0; j <= nv; j++)
+    for (let i = 0; i <= nu; i++) {
+      const p = at(i, j);
+      if (!p) continue;
+      const r = j < nv ? at(i, j + 1) : null, c = i < nu ? at(i + 1, j) : null;
+      if (r) { const d = r[1] - p[1]; if (d > 1e-9) rn++; else if (d < -1e-9) rs++; }
+      if (c) { let d = c[0] - p[0]; d -= 360 * Math.round(d / 360); if (d > 1e-9) ce++; else if (d < -1e-9) cw++; }
+    }
+  const win = (a, b, A, B) => (a + b === 0 ? null : a >= 2 * b ? A : b >= 2 * a ? B : null);
+  return { rows: win(rn, rs, "north", "south"), cols: win(ce, cw, "east", "west") };
 }
 
 // ---------------------------------------------------------------- cell size on the earth
