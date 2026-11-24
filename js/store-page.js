@@ -72,8 +72,9 @@ const defaults = { url: PRESETS[0].url, varname: "", projection: "mollweide", la
   t: 0, colour: "", chunks: 1, cells: 1, coast: 1, grat: 1, pick: "", cam: null, assume: "",
   // a collection of profiles: a time window (win days from the date when, 0 for every profile), the
   // depth of the shell, whether profiles hang below their points, whether GEBCO's sea floor is drawn
-  // under them, and by how much depth is stretched
-  when: "", win: 0, depth: 0, hang: 0, floor: 0, dz: 2.5 };
+  // under them, by how much depth is stretched, and whether the colours fit the depth's values
+  // or every level's
+  when: "", win: 0, depth: 0, hang: 0, floor: 0, dz: 2.5, fit: 0 };
 const state = { ...defaults, dims: {} };
 
 function readHash() {
@@ -92,8 +93,9 @@ function readHash() {
   if (["data", "area", "omega", "none", "time", "group", "gap"].includes(c)) state.colour = c;
   state.pick = params.get("pick") || "";
   if (/^-?\d{1,4}-\d{1,2}-\d{1,2}$/.test(params.get("when") || "")) state.when = params.get("when");
-  const w = num("window"), dp = num("depth"), dz = num("dz"), hang = num("hang"), floor = num("floor");
+  const w = num("window"), dp = num("depth"), dz = num("dz"), hang = num("hang"), floor = num("floor"), fit = num("fit");
   if (floor !== null) state.floor = floor ? 1 : 0;
+  if (fit !== null) state.fit = fit ? 1 : 0;
   if (w !== null && w >= 0) state.win = w;
   if (dp !== null && dp >= 0) state.depth = dp;
   if (dz !== null) state.dz = Math.max(0, Math.min(3.5, dz));
@@ -122,6 +124,7 @@ function writeHash() {
       if (state.depth) p.depth = +state.depth.toPrecision(5);
       if (state.hang) p.hang = 1;
       if (state.floor) p.floor = 1;
+      if (state.fit) p.fit = 1;
       if (state.dz !== defaults.dz) p.dz = state.dz;
     }
     if (state.assume) p.assume = state.assume;
@@ -1032,18 +1035,37 @@ function keepWithin(n) {
   }
 }
 
-// one colour scale for every level of the window's profiles, so the
+// One colour scale for every level of the window's profiles, so the
 // points at one depth and the hung profiles agree, and moving the depth
-// does not move the scale
+// does not move the scale. Or, fitted to the depth, one for the values
+// there: more contrast at depth, where the range is narrow, and the
+// hung profiles run off it above and below.
 function fitScale() {
+  const when = cur.winRange ? `${dateOf(cur.winRange[0])} + ${state.win} d` : "every profile";
+  let at = null, n = 0, few = 0;
+  if (state.fit) {
+    const vals = [];
+    for (const i of cur.winList) { const x = depthValue(i); if (Number.isFinite(x)) vals.push(x); }
+    if (vals.length >= 10) {
+      const lo = quantile(vals, 0.02), hi = quantile(vals, 0.98);
+      cur.dscale = { lo, hi: hi > lo ? hi : lo + 1, when, at: state.depth, n: vals.length };
+      return;
+    }
+    few = vals.length;
+  }
   const vals = [];
   for (const i of cur.winList) {
     const r = cur.profiles.get(i);
-    if (r) for (let k = 0; k < r.values.length; k += 3) if (Number.isFinite(r.values[k])) vals.push(r.values[k]);
+    if (r) { n++; for (let k = 0; k < r.values.length; k += 3) if (Number.isFinite(r.values[k])) vals.push(r.values[k]); }
   }
   if (vals.length < 10) return;
   const lo = quantile(vals, 0.02), hi = quantile(vals, 0.98);
-  cur.dscale = { lo, hi: hi > lo ? hi : lo + 1, when: cur.winRange ? `${dateOf(cur.winRange[0])} + ${state.win} d` : "every profile" };
+  cur.dscale = { lo, hi: hi > lo ? hi : lo + 1, when, at, n, few: state.fit ? few : null };
+}
+// the scale fitted again (to a new depth, or on the switch) and everything coloured by it redone
+function refitColours() {
+  fitScale();
+  recolourColumns();
 }
 
 // how near the depth a profile needs a value to count
@@ -1140,14 +1162,13 @@ function buildColumns() {
   if (!total) return;
   // at most some 400,000 segments: every level, or every few
   const step = Math.max(1, Math.ceil(total / 4e5)), cap = 2 * (Math.ceil(total / step) + list.length);
-  const sp = new Float32Array(cap * 3), fp = new Float32Array(cap * 3), cl = new Float32Array(cap * 3);
+  const sp = new Float32Array(cap * 3), fp = new Float32Array(cap * 3), vl = new Float32Array(cap);
   let nv = 0, deep = 0;
   const put = (m, z, x) => {
     const s = sinkOf(z), r = (1.003 - s) / 1.003, o = 3 * nv;
     sp[o] = u.sphere[3 * m] * r; sp[o + 1] = u.sphere[3 * m + 1] * r; sp[o + 2] = u.sphere[3 * m + 2] * r;
     fp[o] = u.flat[3 * m]; fp[o + 1] = u.flat[3 * m + 1]; fp[o + 2] = 1.003 - s * cur.kFlat;
-    viridisInto(scaled(x));
-    cl[o] = tmpColour.r; cl[o + 1] = tmpColour.g; cl[o + 2] = tmpColour.b;
+    vl[nv] = x;
     nv++;
     deep = Math.max(deep, s);
   };
@@ -1163,13 +1184,32 @@ function buildColumns() {
   if (!nv) return;
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(sp.slice(0, 3 * nv), 3));
-  g.setAttribute("color", new THREE.BufferAttribute(cl.slice(0, 3 * nv), 3));
+  g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(3 * nv), 3));
   profCols.geometry.dispose();
   profCols.geometry = g;
-  profCols.userData = { sphere: sp.slice(0, 3 * nv), flat: fp.slice(0, 3 * nv) };
+  profCols.userData = { sphere: sp.slice(0, 3 * nv), flat: fp.slice(0, 3 * nv), vals: vl.slice(0, nv) };
   profCols.visible = true;
+  recolourColumns();
   cur.sink.cols = deep;
   fitUnder();
+}
+// viridis in 256 steps, linear RGB, so hung profiles recolour while the depth is dragged
+let viridisTable = null;
+function viridisLut() {
+  if (viridisTable) return viridisTable;
+  viridisTable = new Float32Array(256 * 3);
+  for (let j = 0; j < 256; j++) { viridisInto(j / 255); viridisTable[3 * j] = tmpColour.r; viridisTable[3 * j + 1] = tmpColour.g; viridisTable[3 * j + 2] = tmpColour.b; }
+  return viridisTable;
+}
+function recolourColumns() {
+  if (!profCols.visible || !cur.dscale || !profCols.userData.vals) return;
+  const vals = profCols.userData.vals, attr = profCols.geometry.getAttribute("color"), a = attr.array, lut = viridisLut();
+  const { lo, hi } = cur.dscale, k = 255 / (hi - lo);
+  for (let j = 0; j < vals.length; j++) {
+    const q = 3 * Math.max(0, Math.min(255, Math.round((vals[j] - lo) * k)));
+    a[3 * j] = lut[q]; a[3 * j + 1] = lut[q + 1]; a[3 * j + 2] = lut[q + 2];
+  }
+  attr.needsUpdate = true;
 }
 // the dark globe drawn under the points goes below the deepest profile, and the sea floor
 function fitUnder() {
@@ -1365,6 +1405,8 @@ function syncWhen() {
   $("depth-out").textContent = cur.p.z ? `${fmtNum(state.depth)}${zUnits()}` : `level ${fmtNum(state.depth)}`;
   $("hang").checked = !!state.hang;
   $("floor").checked = !!state.floor;
+  $("fit").checked = !!state.fit;
+  $("fit").disabled = state.colour !== "data" && !state.hang;
   $("dz").value = state.dz;
   $("dz-out").textContent = `x${Math.round(10 ** state.dz).toLocaleString("en")}`;
   $("dz").disabled = !state.hang && !state.floor;
@@ -1474,12 +1516,19 @@ $("depth").addEventListener("input", () => {
   if (!cur || cur.kind !== "profiles") return;
   const f = +$("depth").value, d = cur.zTop * f * f;
   state.depth = d >= 20 ? Math.round(d) : +d.toPrecision(2);
+  if (state.fit) refitColours();
   syncWhen(); colourProfiles(); place(); showLegend(); redrawProfile(); redrawSection(); writeHash();
 });
 $("dz").addEventListener("input", () => {
   if (!cur || cur.kind !== "profiles") return;
   state.dz = +$("dz").value;
   syncWhen(); buildColumns(); buildFloor(); buildShell(); place(); showLegend(); writeHash();
+});
+$("fit").addEventListener("change", () => {
+  if (!cur || cur.kind !== "profiles") return;
+  state.fit = $("fit").checked ? 1 : 0;
+  refitColours();
+  syncWhen(); colourProfiles(); place(); showLegend(); writeHash();
 });
 $("floor").addEventListener("change", () => {
   if (!cur || cur.kind !== "profiles") return;
@@ -1878,8 +1927,11 @@ function showProfileLegend() {
   } else if (state.colour === "group" && cur.group) parts.push(`Points coloured by ${p.group}: a colour for each of the ${cur.groups} platforms or files`);
   else if (state.colour === "data") {
     const at = cur.p.z ? `${fmtNum(state.depth)}${zu}` : `level ${fmtNum(state.depth)}`;
-    parts.push(cur.dscale ? `Points coloured by ${name} at ${at}, viridis from ${cur.dscale.lo.toPrecision(3)} to ${cur.dscale.hi.toPrecision(3)}${u} ` +
-      `(2% and 98% of every level of the profiles read in the window, ${cur.dscale.when}). Light grey: not read; dark: no value within ${fmtNum(depthTol())}${zu} of ${at}` :
+    const d = cur.dscale, of = !d ? "" : d.at !== null ? `of the values at ${cur.p.z ? `${fmtNum(d.at)}${zu}` : `level ${fmtNum(d.at)}`} in the ${d.n.toLocaleString("en")} profiles with one` :
+      `of every level of the ${d.n ? `${d.n.toLocaleString("en")} ` : ""}profiles read in the window` +
+      (d.few !== null && state.fit ? `; ${d.few ? `only ${d.few}` : "none"} with a value at ${at}, too few to fit to` : "");
+    parts.push(d ? `Points coloured by ${name} at ${at}, viridis from ${d.lo.toPrecision(3)} to ${d.hi.toPrecision(3)}${u} ` +
+      `(2% and 98% ${of}, ${d.when}). Light grey: not read; dark: no value within ${fmtNum(depthTol())}${zu} of ${at}` :
       `Points coloured by ${name} at ${at} as their profiles are read; light grey until then`);
   }
   else if (state.colour === "gap") {
@@ -1893,7 +1945,8 @@ function showProfileLegend() {
   if (cur.winRange) parts.push("faint points are outside the time window");
   if (state.hang && profCols.visible) {
     const E = Math.round(10 ** state.dz).toLocaleString("en");
-    parts.push(`hung below each point read: its profile in the same colours, sunk by depth x${E} (1,000 m as deep as ${E} km would be), with a bead where it crosses ${cur.p.z ? `${fmtNum(state.depth)}${zu}` : "the level set"}`);
+    const off = cur.dscale && cur.dscale.at !== null ? ` (fitted to ${cur.p.z ? `${fmtNum(cur.dscale.at)}${zu}` : "the level set"}, so flat purple or yellow where they run off the scale)` : "";
+    parts.push(`hung below each point read: its profile in the same colours${off}, sunk by depth x${E} (1,000 m as deep as ${E} km would be), with a bead where it crosses ${cur.p.z ? `${fmtNum(state.depth)}${zu}` : "the level set"}`);
   } else if (state.hang) parts.push("profiles hang below their points once read");
   if (state.floor && floorMesh.visible) parts.push(`under them, GEBCO 2026's sea floor in a swath along the window's tracks, from ${resLabel(cur.floor.dx)} cells, sunk by the same exaggeration (land and ice shelves left out)`);
   el.textContent = parts.map((t, k) => (k ? t : t[0].toUpperCase() + t.slice(1))).join("; ") + ". Click a point for its profile.";
@@ -2259,7 +2312,7 @@ $("centre-grid").addEventListener("click", () => {
 $("assume").addEventListener("change", (e) => { state.assume = e.target.value; writeHash(); open(); });
 ui.colour.addEventListener("change", () => {
   state.colour = ui.colour.value;
-  if (cur) { drawTexture(); if (cur.kind === "profiles") { place(); readWindow(); readFloor(); } showLegend(); }
+  if (cur) { drawTexture(); if (cur.kind === "profiles") { syncWhen(); place(); readWindow(); readFloor(); } showLegend(); }
   writeHash();
 });
 for (const k of ["chunks", "cells", "coast", "grat"])
@@ -2348,7 +2401,7 @@ window.addEventListener("hashchange", () => {
   const before = state.url + "|" + state.varname;
   readHash(); syncControls(); setCamera(state.cam || DEFAULT_CAM);
   if (state.url + "|" + state.varname !== before || !cur) open();
-  else if (cur && cur.kind === "profiles") { setWindow(); syncWhen(); buildFlat(); place(); showPick(); showLegend(); readWindow(); readFloor(); }
+  else if (cur && cur.kind === "profiles") { setWindow(); fitScale(); syncWhen(); buildFlat(); place(); showPick(); showLegend(); readWindow(); readFloor(); }
   else if (cur) { buildFlat(); resetData(); drawTexture(); place(); autoRead(); showPick(); showLegend(); }
 });
 

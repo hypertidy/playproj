@@ -589,7 +589,11 @@ itself, so that moving the depth (`depth`, in the units of the profile's z)
 costs nothing more: the points take each profile's value nearest that depth,
 and hung profiles go down from their points, coloured along their levels and
 sunk by depth times an exaggeration (`dz`, a power of ten), with a bead
-where each crosses the depth set. Icechunk stores are opened with zarrita's
+where each crosses the depth set. The colours span every level of the
+window's profiles, so the scale holds while the depth moves; "Fit colours to
+this depth" (`fit`) spans only the values at the depth instead, refitted as
+it moves, for contrast where the range is narrow (hung profiles go flat
+purple or yellow above and below). Icechunk stores are opened with zarrita's
 range coalescing, so reads that fall close together in one file (a tag's
 profiles, all neighbours in its NetCDF file) go as one request: a month of
 MEOP, 3,319 profiles with their pressures, is under a hundred requests. The
@@ -616,7 +620,7 @@ ENS forecast's 2 m temperature; lead times read as spans ("1 d 6 h"). The hash i
 plus `t`, `colour` (`data`, `area`, `omega`, `none`; for profiles `time`,
 `data`, `gap`, `group`, `none`), `chunks`, `cells`, `coast`, `grat`, `pick`
 (column,row, or a profile's index), `cam`, and for profiles `window`, `when`,
-`depth`, `hang`, `floor` and `dz`, so a link opens in gridlook too. Equal Earth (`projection=equal_earth`), Lambert azimuthal equal-area and
+`depth`, `fit`, `hang`, `floor` and `dz`, so a link opens in gridlook too. Equal Earth (`projection=equal_earth`), Lambert azimuthal equal-area and
 Spilhaus are not gridlook's, so its link leaves them out and gridlook opens in
 its own default. `src/core/storecrs.js` and `js/store-read.js`, checked in
 `test/check-storecrs.mjs` against PROJ (pyproj's `CRS.from_cf`) and small
