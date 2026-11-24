@@ -571,7 +571,18 @@ turned to read upright either way. A time slider gives dates on the store's
 CF calendar (`standard`, `proleptic_gregorian`, `julian`, `noleap`/`365_day`,
 `all_leap`/`366_day`, `360_day`), and names the calendar where its dates are not
 Gregorian ones. A dimension's coordinate that is out of
-order (files joined in the wrong order) is flagged under its slider. A
+order (files joined in the wrong order) is flagged under its slider. Where a
+grid has a vertical dimension (`axis: Z`, a `positive` attribute, a pressure
+unit, or a name such as `lev`, `depth` or `st_ocean`), a click reads the cell's
+whole column at the other dimensions set, as whole chunks (the map's own among
+them: the ACCESS-ESM1.6 preset keeps 25 levels to a chunk, so a column is two
+chunks, one usually read already), and plots it against depth with the level
+set marked. Where the levels are depths in metres, the model's floor is the
+span of its deepest level with a value (edges from the store where it has them
+as a 1D array, else half way to the levels either side: with partial cells the
+floor can be anywhere in it), drawn against GEBCO 2026 at the cell's centre and
+averaged over the cell at 15 arc seconds, with whether GEBCO falls above,
+within or below that level. A
 collection of profiles (Argo floats, CTD tags on seals, as CF's profile
 discrete sampling geometry: one latitude and longitude per profile, 1D along
 the variable's profile dimension) is not a grid, and is drawn as a point per

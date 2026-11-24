@@ -506,6 +506,66 @@ export function levelOf(z, v) {
   return n - 1 + (v - z[n - 1]) / (z[n - 1] - z[n - 2]);
 }
 
+// Whether a dimension is the vertical one, from its coordinate's attributes
+// or, failing those, its name: { down, pressure } (depth and pressure grow
+// downwards; height and altitude do not), or null
+const Z_NAMES = /^(depth|depths|deptht|depthu|depthv|depthw|lev|levs|level|levels|olevel|z|zt|z_t|z_l|zl|z_i|zi|st_ocean|sw_ocean|nz|s_rho|s_w|plev|pressure|isobaricinhpa|pres|height|altitude|alt)$/;
+export function verticalRole(name, attrs = {}) {
+  const base = String(name || "").split("/").pop().toLowerCase();
+  const sn = String(attrs.standard_name || "").toLowerCase(), pos = String(attrs.positive || "").trim().toLowerCase();
+  const u = String(attrs.units || "").trim().toLowerCase();
+  if (attrs.axis && attrs.axis !== "Z") return null;
+  const pressure = /^(pa|hpa|kpa|mbar|millibars?|bar|dbar|decibars?)$/.test(u) || /pressure/.test(sn) || /^(plev|pressure|isobaricinhpa|pres)$/.test(base);
+  const z = attrs.axis === "Z" || pos === "up" || pos === "down" || pressure || /depth|altitude|height|model_level|sigma/.test(sn) || Z_NAMES.test(base);
+  if (!z) return null;
+  const up = pos === "up" || (!pos && !pressure && (/altitude|height/.test(sn) || /^(height|altitude|alt)$/.test(base)));
+  return { down: !up, pressure };
+}
+
+// The lower edge of level k where only the levels' centres are known: half
+// way to the next, or below the last by half the step above it
+export function bottomEdge(z, k) {
+  if (!(k >= 0 && k < z.length) || !Number.isFinite(z[k])) return NaN;
+  if (k + 1 < z.length && Number.isFinite(z[k + 1])) return (z[k] + z[k + 1]) / 2;
+  if (k > 0 && Number.isFinite(z[k - 1])) return z[k] + (z[k] - z[k - 1]) / 2;
+  return z[k];
+}
+
+// A grid g ({ elev, width, height, west, north, dx, dy }, as gridSample)
+// over one cell given by its four corners [lon, lat]: the grid's cells
+// whose centres fall inside it. mean of them all; ocean, the mean of those
+// below sea level; wet, their share; n, how many. Longitudes are taken
+// about the first corner, so a cell across the antimeridian is whole.
+export function cellMean(g, quad) {
+  const ref = quad[0][0], un = (lon) => ref + ((((lon - ref) % 360) + 540) % 360) - 180;
+  const q = quad.map(([lon, lat]) => [un(lon), lat]);
+  let w = Infinity, e = -Infinity, s = Infinity, n = -Infinity;
+  for (const [x, y] of q) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
+  const inside = (x, y) => {
+    let c = false;
+    for (let i = 0, j = q.length - 1; i < q.length; j = i++) {
+      const [xi, yi] = q[i], [xj, yj] = q[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  };
+  let sum = 0, cnt = 0, osum = 0, ocnt = 0;
+  const j0 = Math.max(0, Math.floor((g.north - n) / g.dy)), j1 = Math.min(g.height - 1, Math.ceil((g.north - s) / g.dy));
+  for (let j = j0; j <= j1; j++) {
+    const y = g.north - (j + 0.5) * g.dy;
+    if (y < s || y > n) continue;
+    for (let i = 0; i < g.width; i++) {
+      const x = un(g.west + (i + 0.5) * g.dx);
+      if (x < w || x > e || !inside(x, y)) continue;
+      const h = g.elev[j * g.width + i];
+      if (!Number.isFinite(h)) continue;
+      sum += h; cnt++;
+      if (h < 0) { osum += h; ocnt++; }
+    }
+  }
+  return { mean: cnt ? sum / cnt : NaN, ocean: ocnt ? osum / ocnt : NaN, wet: cnt ? ocnt / cnt : NaN, n: cnt };
+}
+
 // The profiles (indices into times) in the window [t0, t1), in index order
 export function inWindow(times, t0, t1) {
   const out = [];

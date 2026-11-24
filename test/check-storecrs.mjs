@@ -326,6 +326,23 @@ for (const t of man.profiles || []) {
   // fractional levels, carried on past the ends
   const zl = [1, 2, 3, 5, NaN];
   check(C.levelOf(zl, 2.5) === 1.5 && C.levelOf(zl, 4) === 2.5 && C.levelOf(zl, 9) === 5 && C.levelOf(zl, 0) === -1 && Number.isNaN(C.levelOf([NaN], 1)), "levelOf");
+  // the vertical dimension, and which way is down
+  const vr = (n, a) => { const r = C.verticalRole(n, a); return r ? (r.down ? "down" : "up") + (r.pressure ? "+p" : "") : "-"; };
+  const vz = [vr("st_ocean", { axis: "Z", positive: "down", units: "meters" }), vr("lev", {}), vr("plev", { units: "Pa" }), vr("height", { units: "m" }),
+    vr("z", { positive: "up" }), vr("time", { axis: "T" }), vr("xt_ocean", { axis: "X" }), vr("step", {}), vr("isobaricInhPa", {}), vr("deptht", { units: "m" }), vr("member", {})];
+  check(vz.join(",") === "down,down,down+p,up,up,-,-,-,down+p,down,-", `verticalRole ${vz}`);
+  // a level's lower edge from centres only
+  const zc = [5, 15, 25, 40];
+  check(C.bottomEdge(zc, 0) === 10 && C.bottomEdge(zc, 2) === 32.5 && C.bottomEdge(zc, 3) === 47.5 && C.bottomEdge([7], 0) === 7 && Number.isNaN(C.bottomEdge(zc, 4)), "bottomEdge");
+  // a grid averaged over a cell given by its corners
+  const e4 = { elev: Float32Array.from([1, 2, 3, 4, -10, -20, 30, 40, -100, -200, 5, 6, -300, 400, 7, 8]), width: 4, height: 4, west: 0, north: 4, dx: 1, dy: 1 };
+  const cm = C.cellMean(e4, [[0, 0], [2, 0], [2, 2], [0, 2]]);
+  check(cm.n === 4 && cm.mean === (-100 - 200 - 300 + 400) / 4 && cm.ocean === -200 && cm.wet === 0.75, `cellMean ${JSON.stringify(cm)}`);
+  const tilt = C.cellMean(e4, [[1, 0.2], [2.8, 2], [1, 3.8], [-0.8, 2]]);
+  check(tilt.n === 4 && tilt.mean === (-10 - 20 - 100 - 200) / 4 && tilt.wet === 1, `cellMean on a diamond ${JSON.stringify(tilt)}`);
+  const am = { elev: Float32Array.from([-1, -2, -3, -4]), width: 4, height: 1, west: 178, north: 1, dx: 1, dy: 1 };
+  const ac = C.cellMean(am, [[179, 0], [-179, 0], [-179, 1], [179, 1]]);
+  check(ac.n === 2 && ac.ocean === -2.5 && ac.wet === 1, `cellMean across 180 ${JSON.stringify(ac)}`);
 }
 check(C.cfDuration(0, "seconds") === "0 h" && C.cfDuration(97200, "seconds") === "1 d 3 h" && C.cfDuration(1296000, "seconds") === "15 d" && C.cfDuration(1.5, "days") === "1 d 12 h" &&
   C.cfDuration(-3600, "s") === "-1 h" && C.cfDuration(3, "m") === null && C.cfDuration(3, "days since 2000-01-01") === null, "cfDuration");
