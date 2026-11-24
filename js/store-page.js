@@ -20,7 +20,7 @@ import * as spilhaus from "../src/core/families/spilhaus.js";
 import { useEqearth } from "../src/core/eqearth.js";
 import { graticule } from "../src/core/geo.js";
 import { loadCoastline } from "./data.js";
-import { readElevation } from "./basemap-load.js";
+import { readElevation, holdRanges } from "./basemap-load.js";
 import { makeStage, shareLinks, copyText, isEmbed } from "../src/scene/index.js";
 
 // proj4js's own Equal Earth is the sphere only: a store in EPSG:8857 needs the ellipsoid
@@ -38,6 +38,7 @@ const HELD_BYTES = 1024 * 2 ** 20, DECODED_BYTES = 512 * 2 ** 20;
 const heldP = openHeld({ name: "playproj-held", limit: HELD_BYTES }).catch(() => null);
 let held = null;
 heldP.then((h) => { held = h; });
+holdRanges(heldP);   // the sea floor's ranges (GEBCO) too
 const AUTO_CHUNKS = 64, AUTO_BYTES = 32 * 2 ** 20, PICK_BYTES = 160 * 2 ** 20, SAMPLE = 24;
 
 const COLORS = {

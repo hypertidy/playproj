@@ -47,6 +47,23 @@ function withCanvas(img) {
 
 // ------------------------------------------------------------------ GEBCO
 
+// A table of held byte ranges (src/load/heldrefs.js), or a promise of one,
+// for a page that keeps one: GEBCO's ranges are then read through it, so
+// what a visit has read of the file is not fetched again on the next.
+let heldTable = null;
+export function holdRanges(held) { heldTable = held; }
+
+// The file opened: through the held table where there is one and the file
+// says which version it is, else as geotiff.js reads a URL.
+async function openTiff(url) {
+  let client = null;
+  try {
+    const held = await heldTable;
+    if (held && typeof GeoTIFF.fromCustomClient === "function") client = await held.geotiff(url);
+  } catch (e) { client = null; }
+  return client ? GeoTIFF.fromCustomClient(client) : GeoTIFF.fromUrl(url);
+}
+
 // The file's full grid and overviews, opened once.
 let gebcoImages = null;
 function gebcoLevels(src, status) {
@@ -55,7 +72,7 @@ function gebcoLevels(src, status) {
       status("Loading GeoTIFF reader...");
       if (typeof GeoTIFF === "undefined") await loadScript(GEOTIFF_JS);
       status("Reading GEBCO 2026 overviews...");
-      const tiff = await GeoTIFF.fromUrl(src.url);
+      const tiff = await openTiff(src.url);
       const count = await tiff.getImageCount(), out = [];
       for (let i = 0; i < count; i++) out.push(await tiff.getImage(i));
       return out;
