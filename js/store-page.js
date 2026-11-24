@@ -752,11 +752,19 @@ async function readAhead() {
     for (let k = 0; k < zChunks(); k++) { const idx = base.slice(); idx[c0.zd.d] = k; todo.push(idx); }
   }
   const live = () => serial === aheadSerial && cur === c0;
+  // Where the store's byte ranges are held, only the bytes are read ahead,
+  // into that table: nothing is decoded or kept in memory for a step the
+  // slider may never reach, and when it does the chunks come from the table
+  // with no request. Elsewhere the chunks are read as any are.
+  const sep = v.meta.separator, warm = c0.s.warm && (sep === undefined || sep === "/") ? c0.s.warm : null;
   const worker = async () => {
     while (todo.length && live()) {
-      const idx = todo.shift();
-      if (c0.chunkData.has(idx.join(","))) continue;
-      try { await loadChunkIdx(idx); c0.reads.ahead++; } catch (e) { return; }
+      const idx = todo.shift(), key = idx.join(",");
+      if (c0.chunkData.has(key) || c0.warmed.has(key)) continue;
+      try {
+        if (warm) { c0.warmed.add(key); await warm(v.path, idx); } else await loadChunkIdx(idx);
+        c0.reads.ahead++;
+      } catch (e) { c0.warmed.delete(key); return; }
       if (live()) showReads();
     }
   };
@@ -2127,7 +2135,7 @@ function showReads() {
   if (!cur) { $("reads").textContent = ""; return; }
   const r = cur.reads;
   let t = r.chunks ? `${plural(r.chunks, "chunk")} read, ${fmtBytes(r.bytes)} decoded` : "";
-  if (t && r.ahead) t += ` (${plural(r.ahead, "chunk")} of them read ahead of the slider)`;
+  if (t && r.ahead) t += `; ${plural(r.ahead, "chunk")} more read ahead of the slider`;
   if (t && r.ms) t += `; the last view took ${r.ms < 1000 ? Math.round(r.ms) + " ms" : (r.ms / 1000).toFixed(1) + " s"}`;
   // a virtual store's byte ranges, held in this browser
   const h = held && held.stats;
@@ -2138,7 +2146,7 @@ function showReads() {
   $("reads").textContent = t;
   $("held-clear").hidden = !(h && h.rows);
 }
-$("held-clear").addEventListener("click", async () => { if (held) { await held.clear(); showReads(); } });
+$("held-clear").addEventListener("click", async () => { if (held) { await held.clear(); if (cur && cur.warmed) cur.warmed.clear(); showReads(); } });
 
 let openSerial = 0, openedUrl = "", opened = null;
 async function open() {
@@ -2175,7 +2183,7 @@ async function open() {
     const g = v.grid || { x0: 0, dx: 1, y0: 0, dy: 1, nx: v.meta.shape[v.ix], ny: v.meta.shape[v.iy] };
     const chunks = v.meta.chunks || v.meta.shape;
     const next = {
-      s, v, F: v.grid ? F : null, g, imgs: {}, dist: null, chunkData: new Map(), chunkSize: new Map(), decoded: 0, travel: null, reads: { chunks: 0, bytes: 0, ahead: 0, ms: 0 }, fills: fillValues(v),
+      s, v, F: v.grid ? F : null, g, imgs: {}, dist: null, chunkData: new Map(), chunkSize: new Map(), decoded: 0, travel: null, warmed: new Set(), reads: { chunks: 0, bytes: 0, ahead: 0, ms: 0 }, fills: fillValues(v),
       cxs: chunks[v.ix], cys: chunks[v.iy], cx: Math.ceil(g.nx / chunks[v.ix]), cy: Math.ceil(g.ny / chunks[v.iy]),
       cost: C.sliceCost(v.meta.shape, chunks, v.iy, v.ix, C.dtypeBytes(v.meta.dtype))
     };
