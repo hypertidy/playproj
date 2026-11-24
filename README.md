@@ -1420,7 +1420,7 @@ src/scene/locator.js    locator globe on a 2D canvas; CSS ramps for legends
 
 src/load/index.js    the loading layer: like the core no DOM or three.js, but it fetches (fetch and Arrow are passed in)
 src/load/scene.js    a scenespec scene and the Arrow tables of its mesh layers, as typed arrays, colours and popups
-src/load/heldrefs.js a table of the byte ranges a page has read (path, offset, size) with the bytes kept beside it (IndexedDB), so a virtual store's chunk is fetched once
+src/load/heldrefs.js a table of the byte ranges a page has read (path, offset, size, version) with the bytes kept beside it (IndexedDB), so a virtual store's chunk, and an Icechunk manifest or snapshot, is fetched once
 
 src/core/index.js                 the whole core in one import; src/core/ needs no browser
 src/core/families/index.js        the families, and the interface each one has

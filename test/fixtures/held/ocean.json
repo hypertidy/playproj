@@ -1,5 +1,6 @@
 {
  "location": "https://held.invalid/ocean.bin",
+ "etag": "ocean-bin-v1",
  "variable": "temp",
  "shape": [
   6,

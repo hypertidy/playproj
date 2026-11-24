@@ -190,10 +190,12 @@
           by the data, or hang the profiles, and the page reads every profile in the window, all of its
           levels at once. A virtual store's refs to neighbouring profiles in one file are read together, so
           a tag's month of profiles is a few requests, not hundreds. The byte ranges a virtual store's
-          chunks point at are held in this browser once read, as a table of path, offset and size with the
-          bytes beside it, so a step of a slider that has been seen before, on this visit or an earlier
-          one, asks the source for nothing; and once a slice is in, the page reads the next step the way
-          the slider last moved. Then depth is a place, not a read:
+          chunks point at are held in this browser once read, as a table of path, offset, size and the
+          version of the file the store recorded, with the bytes beside it, so a step of a slider that has
+          been seen before, on this visit or an earlier one, asks the source for nothing; an Icechunk
+          store's manifests and snapshots, which never change under their names, are held the same way.
+          Once a slice is in, the page fetches the bytes of the next step the way the slider last moved,
+          and decodes them only when the slider gets there. Then depth is a place, not a read:
           moving the depth recolours the points with each profile's value there, and hung profiles go down
           from their points, sunk by depth times the exaggeration, with a bead where each crosses that depth.
           The colours span every level of the window's profiles, so they hold still as the depth moves; fit

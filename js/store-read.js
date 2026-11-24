@@ -6,7 +6,7 @@
 // gridlook. Only metadata, 1D coordinates and the chunks asked for are read.
 // It runs in Node too (the test reads the fixture stores through it).
 
-import { IcechunkStore } from "icechunk-js";
+import { IcechunkStore, HttpStorage } from "icechunk-js";
 import * as zarr from "zarrita";
 import { zarrStructure, parseCrsRef } from "../src/core/structure.js";
 import { cfProj, axisRole, axisOf, unitScale, gridOf, attrFill, profileRoles, LAT_NAMES, LON_NAMES } from "../src/core/storecrs.js";
@@ -47,11 +47,16 @@ export const looksIcechunk = (url) => url.startsWith(ICECHUNK) || /\.icechunk\/?
 // (a virtual store's neighbouring refs into one file: a tag's profiles, a
 // file's GRIB messages) go as one request
 // held (src/load/heldrefs.js): a table of byte ranges read before, which then
-// answers a virtual store's chunk reads without a request. It joins
-// neighbouring reads itself, so each row it keeps is one ref's own range.
+// answers a virtual store's chunk reads without a request, each row one
+// ref's own range of one version of its file. It takes the place of
+// zarrita's joining of neighbours (it joins them itself), and the
+// repository's own objects that are named by id (snapshots, manifests,
+// chunks it holds itself) are read through it too.
 async function tryIcechunk(url, held) {
-  const opts = held ? { fetchClient: held.fetchClient() } : { withRangeCoalescing: zarr.withRangeCoalescing };
-  try { return await IcechunkStore.open(url, opts); } catch (e) { return null; }
+  try {
+    if (!held) return await IcechunkStore.open(url, { withRangeCoalescing: zarr.withRangeCoalescing });
+    return await IcechunkStore.open(held.storage(new HttpStorage(url), url), held.icechunk());
+  } catch (e) { return null; }
 }
 
 // Open url as Icechunk (a repository root, maybe followed by a group path,
@@ -86,7 +91,11 @@ export async function openStore(raw, { held = null } = {}) {
       .map((n) => { const m = ice.getMetadata(n.path) || {}; return { path: n.path.replace(/^\//, ""), shape: m.shape || [], dims: m.dimension_names || null }; })
       .filter((a) => !group || a.path.startsWith(group + "/"))
       .map((a) => ({ ...a, path: group ? a.path.slice(group.length + 1) : a.path }));
-    return { kind: "icechunk", url, group, root: ice, store, getJson, arrays, open: (p) => zarr.open(ice.resolve("/" + join(group, p)), { kind: "array" }) };
+    // warm(path, idx): the stored bytes of one chunk of the array at path, read
+    // into the held table and not decoded (null without a table). The key is
+    // Zarr v3's default one, which is what Icechunk keeps.
+    const warm = held ? (p, idx) => ice.get("/" + join(group, p, "c", ...idx.map(String))) : null;
+    return { kind: "icechunk", url, group, root: ice, store, getJson, arrays, warm, open: (p) => zarr.open(ice.resolve("/" + join(group, p)), { kind: "array" }) };
   }
   const fs = new zarr.FetchStore(url);
   const cache = new Map();

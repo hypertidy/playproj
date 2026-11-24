@@ -20,6 +20,7 @@ import icechunk
 HERE = os.path.dirname(__file__)
 OUT = os.path.join(HERE, "fixtures", "held")
 LOCATION = "https://held.invalid/ocean.bin"
+ETAG = "ocean-bin-v1"  # the checksum each ref carries for the file
 shutil.rmtree(OUT, ignore_errors=True)
 os.makedirs(OUT)
 
@@ -63,10 +64,10 @@ repo = icechunk.Repository.create(icechunk.local_filesystem_storage(os.path.join
 session = repo.writable_session("main")
 ds.to_zarr(session.store, mode="w", consolidated=False, zarr_format=3, encoding=encoding)
 for r in refs:
-    session.store.set_virtual_ref("temp/c/" + r["key"], LOCATION, offset=r["offset"], length=r["size"], validate_container=False)
+    session.store.set_virtual_ref("temp/c/" + r["key"], LOCATION, offset=r["offset"], length=r["size"], checksum=ETAG, validate_container=False)
 session.commit("fixture: temp as byte ranges into ocean.bin")
 
-json.dump({"location": LOCATION, "variable": "temp", "shape": [nt, nz, ny, nx], "chunks": list(chunks), "refs": refs,
+json.dump({"location": LOCATION, "etag": ETAG, "variable": "temp", "shape": [nt, nz, ny, nx], "chunks": list(chunks), "refs": refs,
            "values": [[None if np.isnan(v) else float(v) for v in temp[t_, :, 3, 7]] for t_ in range(nt)],
            "column": [3, 7]}, open(os.path.join(OUT, "ocean.json"), "w"), indent=1)
 print("wrote", len(refs), "refs into", len(blob), "bytes")
