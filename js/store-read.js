@@ -46,14 +46,20 @@ export const looksIcechunk = (url) => url.startsWith(ICECHUNK) || /\.icechunk\/?
 // Reads that land in the same tick and fall close together in one object
 // (a virtual store's neighbouring refs into one file: a tag's profiles, a
 // file's GRIB messages) go as one request
-async function tryIcechunk(url) {
-  try { return await IcechunkStore.open(url, { withRangeCoalescing: zarr.withRangeCoalescing }); } catch (e) { return null; }
+// held (src/load/heldrefs.js): a table of byte ranges read before, which then
+// answers a virtual store's chunk reads without a request. It joins
+// neighbouring reads itself, so each row it keeps is one ref's own range.
+async function tryIcechunk(url, held) {
+  const opts = held ? { fetchClient: held.fetchClient() } : { withRangeCoalescing: zarr.withRangeCoalescing };
+  try { return await IcechunkStore.open(url, opts); } catch (e) { return null; }
 }
 
 // Open url as Icechunk (a repository root, maybe followed by a group path,
 // as gridlook allows) or as Zarr. Returns
 // { kind, url, group, store, getJson(path), arrays() -> [{ path, shape, dims }] }.
-export async function openStore(raw) {
+// With held, the byte ranges an Icechunk store's virtual chunks point at are
+// read through that table.
+export async function openStore(raw, { held = null } = {}) {
   let url = trim(absoluteUrl(httpUrl(raw.replace(/^icechunk\+/, ""))));
   const forceIce = looksIcechunk(raw);
   let ice = null, group = "";
@@ -63,7 +69,7 @@ export async function openStore(raw) {
   if (!zj && !zm) {
     const parts = url.split("/");
     for (let i = parts.length; i >= 4 && !ice; i--) {
-      ice = await tryIcechunk(parts.slice(0, i).join("/"));
+      ice = await tryIcechunk(parts.slice(0, i).join("/"), held);
       if (ice) { url = parts.slice(0, i).join("/"); group = parts.slice(i).join("/"); }
     }
     if (!ice) throw new Error(forceIce ? "could not open this Icechunk repository: is it public, and does it allow reads from other sites?" :

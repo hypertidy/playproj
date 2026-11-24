@@ -49,6 +49,7 @@
       </div>
       <p id="status" class="status"></p>
       <p id="reads" class="hint"></p>
+      <button id="held-clear" type="button" hidden>Forget the byte ranges held here</button>
       <label class="row" for="var"><span>Variable</span></label>
       <select id="var" class="wide" aria-label="Variable"></select>
       <div id="dims"></div>
@@ -188,7 +189,11 @@
           of days picks the profiles taken in it, and Play steps it on, skipping spans with none. Colour
           by the data, or hang the profiles, and the page reads every profile in the window, all of its
           levels at once. A virtual store's refs to neighbouring profiles in one file are read together, so
-          a tag's month of profiles is a few requests, not hundreds. Then depth is a place, not a read:
+          a tag's month of profiles is a few requests, not hundreds. The byte ranges a virtual store's
+          chunks point at are held in this browser once read, as a table of path, offset and size with the
+          bytes beside it, so a step of a slider that has been seen before, on this visit or an earlier
+          one, asks the source for nothing; and once a slice is in, the page reads the next step the way
+          the slider last moved. Then depth is a place, not a read:
           moving the depth recolours the points with each profile's value there, and hung profiles go down
           from their points, sunk by depth times the exaggeration, with a bead where each crosses that depth.
           The colours span every level of the window's profiles, so they hold still as the depth moves; fit

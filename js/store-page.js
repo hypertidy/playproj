@@ -11,6 +11,7 @@ import * as THREE from "three";
 import * as zarr from "zarrita";
 import * as C from "../src/core/storecrs.js";
 import * as R from "./store-read.js";
+import { openHeld } from "../src/load/heldrefs.js";
 import { factors } from "../src/core/tissot.js";
 import { colourScale, paint, quantile } from "../src/core/distortion.js";
 import { knownProj4 } from "../src/core/structure.js";
@@ -29,6 +30,14 @@ const DEG = "\u00b0";
 const D2R = Math.PI / 180;
 const TEX = 2048;
 const VIRIDIS = PALETTES.viridis;
+// The byte ranges a virtual store's chunks point at are held in the browser
+// once read (src/load/heldrefs.js, IndexedDB), up to HELD_BYTES; decoded
+// chunks are kept in memory up to DECODED_BYTES, the least recently used
+// going first.
+const HELD_BYTES = 1024 * 2 ** 20, DECODED_BYTES = 512 * 2 ** 20;
+const heldP = openHeld({ name: "playproj-held", limit: HELD_BYTES }).catch(() => null);
+let held = null;
+heldP.then((h) => { held = h; });
 const AUTO_CHUNKS = 64, AUTO_BYTES = 32 * 2 ** 20, PICK_BYTES = 160 * 2 ** 20, SAMPLE = 24;
 
 const COLORS = {
@@ -624,13 +633,14 @@ function fillValues(v) {
 }
 
 // the index of every other dimension, and the chunk along it
-function otherIndex() {
+// (over: { dimension number: index } in place of the sliders', for reading ahead)
+function otherIndex(over = null) {
   const v = cur.v, out = {};
-  v.meta.shape.forEach((n, d) => { if (d !== v.ix && d !== v.iy) out[d] = Math.min(n - 1, state.dims[v.dims[d]] || 0); });
+  v.meta.shape.forEach((n, d) => { if (d !== v.ix && d !== v.iy) out[d] = Math.min(n - 1, over && d in over ? over[d] : state.dims[v.dims[d]] || 0); });
   return out;
 }
-function chunkIdx(cj, ci) {
-  const v = cur.v, o = otherIndex();
+function chunkIdx(cj, ci, over = null) {
+  const v = cur.v, o = otherIndex(over);
   return v.meta.shape.map((_, d) => (d === v.iy ? cj : d === v.ix ? ci : Math.floor(o[d] / v.meta.chunks[d])));
 }
 
@@ -651,8 +661,8 @@ const bottomKey = (cj, ci) => "bottom|" + chunkIdx(cj, ci).map((x, d) => (d === 
 const viewLoaded = (cj, ci) => cur.chunkData.has(bottomOn() ? bottomKey(cj, ci) : chunkIdx(cj, ci).join(","));
 const loadView = (cj, ci) => (bottomOn() ? loadBottom(cj, ci) : loadChunk(cj, ci));
 async function loadBottom(cj, ci) {
-  const key = bottomKey(cj, ci);
-  if (cur.chunkData.has(key)) return cur.chunkData.get(key);
+  const key = bottomKey(cj, ci), c0 = cur;
+  if (c0.chunkData.has(key)) { const q = c0.chunkData.get(key); c0.chunkData.delete(key); c0.chunkData.set(key, q); return q; }
   const v = cur.v, zd = cur.zd, base = chunkIdx(cj, ci), o = otherIndex();
   const p = (async () => {
     const list = [];
@@ -672,6 +682,8 @@ async function loadBottom(cj, ci) {
         if (Number.isFinite(x) && !fills.has(x)) { data[r * m + q] = x; level[r * m + q] = k; break; }
       }
     }
+    const size = data.byteLength + level.byteLength;
+    c0.chunkSize.set(key, size); c0.decoded += size;
     return { data, level, stride: v.meta.shape.map((_, d) => (d === v.iy ? m : d === v.ix ? 1 : 0)) };
   })();
   cur.chunkData.set(key, p);
@@ -684,16 +696,71 @@ const bottomLevel = (c, cj, ci, col, row) => (c.level ? c.level[(row - cj * cur.
 // the surface: the shelves run off the top of the scale
 const BOTTOM_SCALE_BELOW = 1000;
 async function loadChunkIdx(idx) {
-  const key = idx.join(",");
-  if (cur.chunkData.has(key)) return cur.chunkData.get(key);
+  const key = idx.join(","), c0 = cur;
+  if (c0.chunkData.has(key)) {
+    // read again: the last to go when the decoded chunks are trimmed
+    const p = c0.chunkData.get(key);
+    c0.chunkData.delete(key); c0.chunkData.set(key, p);
+    return p;
+  }
   const p = (async () => {
-    const a = cur.arr || (cur.arr = await cur.s.open(cur.v.path));
+    const a = c0.arr || (c0.arr = await c0.s.open(c0.v.path));
     const c = await a.getChunk(idx);
-    cur.reads.chunks++; cur.reads.bytes += c.data.byteLength || c.data.length;
+    const n = c.data.byteLength || c.data.length;
+    c0.reads.chunks++; c0.reads.bytes += n;
+    c0.chunkSize.set(key, n); c0.decoded += n;
+    trimDecoded(c0);
     return c;
   })();
-  cur.chunkData.set(key, p);
-  try { return await p; } catch (e) { cur.chunkData.delete(key); throw e; }
+  c0.chunkData.set(key, p);
+  try { return await p; } catch (e) { c0.chunkData.delete(key); throw e; }
+}
+// Decoded chunks past DECODED_BYTES go, the least recently read first (a
+// Map keeps the order they were set in). One that is wanted again is read
+// again: from the held ranges where the store is virtual, so with no request.
+function trimDecoded(c) {
+  if (c.decoded <= DECODED_BYTES) return;
+  for (const key of [...c.chunkData.keys()]) {
+    if (c.decoded <= DECODED_BYTES * 0.8) break;
+    const n = c.chunkSize.get(key);
+    // a chunk still being read stays
+    if (n === undefined) continue;
+    c.chunkData.delete(key); c.chunkSize.delete(key); c.decoded -= n;
+  }
+}
+
+// Reading ahead: once a slice is in, the slice one step on along the
+// dimension whose slider last moved, in the direction it moved, so the next
+// step of the slider finds its chunks here. Only where the page reads a
+// slice by itself (smallSlice), four chunks at a time as readChunks does,
+// and given up as soon as the view changes.
+let aheadSerial = 0;
+async function readAhead() {
+  const serial = ++aheadSerial, c0 = cur, tr = c0 && c0.travel;
+  if (!tr || c0.kind !== "grid" || !smallSlice()) return;
+  const v = c0.v, at = Math.min(v.meta.shape[tr.d] - 1, state.dims[v.dims[tr.d]] || 0), next = at + tr.dir;
+  if (next < 0 || next >= v.meta.shape[tr.d]) return;
+  // within one chunk along that dimension the next step is here already
+  if (Math.floor(next / v.meta.chunks[tr.d]) === Math.floor(at / v.meta.chunks[tr.d])) return;
+  // the bottom is made from every chunk along the vertical; a section needs
+  // them under its line only
+  const todo = [], sec = state.section && c0.gsec, under = new Set();
+  if (sec) for (const [c, r] of sectionCells(sec.col, sec.row, sec.along)) under.add(Math.floor(r / c0.cys) + "," + Math.floor(c / c0.cxs));
+  for (let r = 0; r < c0.cy; r++) for (let q = 0; q < c0.cx; q++) {
+    const base = chunkIdx(r, q, { [tr.d]: next });
+    if (!c0.zd || c0.zd.d === tr.d || !(bottomOn() || under.has(r + "," + q))) { todo.push(base); continue; }
+    for (let k = 0; k < zChunks(); k++) { const idx = base.slice(); idx[c0.zd.d] = k; todo.push(idx); }
+  }
+  const live = () => serial === aheadSerial && cur === c0;
+  const worker = async () => {
+    while (todo.length && live()) {
+      const idx = todo.shift();
+      if (c0.chunkData.has(idx.join(","))) continue;
+      try { await loadChunkIdx(idx); c0.reads.ahead++; } catch (e) { return; }
+      if (live()) showReads();
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
 }
 
 // value of cell col, row in a loaded chunk
@@ -769,7 +836,8 @@ function paintChunk(c, cj, ci) {
 
 let readSerial = 0;
 async function readChunks(list) {
-  const serial = ++readSerial, todo = list.slice();
+  const serial = ++readSerial, todo = list.slice(), t0 = performance.now(), c0 = cur;
+  aheadSerial++;
   const worker = async () => {
     while (todo.length && serial === readSerial) {
       const [cj, ci] = todo.shift();
@@ -786,7 +854,11 @@ async function readChunks(list) {
     }
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
-  if (serial === readSerial) { await widenScale(); showLegend(); showPick(); }
+  if (serial === readSerial && cur === c0) {
+    c0.reads.ms = performance.now() - t0;
+    await widenScale(); showLegend(); showPick(); showReads();
+    readAhead();
+  }
 }
 
 function resetData() {
@@ -2054,8 +2126,19 @@ const fmtArea = (km2) => (km2 >= 100 ? `${Math.round(km2).toLocaleString("en")} 
 function showReads() {
   if (!cur) { $("reads").textContent = ""; return; }
   const r = cur.reads;
-  $("reads").textContent = r.chunks ? `${plural(r.chunks, "chunk")} read, ${fmtBytes(r.bytes)} decoded` : "";
+  let t = r.chunks ? `${plural(r.chunks, "chunk")} read, ${fmtBytes(r.bytes)} decoded` : "";
+  if (t && r.ahead) t += ` (${plural(r.ahead, "chunk")} of them read ahead of the slider)`;
+  if (t && r.ms) t += `; the last view took ${r.ms < 1000 ? Math.round(r.ms) + " ms" : (r.ms / 1000).toFixed(1) + " s"}`;
+  // a virtual store's byte ranges, held in this browser
+  const h = held && held.stats;
+  if (t && h && cur.s && cur.s.kind === "icechunk" && (h.hits || h.misses)) {
+    t += `. Byte ranges: ${fmtBytes(h.bytesFetched)} fetched, ${fmtBytes(h.bytesHeld)} from the ${plural(h.rows, "range")} held here` +
+      ` (${fmtBytes(h.bytes)}${h.kind === "indexeddb" ? ", kept between visits" : ", for this visit only"})`;
+  }
+  $("reads").textContent = t;
+  $("held-clear").hidden = !(h && h.rows);
 }
+$("held-clear").addEventListener("click", async () => { if (held) { await held.clear(); showReads(); } });
 
 let openSerial = 0, openedUrl = "", opened = null;
 async function open() {
@@ -2064,7 +2147,7 @@ async function open() {
   try {
     if (!opened || openedUrl !== state.url) {
       if (state.url.startsWith("local:")) throw new Error("a local folder is not in the link: choose it again with Local folder");
-      opened = await R.openStore(state.url);
+      opened = await R.openStore(state.url, { held: await heldP });
       openedUrl = state.url;
     }
     if (serial !== openSerial) return;
@@ -2092,7 +2175,7 @@ async function open() {
     const g = v.grid || { x0: 0, dx: 1, y0: 0, dy: 1, nx: v.meta.shape[v.ix], ny: v.meta.shape[v.iy] };
     const chunks = v.meta.chunks || v.meta.shape;
     const next = {
-      s, v, F: v.grid ? F : null, g, imgs: {}, dist: null, chunkData: new Map(), reads: { chunks: 0, bytes: 0 }, fills: fillValues(v),
+      s, v, F: v.grid ? F : null, g, imgs: {}, dist: null, chunkData: new Map(), chunkSize: new Map(), decoded: 0, travel: null, reads: { chunks: 0, bytes: 0, ahead: 0, ms: 0 }, fills: fillValues(v),
       cxs: chunks[v.ix], cys: chunks[v.iy], cx: Math.ceil(g.nx / chunks[v.ix]), cy: Math.ceil(g.ny / chunks[v.iy]),
       cost: C.sliceCost(v.meta.shape, chunks, v.iy, v.ix, C.dtypeBytes(v.meta.dtype))
     };
@@ -2171,6 +2254,9 @@ function buildDims() {
     });
     let timer = 0;
     inp.addEventListener("input", () => {
+      // which way the slider is going, for reading ahead
+      const was = state.dims[name] || 0;
+      if (+inp.value !== was) cur.travel = { d, dir: Math.sign(+inp.value - was) };
       state.dims[name] = +inp.value;
       label();
       clearTimeout(timer);

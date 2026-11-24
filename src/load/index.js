@@ -3,3 +3,4 @@
 // or three.js; unlike the core it fetches, so readers are passed in.
 
 export * as scene from "./scene.js";
+export * as heldrefs from "./heldrefs.js";
