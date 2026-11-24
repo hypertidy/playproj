@@ -60,6 +60,11 @@ const PRESETS = [
   { label: "CMIP6 GFDL-ESM4 tos (tripolar)", url: "https://storage.googleapis.com/cmip6/CMIP6/CMIP/NOAA-GFDL/GFDL-ESM4/historical/r2i1p1f1/Omon/tos/gn/v20180701", varname: "tos", projection: "native" },
   // a virtual Icechunk on source.coop (a scratch bucket, so it may move)
   { label: "ACCESS-ESM1.6 ocean temp (Icechunk)", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/access-esm/access-esm1-6.historical.ocean-3d-temp-1mon-mean/icechunk", varname: "temp", projection: "equal_earth" },
+  // the same at its bottom, the newest month, with a section down 30.5 W through the Atlantic hung
+  // below the map as a curtain, seen low from the east: Antarctic bottom water spreading north under
+  // North Atlantic deep water
+  { label: "ACCESS-ESM1.6 bottom water, a section down 30°W", url: "https://data.source.coop/ausantarctic/ausantarctic-scratch/access-esm/access-esm1-6.historical.ocean-3d-temp-1mon-mean/icechunk", varname: "temp", projection: "equal_earth",
+    dims: { time: -1 }, also: { t: 1, bottom: 1, pick: "249,76", section: "col", cam: [3.06, -1.15, 0.52, 0.62, -0.05, 0.85] } },
   // GRIB messages as chunks, decoded here by gribberish (js/gribberish.js): ECMWF's open
   // data, indexed by dynamical.org, opened at the newest forecast
   { label: "ECMWF ENS 2 m temperature (GRIB)", url: "https://dynamical-ecmwf-ifs-ens.s3.us-west-2.amazonaws.com/ecmwf-ifs-ens-forecast-15-day-0-25-degree-virtual/v0.1.0.icechunk", varname: "temperature_2m", projection: "equal_earth", dims: { init_time: -1 } },
@@ -2086,18 +2091,21 @@ async function open() {
     if (serial !== openSerial) return;
     const g = v.grid || { x0: 0, dx: 1, y0: 0, dy: 1, nx: v.meta.shape[v.ix], ny: v.meta.shape[v.iy] };
     const chunks = v.meta.chunks || v.meta.shape;
-    cur = {
+    const next = {
       s, v, F: v.grid ? F : null, g, imgs: {}, dist: null, chunkData: new Map(), reads: { chunks: 0, bytes: 0 }, fills: fillValues(v),
       cxs: chunks[v.ix], cys: chunks[v.iy], cx: Math.ceil(g.nx / chunks[v.ix]), cy: Math.ceil(g.ny / chunks[v.iy]),
       cost: C.sliceCost(v.meta.shape, chunks, v.iy, v.ix, C.dtypeBytes(v.meta.dtype))
     };
+    // the vertical dimension first, so a link with bottom=1 reads the bottom from the start; found
+    // before the page takes the store up, so nothing (a click, a hash change) meets it half built
+    next.zd = await zDimOf(next);
+    if (serial !== openSerial) return;
+    cur = next;
     cur.earth = !!(cur.F || g.kind === "curvilinear");
     cur.kind = "grid";
     setMode("grid");
     cur.at = makeAt();
     status(v.grid && !F && v.crs ? "proj4js could not read this CRS: drawn in index space" : "");
-    cur.zd = await zDimOf();
-    if (serial !== openSerial) return;
     buildDims();
     buildLattice();
     buildFlat();
@@ -2200,12 +2208,12 @@ function syncBottom() {
 }
 
 // a dimension's 1D coordinate, read whole once per variable (null if it has none)
-function coordValues(dim) {
-  const memo = cur.coords || (cur.coords = new Map());
+function coordValues(dim, c = cur) {
+  const memo = c.coords || (c.coords = new Map());
   if (!memo.has(dim)) memo.set(dim, (async () => {
     try {
-      const dir = cur.v.path.split("/").slice(0, -1).join("/");
-      const a = await cur.s.open(dir ? `${dir}/${dim}` : dim);
+      const dir = c.v.path.split("/").slice(0, -1).join("/");
+      const a = await c.s.open(dir ? `${dir}/${dim}` : dim);
       if (a.shape.length !== 1 || a.shape[0] > 1e6) return null;
       const out = await zarr.get(a);
       return { values: Array.from(out.data, Number), attrs: a.attrs };
@@ -2370,24 +2378,24 @@ async function showPick() {
 // value) and GEBCO 2026's, at the cell's centre and averaged over the cell.
 const COLUMN_AUTO = 64 * 2 ** 20;
 let columnSerial = 0;
-function zDimOf() {
-  if (cur.zdim) return cur.zdim;
-  const v = cur.v;
-  cur.zdim = (async () => {
+function zDimOf(c = cur) {
+  if (c.zdim) return c.zdim;
+  const v = c.v;
+  c.zdim = (async () => {
     for (let d = 0; d < v.meta.shape.length; d++) {
       if (d === v.ix || d === v.iy) continue;
-      const name = v.dims[d], c = await coordValues(name), attrs = (c && c.attrs) || {};
+      const name = v.dims[d], cv = await coordValues(name, c), attrs = (cv && cv.attrs) || {};
       const role = C.verticalRole(name, attrs);
       if (!role) continue;
-      const n = v.meta.shape[d], has = c && c.values.length === n;
+      const n = v.meta.shape[d], has = cv && cv.values.length === n;
       // the levels' edges, where the store has them as a 1D array one longer (MOM's st_edges_ocean)
-      const en = attrs.edges || attrs.bounds, e = has && typeof en === "string" ? await coordValues(en) : null;
-      return { d, name, n, cz: v.meta.chunks[d], z: has ? Float64Array.from(c.values) : Float64Array.from({ length: n }, (_, k) => k),
+      const en = attrs.edges || attrs.bounds, e = has && typeof en === "string" ? await coordValues(en, c) : null;
+      return { d, name, n, cz: v.meta.chunks[d], z: has ? Float64Array.from(cv.values) : Float64Array.from({ length: n }, (_, k) => k),
         units: has ? String(attrs.units || "").trim() : "", down: role.down, pressure: role.pressure, edges: e && e.values.length === n + 1 ? e.values : null };
     }
     return null;
   })();
-  return cur.zdim;
+  return c.zdim;
 }
 // metres in a unit of z, where z is a depth (not pressure, not up)
 const zdMetres = (zd) => (!zd.down || zd.pressure ? 0 : /^(m|meters?|metres?)$/i.test(zd.units) ? 1 : /^(km|kilomet(er|re)s?)$/i.test(zd.units) ? 1000 : 0);

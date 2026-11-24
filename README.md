@@ -597,7 +597,10 @@ GEBCO falls above, within or below the model's deepest level. Under the map it
 hangs as a curtain, sunk by depth times the exaggeration (`dz`) as profiles
 are, with GEBCO's floor along it, and the map goes see-through while it shows.
 Its colours are the map's, so the level set picks the contrast. Clicking
-another cell moves the section there. A
+another cell moves the section there. The "ACCESS-ESM1.6 bottom water" preset
+opens the newest month at the bottom with a section down 30.5°W hung as a
+curtain, seen low from the east: Antarctic bottom water spreading north under
+North Atlantic deep water. A
 collection of profiles (Argo floats, CTD tags on seals, as CF's profile
 discrete sampling geometry: one latitude and longitude per profile, 1D along
 the variable's profile dimension) is not a grid, and is drawn as a point per
