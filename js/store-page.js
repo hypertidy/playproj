@@ -78,7 +78,9 @@ const defaults = { url: PRESETS[0].url, varname: "", projection: "mollweide", la
   // depth of the shell, whether profiles hang below their points, whether GEBCO's sea floor is drawn
   // under them, by how much depth is stretched, and whether the colours fit the depth's values
   // or every level's
-  when: "", win: 0, depth: 0, hang: 0, floor: 0, dz: 2.5, fit: 0 };
+  when: "", win: 0, depth: 0, hang: 0, floor: 0, dz: 2.5, fit: 0,
+  // a grid with depth: each cell's deepest level with a value, in place of the level set
+  bottom: 0 };
 const state = { ...defaults, dims: {} };
 
 function readHash() {
@@ -97,8 +99,9 @@ function readHash() {
   if (["data", "area", "omega", "none", "time", "group", "gap"].includes(c)) state.colour = c;
   state.pick = params.get("pick") || "";
   if (/^-?\d{1,4}-\d{1,2}-\d{1,2}$/.test(params.get("when") || "")) state.when = params.get("when");
-  const w = num("window"), dp = num("depth"), dz = num("dz"), hang = num("hang"), floor = num("floor"), fit = num("fit");
+  const w = num("window"), dp = num("depth"), dz = num("dz"), hang = num("hang"), floor = num("floor"), fit = num("fit"), bottom = num("bottom");
   if (floor !== null) state.floor = floor ? 1 : 0;
+  if (bottom !== null) state.bottom = bottom ? 1 : 0;
   if (fit !== null) state.fit = fit ? 1 : 0;
   if (w !== null && w >= 0) state.win = w;
   if (dp !== null && dp >= 0) state.depth = dp;
@@ -131,6 +134,7 @@ function writeHash() {
       if (state.fit) p.fit = 1;
       if (state.dz !== defaults.dz) p.dz = state.dz;
     }
+    if (bottomOn()) p.bottom = 1;
     if (state.assume) p.assume = state.assume;
     if (state.cam) p.cam = state.cam.map((x) => +x.toFixed(2)).join(",");
     history.replaceState(null, "", "#" + C.hashString(state.url, p));
@@ -621,6 +625,54 @@ function chunkIdx(cj, ci) {
 }
 
 const loadChunk = (cj, ci) => loadChunkIdx(chunkIdx(cj, ci));
+
+// The bottom: each cell's deepest level with a value, from every chunk along
+// the vertical at this place (2 for ACCESS-ESM1.6, whose chunks hold 25
+// levels). It is kept as a chunk of its own whose stride along every
+// dimension but the grid's is 0, so the map reads it as it reads any chunk;
+// level holds which level each cell's value came from (-1: none).
+const bottomOn = () => !!(state.bottom && cur && cur.kind === "grid" && cur.zd);
+const zChunks = () => Math.ceil(cur.zd.n / cur.zd.cz);
+const viewCost = () => {
+  const c = cur.cost, k = bottomOn() ? zChunks() : 1;
+  return { ...c, chunks: c.chunks * k, bytes: c.bytes * k, chunkBytes: c.chunkBytes * k };
+};
+const bottomKey = (cj, ci) => "bottom|" + chunkIdx(cj, ci).map((x, d) => (d === cur.zd.d ? "*" : x)).join(",");
+const viewLoaded = (cj, ci) => cur.chunkData.has(bottomOn() ? bottomKey(cj, ci) : chunkIdx(cj, ci).join(","));
+const loadView = (cj, ci) => (bottomOn() ? loadBottom(cj, ci) : loadChunk(cj, ci));
+async function loadBottom(cj, ci) {
+  const key = bottomKey(cj, ci);
+  if (cur.chunkData.has(key)) return cur.chunkData.get(key);
+  const v = cur.v, zd = cur.zd, base = chunkIdx(cj, ci), o = otherIndex();
+  const p = (async () => {
+    const list = [];
+    for (let k = 0; k < zChunks(); k++) { const idx = base.slice(); idx[zd.d] = k; list.push(idx); }
+    const chunks = await Promise.all(list.map(loadChunkIdx)), st = chunks[0].stride;
+    const n = cur.cys, m = cur.cxs, data = new Float32Array(n * m).fill(NaN), level = new Int16Array(n * m).fill(-1);
+    let off0 = 0;
+    for (let d = 0; d < v.meta.shape.length; d++) if (d !== v.iy && d !== v.ix && d !== zd.d) off0 += (o[d] % v.meta.chunks[d]) * st[d];
+    // the deepest first: the end of z that is further down
+    const deepLast = (zd.down ? 1 : -1) * (zd.z[zd.n - 1] - zd.z[0]) >= 0, fills = cur.fills;
+    for (let r = 0; r < n; r++) for (let q = 0; q < m; q++) {
+      const cell = off0 + r * st[v.iy] + q * st[v.ix];
+      for (let j = 0; j < zd.n; j++) {
+        const k = deepLast ? zd.n - 1 - j : j;
+        let x = chunks[Math.floor(k / zd.cz)].data[cell + (k % zd.cz) * st[zd.d]];
+        if (typeof x === "bigint") x = Number(x);
+        if (Number.isFinite(x) && !fills.has(x)) { data[r * m + q] = x; level[r * m + q] = k; break; }
+      }
+    }
+    return { data, level, stride: v.meta.shape.map((_, d) => (d === v.iy ? m : d === v.ix ? 1 : 0)) };
+  })();
+  cur.chunkData.set(key, p);
+  try { return await p; } catch (e) { cur.chunkData.delete(key); throw e; }
+}
+// the level a cell's bottom value came from
+const bottomLevel = (c, cj, ci, col, row) => (c.level ? c.level[(row - cj * cur.cys) * cur.cxs + (col - ci * cur.cxs)] : -1);
+// The bottom's colours come from where it is deeper than this (metres), as
+// the deep basins span a few degrees and a shelf's bottom can be as warm as
+// the surface: the shelves run off the top of the scale
+const BOTTOM_SCALE_BELOW = 1000;
 async function loadChunkIdx(idx) {
   const key = idx.join(",");
   if (cur.chunkData.has(key)) return cur.chunkData.get(key);
@@ -650,15 +702,20 @@ function chunkSample(c, cj, ci, target) {
   const vals = [], fills = cur.fills;
   const n = Math.min(cur.cys, cur.g.ny - cj * cur.cys), m = Math.min(cur.cxs, cur.g.nx - ci * cur.cxs);
   const step = Math.max(1, Math.floor(Math.sqrt((n * m) / target)));
+  const toM = c.level ? zdMetres(cur.zd) : 0, deep = [];
   for (let r = 0; r < n; r += step) for (let q = 0; q < m; q += step) {
-    const x = chunkValue(c, cj, ci, ci * cur.cxs + q, cj * cur.cys + r);
-    if (Number.isFinite(x) && !fills.has(x)) vals.push(x);
+    const col = ci * cur.cxs + q, row = cj * cur.cys + r, x = chunkValue(c, cj, ci, col, row);
+    if (!Number.isFinite(x) || fills.has(x)) continue;
+    vals.push(x);
+    if (toM && cur.zd.z[bottomLevel(c, cj, ci, col, row)] * toM > BOTTOM_SCALE_BELOW) deep.push(x);
   }
+  // the bottom's deep cells where there are enough of them
+  if (toM) { c.deepShare = vals.length ? deep.length / vals.length : 0; if (deep.length >= Math.max(20, 0.05 * vals.length)) return deep; }
   return vals;
 }
 function scaleOf(vals, from) {
   const lo = quantile(vals, 0.02), hi = quantile(vals, 0.98);
-  return { lo, hi: hi > lo ? hi : lo + 1, from };
+  return { lo, hi: hi > lo ? hi : lo + 1, from, bottom: bottomOn() && zdMetres(cur.zd) ? BOTTOM_SCALE_BELOW : null };
 }
 function ensureScale(c, cj, ci) {
   if (cur.scale) return;
@@ -671,11 +728,11 @@ async function widenScale() {
   const keys = [...cur.painted], vals = [];
   for (const k of keys) {
     const [cj, ci] = k.split(",").map(Number);
-    vals.push(...chunkSample(await loadChunk(cj, ci), cj, ci, 20000 / keys.length));
+    vals.push(...chunkSample(await loadView(cj, ci), cj, ci, 20000 / keys.length));
   }
   if (!vals.length) return;
   cur.scale = scaleOf(vals, keys.length);
-  for (const k of keys) { const [cj, ci] = k.split(",").map(Number); paintChunk(await loadChunk(cj, ci), cj, ci); }
+  for (const k of keys) { const [cj, ci] = k.split(",").map(Number); paintChunk(await loadView(cj, ci), cj, ci); }
   if (state.colour === "data") drawTexture();
 }
 
@@ -707,7 +764,7 @@ async function readChunks(list) {
     while (todo.length && serial === readSerial) {
       const [cj, ci] = todo.shift();
       try {
-        const c = await loadChunk(cj, ci);
+        const c = await loadView(cj, ci);
         if (serial !== readSerial) return;
         paintChunk(c, cj, ci);
         cur.painted.add(`${cj},${ci}`);
@@ -734,7 +791,7 @@ function resetData() {
 }
 
 // read the whole slice when it is small, else a spread of chunks
-const smallSlice = () => cur.cost.chunks <= AUTO_CHUNKS && cur.cost.bytes <= AUTO_BYTES;
+const smallSlice = () => viewCost().chunks <= AUTO_CHUNKS && viewCost().bytes <= AUTO_BYTES;
 const plural = (n, w) => `${n.toLocaleString("en")} ${w}${n === 1 ? "" : "s"}`;
 function autoRead() {
   const { cx, cy } = cur;
@@ -746,7 +803,7 @@ function autoRead() {
 }
 // the read button: the slice, or a spread of chunks across it, and its size
 function sampleLabel() {
-  const c = cur.cost;
+  const c = viewCost();
   if (smallSlice()) return `Read the slice (${plural(c.chunks, "chunk")})`;
   const n = sampleList().length;
   return n >= c.chunks ? `Read the slice (${plural(c.chunks, "chunk")}, ${fmtBytes(c.bytes)})` :
@@ -755,7 +812,7 @@ function sampleLabel() {
 
 // why a slice is not read by itself: its size, and what else its chunks hold
 function notReadHint() {
-  const { v, cost } = cur;
+  const { v } = cur, cost = viewCost();
   const also = v.meta.shape.map((len, d) => [d, v.meta.chunks[d]]).filter(([d, k]) => d !== v.ix && d !== v.iy && k > 1)
     .map(([d, k]) => `${k} ${v.dims[d]} steps`);
   return `Not read yet: this slice is ${plural(cost.chunks, "chunk")}, ${fmtBytes(cost.bytes)} decoded` +
@@ -2029,6 +2086,8 @@ async function open() {
     setMode("grid");
     cur.at = makeAt();
     status(v.grid && !F && v.crs ? "proj4js could not read this CRS: drawn in index space" : "");
+    cur.zd = await zDimOf();
+    if (serial !== openSerial) return;
     buildDims();
     buildLattice();
     buildFlat();
@@ -2067,7 +2126,13 @@ function buildDims() {
     inp.value = Math.min(n - 1, state.dims[name] || 0);
     inp.setAttribute("aria-label", name);
     const out = lab.lastChild;
-    const label = () => { out.textContent = `${inp.value} of ${n}`; coordLabel(name, +inp.value).then((t) => { if (t && +inp.value === (state.dims[name] || 0)) out.textContent = `${t} (${inp.value})`; }); };
+    // the vertical's slider says "the bottom" while that stands in for it
+    const atBottom = () => state.bottom && cur.zd && cur.zd.d === d;
+    const label = () => {
+      if (atBottom()) { out.textContent = "the bottom"; return; }
+      out.textContent = `${inp.value} of ${n}`;
+      coordLabel(name, +inp.value).then((t) => { if (t && +inp.value === (state.dims[name] || 0) && !atBottom()) out.textContent = `${t} (${inp.value})`; });
+    };
     label();
     // a coordinate out of order (files joined in the wrong order): the slider steps through it as stored
     const warn = document.createElement("p");
@@ -2094,7 +2159,34 @@ function buildDims() {
       timer = setTimeout(() => { resetData(); drawTexture(); autoRead(); showPick(); writeHash(); }, 150);
     });
     box.append(lab, inp, warn);
+    // the vertical: or each cell's bottom instead of one level
+    if (cur.zd && cur.zd.d === d) {
+      const tg = document.createElement("div"), tl = document.createElement("label"), cb = document.createElement("input");
+      tg.className = "toggles";
+      cb.type = "checkbox"; cb.id = "bottom";
+      tl.append(cb, " Bottom: each cell's deepest level with a value");
+      tg.append(tl);
+      box.append(tg);
+      cur.zdUi = { inp, out, label };
+      cb.addEventListener("change", () => {
+        state.bottom = cb.checked ? 1 : 0;
+        syncBottom();
+        resetData(); drawTexture(); autoRead();
+        $("sample").textContent = sampleLabel();
+        showPick(); showLegend(); writeHash();
+      });
+      syncBottom();
+    }
   });
+}
+// the bottom switch and the level slider it stands in for
+function syncBottom() {
+  const b = $("bottom");
+  if (!b || !cur || !cur.zdUi) return;
+  b.checked = !!state.bottom;
+  const { inp, out, label } = cur.zdUi;
+  inp.disabled = !!state.bottom;
+  label();
 }
 
 // a dimension's 1D coordinate, read whole once per variable (null if it has none)
@@ -2181,10 +2273,13 @@ function showLegend() {
   let t = "";
   if (state.colour === "data") {
     const u = cur.v.meta.attrs.units ? ` ${cur.v.meta.attrs.units}` : "";
-    t = cur.scale ? `viridis from ${fmtNum(cur.scale.lo)} to ${fmtNum(cur.scale.hi)}${u} (2% and 98% of ${cur.scale.from > 1 ? `the ${cur.scale.from} chunks first read` : "the first chunk read"})` :
+    const sc = cur.scale, bot = bottomOn(), places = bot ? "stacks" : "chunks";
+    t = (bot ? `Each cell's bottom: its deepest level along ${cur.zd.name} with a value, read as stacks of ${plural(zChunks(), "chunk")}; ` : "") +
+      (sc ? `viridis from ${fmtNum(sc.lo)} to ${fmtNum(sc.hi)}${u} (2% and 98% of ${sc.from > 1 ? `the ${sc.from} ${places} first read` : `the first ${places.slice(0, -1)} read`}` +
+        (sc.bottom ? `, where the bottom is deeper than ${sc.bottom.toLocaleString("en")} m: shallower ones, warmer, run off the top in yellow)` : ")") :
       // read, and nothing in them: a store with no chunk there (a field that starts later) reads as its fill value
       cur.painted && cur.painted.size ? `No values in the ${plural(cur.painted.size, "chunk")} read: every cell is the fill value, as where the store holds no chunk at all` :
-      smallSlice() ? "" : notReadHint();
+      smallSlice() ? "" : notReadHint());
   } else if (state.colour === "area" && cur.dist) {
     const sc = distortionImage("area").scale;
     t = `cell area on the earth as a share of the largest cell (${fmtArea(sc.max)}): dark is small, yellow is the largest`;
@@ -2228,15 +2323,18 @@ async function showPick() {
   }
   const key = idx.join(",");
   let val = "";
-  if (cur.chunkData.has(key) || cur.cost.chunkBytes <= PICK_BYTES) {
+  const bot = bottomOn();
+  if (bot) rows[0][1] += ` and ${plural(zChunks() - 1, "more")} along ${cur.zd.name}`;
+  if (viewLoaded(cj, ci) || viewCost().chunkBytes <= PICK_BYTES) {
     try {
-      const c = await loadChunk(cj, ci);
+      const c = await loadView(cj, ci);
       if (!cur.painted.has(`${cj},${ci}`)) { paintChunk(c, cj, ci); cur.painted.add(`${cj},${ci}`); drawTexture(); showReads(); showLegend(); }
-      const x0 = chunkValue(c, cj, ci, col, row);
-      val = Number.isFinite(x0) && !cur.fills.has(x0) ? `${fmtNum(x0)}${v.meta.attrs.units ? " " + v.meta.attrs.units : ""}` : "no data";
+      const x0 = chunkValue(c, cj, ci, col, row), k = bot ? bottomLevel(c, cj, ci, col, row) : -1;
+      val = Number.isFinite(x0) && !cur.fills.has(x0) ? `${fmtNum(x0)}${v.meta.attrs.units ? " " + v.meta.attrs.units : ""}` +
+        (k >= 0 ? `, level ${k} (${fmtNum(+cur.zd.z[k].toPrecision(5))}${cur.zd.units ? " " + cur.zd.units : ""})` : "") : bot ? "none: no level has a value" : "no data";
     } catch (e) { val = `not read: ${e.message}`; }
-  } else val = `chunk of ${fmtBytes(cur.cost.chunkBytes)} not read`;
-  rows.push(["Value", val]);
+  } else val = `${bot ? `${plural(zChunks(), "chunk")}` : "chunk"} of ${fmtBytes(viewCost().chunkBytes)} not read`;
+  rows.push([bot ? "At the bottom" : "Value", val]);
   if (pickCell() !== null && pickCell().join() !== p.join()) return;
   tbl.innerHTML = "";
   for (const [k, val2] of rows) { const tr = tbl.insertRow(); tr.insertCell().textContent = k; tr.insertCell().textContent = val2; }
@@ -2352,7 +2450,7 @@ async function showColumn(col, row, force = false) {
   tf.insertCell().textContent = "Sea floor (GEBCO 2026)";
   tf.insertCell().textContent = toM && cur.earth ? "reading ..." : "not compared: the column is not a depth in metres";
   const draw = (f) => {
-    const k = Math.min(zd.n - 1, state.dims[zd.name] || 0), fz = f && Number.isFinite(f.ocean) ? -f.ocean / toM : null;
+    const k = bottomOn() ? last : Math.min(zd.n - 1, state.dims[zd.name] || 0), fz = f && Number.isFinite(f.ocean) ? -f.ocean / toM : null;
     drawProfile(plot, vals, zd.z, { title: `${name}${u}`, zTitle: `${zd.name}${zu}`, down: zd.down, mark: zd.z[k], bottom, bottomText: `model floor (level ${last})`,
       floor: fz, floorText: fz ? `GEBCO's floor at ${Math.round(-f.ocean).toLocaleString("en")} m, further down` : "" });
   };
@@ -2559,7 +2657,7 @@ window.addEventListener("hashchange", () => {
   syncControls(); setCamera(state.cam || DEFAULT_CAM);
   if (!same) open();
   else if (cur && cur.kind === "profiles") { setWindow(); fitScale(); syncWhen(); buildFlat(); place(); showPick(); showLegend(); readWindow(); readFloor(); }
-  else if (cur) { buildFlat(); resetData(); drawTexture(); place(); autoRead(); showPick(); showLegend(); }
+  else if (cur) { syncBottom(); buildFlat(); resetData(); drawTexture(); place(); autoRead(); $("sample").textContent = sampleLabel(); showPick(); showLegend(); }
 });
 
 readHash();

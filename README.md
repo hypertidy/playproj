@@ -582,7 +582,12 @@ span of its deepest level with a value (edges from the store where it has them
 as a 1D array, else half way to the levels either side: with partial cells the
 floor can be anywhere in it), drawn against GEBCO 2026 at the cell's centre and
 averaged over the cell at 15 arc seconds, with whether GEBCO falls above,
-within or below that level. A
+within or below that level. "Bottom" (`bottom`) puts each cell's deepest level
+with a value in place of the level set: every chunk along the vertical at each
+place, so twice a level's reads for ACCESS-ESM1.6. Its colours come from where
+the bottom is deeper than 1,000 m, as the basins differ by a degree or two
+where a shelf's bottom can be as warm as the surface; shallower bottoms run
+off the top of the scale, and a click gives each cell's value and level. A
 collection of profiles (Argo floats, CTD tags on seals, as CF's profile
 discrete sampling geometry: one latitude and longitude per profile, 1D along
 the variable's profile dimension) is not a grid, and is drawn as a point per
@@ -631,7 +636,7 @@ ENS forecast's 2 m temperature; lead times read as spans ("1 d 6 h"). The hash i
 plus `t`, `colour` (`data`, `area`, `omega`, `none`; for profiles `time`,
 `data`, `gap`, `group`, `none`), `chunks`, `cells`, `coast`, `grat`, `pick`
 (column,row, or a profile's index), `cam`, and for profiles `window`, `when`,
-`depth`, `fit`, `hang`, `floor` and `dz`, so a link opens in gridlook too. Equal Earth (`projection=equal_earth`), Lambert azimuthal equal-area and
+`depth`, `fit`, `hang`, `floor` and `dz`, and for a grid with depth `bottom`, so a link opens in gridlook too. Equal Earth (`projection=equal_earth`), Lambert azimuthal equal-area and
 Spilhaus are not gridlook's, so its link leaves them out and gridlook opens in
 its own default. `src/core/storecrs.js` and `js/store-read.js`, checked in
 `test/check-storecrs.mjs` against PROJ (pyproj's `CRS.from_cf`) and small
