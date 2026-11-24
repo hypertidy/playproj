@@ -593,9 +593,19 @@ where each crosses the depth set. Icechunk stores are opened with zarrita's
 range coalescing, so reads that fall close together in one file (a tag's
 profiles, all neighbours in its NetCDF file) go as one request: a month of
 MEOP, 3,319 profiles with their pressures, is under a hundred requests. The
+sea floor (`floor`) is GEBCO 2026, read over the window's box from the
+overview that gives about 2,000 cells across it (finer along a section's
+track, and the full 15 arc seconds under a picked profile), sampled under
+each profile, drawn in 3D as a swath along the window's tracks sunk by the
+same exaggeration, and filled in under a section with its line drawn over
+the data. Colouring by height above the sea floor (`colour=gap`) shows which
+profiles reach the bottom and which go deeper than GEBCO has it (pressure in
+decibars taken as metres). The wheel zooms toward the pointer, Shift-drag or
+right-drag moves the view, and a double-click turns it about the place
+clicked. The
 MEOP preset is 126,518 seal CTD profiles from IMOS, a virtual Icechunk whose
 chunks are byte ranges in IMOS's own NetCDF files, opened on May 2019 at
-200 dbar, hung below the map. A chunk can
+200 dbar, hung below the map over GEBCO's sea floor. A chunk can
 also be a whole GRIB message under the `gribberish` codec, as in
 dynamical.org's virtual stores of ECMWF and NOAA forecasts; `js/gribberish.js`
 decodes it with gribberish's WebAssembly build, loaded only when a chunk
@@ -604,9 +614,9 @@ ENS forecast's 2 m temperature; lead times read as spans ("1 d 6 h"). The hash i
 [gridlook](https://github.com/d70-t/gridlook)'s,
 `#<store>::varname=..::projection=..::lat=..::lon=..::dimIndices_<dim>=..`,
 plus `t`, `colour` (`data`, `area`, `omega`, `none`; for profiles `time`,
-`data`, `group`, `none`), `chunks`, `cells`, `coast`, `grat`, `pick`
+`data`, `gap`, `group`, `none`), `chunks`, `cells`, `coast`, `grat`, `pick`
 (column,row, or a profile's index), `cam`, and for profiles `window`, `when`,
-`depth`, `hang` and `dz`, so a link opens in gridlook too. Equal Earth (`projection=equal_earth`), Lambert azimuthal equal-area and
+`depth`, `hang`, `floor` and `dz`, so a link opens in gridlook too. Equal Earth (`projection=equal_earth`), Lambert azimuthal equal-area and
 Spilhaus are not gridlook's, so its link leaves them out and gridlook opens in
 its own default. `src/core/storecrs.js` and `js/store-read.js`, checked in
 `test/check-storecrs.mjs` against PROJ (pyproj's `CRS.from_cf`) and small

@@ -314,6 +314,18 @@ for (const t of man.profiles || []) {
   check(C.deepestAt(x, z) === 30 && C.deepestAt(x, z, false) === 20 && Number.isNaN(C.deepestAt([NaN], [1])), "deepestAt");
   check(String(C.binCounts([0, 1, 2, 9.99, 10, 11, NaN], 0, 10, 5)) === "2,1,0,0,2" && String(C.binCounts([3, 3], 3, 3, 2)) === "2,0", "binCounts");
   check(String(C.inWindow([5, 1, 3, NaN, 2], 2, 5)) === "2,4", "inWindow");
+  // a box round points, across the antimeridian where that is smaller
+  const bx = (b) => b && [b.west, b.east, b.south, b.north].map((v) => +v.toFixed(6)).join(",");
+  check(bx(C.lonLatBox([10, 20, 15], [-60, -50, -55], 1)) === "9,21,-61,-49", `lonLatBox ${bx(C.lonLatBox([10, 20, 15], [-60, -50, -55], 1))}`);
+  check(bx(C.lonLatBox([170, -170, 179], [-70, -65, NaN])) === "170,190,-70,-65", `lonLatBox across 180 ${bx(C.lonLatBox([170, -170, 179], [-70, -65, NaN]))}`);
+  check(bx(C.lonLatBox([-170, 0, 170, 90, -90], [0, 0, 0, 0, 0], 50)) === "-180,180,-50,50" && C.lonLatBox([NaN], [0]) === null, "lonLatBox all round, none");
+  // bilinear between cell centres, round the antimeridian, NaN off the grid
+  const g = { elev: Float32Array.from([0, 10, 20, 30, 40, 50]), width: 3, height: 2, west: 0, north: 10, dx: 1, dy: 1 };
+  check(C.gridSample(g, 0.5, 9.5) === 0 && C.gridSample(g, 1, 9) === 20 && C.gridSample(g, 1.5, 9.25) === 17.5 && C.gridSample(g, 360.5, 9.5) === 0, `gridSample ${C.gridSample(g, 1.5, 9.25)}`);
+  check(Number.isNaN(C.gridSample(g, 5, 9)) && Number.isNaN(C.gridSample(g, 1, 7)), "gridSample off the grid");
+  // fractional levels, carried on past the ends
+  const zl = [1, 2, 3, 5, NaN];
+  check(C.levelOf(zl, 2.5) === 1.5 && C.levelOf(zl, 4) === 2.5 && C.levelOf(zl, 9) === 5 && C.levelOf(zl, 0) === -1 && Number.isNaN(C.levelOf([NaN], 1)), "levelOf");
 }
 check(C.cfDuration(0, "seconds") === "0 h" && C.cfDuration(97200, "seconds") === "1 d 3 h" && C.cfDuration(1296000, "seconds") === "15 d" && C.cfDuration(1.5, "days") === "1 d 12 h" &&
   C.cfDuration(-3600, "s") === "-1 h" && C.cfDuration(3, "m") === null && C.cfDuration(3, "days since 2000-01-01") === null, "cfDuration");
