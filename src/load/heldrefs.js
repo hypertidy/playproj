@@ -17,6 +17,8 @@
 // as one request and still recorded as the rows they are. A held range
 // also answers any read that falls inside it. An object that never changes
 // under its name (an Icechunk manifest, a snapshot) is held whole.
+// A file with no store to point at it (a GeoTIFF read with geotiff.js) is
+// held under the version the file itself gives: its ETag or modified time.
 // The bytes held are the bytes as stored: encoded chunks, small and exact.
 //
 // No DOM. The bytes live in a backend: memory (Node, and the fallback), or
@@ -482,6 +484,53 @@ export function heldRefs({ backend = memoryBackend(), limit = 512 * 2 ** 20, low
     };
   }
 
+  // A geotiff.js client ({ url, request({ headers }) }, for
+  // GeoTIFF.fromCustomClient) that reads a file's ranges through the table.
+  // A GeoTIFF has no store to say which version of the file a range is of,
+  // so the file is asked once, for its first byte: the ETag or last-modified
+  // time on the answer is the version of every row, and a file replaced
+  // under its name is read again. Resolves to null where the answer shows
+  // neither (nothing would say when held bytes had gone stale), or is not a
+  // range: read the file without the table then.
+  async function geotiff(url, { fetch = (u, init) => globalThis.fetch(u, init) } = {}) {
+    let version = "", total = NaN;
+    try {
+      const r = await fetch(url, { headers: { Range: "bytes=0-0" } });
+      if (r.status !== 206) return null;
+      await r.arrayBuffer();
+      const etag = r.headers.get("etag"), modified = r.headers.get("last-modified");
+      version = etag ? `etag ${etag}` : modified ? `modified ${modified}` : "";
+      total = Number((/\/(\d+)\s*$/.exec(r.headers.get("content-range") || "") || [])[1]);
+    } catch (e) { return null; }
+    if (!version) return null;
+    const answer = (status, headers, data) => ({
+      status, ok: status >= 200 && status <= 299,
+      getHeader: (name) => headers[String(name).toLowerCase()],
+      getData: async () => data
+    });
+    const read = async (path, offset, size, signal) => {
+      const r = await fetch(path, { headers: { Range: `bytes=${offset}-${offset + size - 1}` }, signal });
+      if (r.status !== 206) throw new Error(`${path}: ${r.status} to a range request`);
+      return new Uint8Array(await r.arrayBuffer());
+    };
+    return {
+      url, version,
+      async request({ headers = {}, signal } = {}) {
+        const rng = parseRange(headers.Range || headers.range);
+        if (!rng) {   // several ranges, or none: as it would be without the table
+          const r = await fetch(url, { headers, signal });
+          const data = await r.arrayBuffer();
+          return answer(r.status, { "content-type": r.headers.get("content-type") || undefined, "content-range": r.headers.get("content-range") || undefined }, data);
+        }
+        const data = await range(url, rng.offset, rng.size, (path, offset, size) => read(path, offset, size, signal), version);
+        // the bytes as their own buffer: geotiff.js keeps and slices it
+        const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+        return answer(206, { "content-type": "application/octet-stream",
+          "content-range": `bytes ${rng.offset}-${rng.offset + data.byteLength - 1}/${Number.isFinite(total) ? total : "*"}` }, buf);
+      }
+    };
+  }
+
   // the table as rows, in path, version and offset order
   function table() {
     const out = [];
@@ -499,7 +548,7 @@ export function heldRefs({ backend = memoryBackend(), limit = 512 * 2 ** 20, low
     try { await backend.clear(); } catch (e) { failed = true; }
   }
 
-  return { ready, find, findWhole, get, put, range, whole, fetchClient, icechunk, storage, table, clear, settled, stats, get failed() { return failed; } };
+  return { ready, find, findWhole, get, put, range, whole, fetchClient, icechunk, storage, geotiff, table, clear, settled, stats, get failed() { return failed; } };
 }
 
 // Reads of one range store joined as the table joins them, with nothing

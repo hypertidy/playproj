@@ -152,7 +152,8 @@ const server = http.createServer((req, res) => {
   if (m) {
     let a0, b0;
     if (m[1] === "") { a0 = Math.max(0, buf.length - +m[2]); b0 = buf.length - 1; } else { a0 = +m[1]; b0 = m[2] === "" ? buf.length - 1 : Math.min(+m[2], buf.length - 1); }
-    res.writeHead(206, { "content-range": `bytes ${a0}-${b0}/${buf.length}`, "content-length": b0 - a0 + 1 });
+    const tag = /[?&]etag=([^&]+)/.exec(req.url);   // a file that says which version it is
+    res.writeHead(206, { "content-range": `bytes ${a0}-${b0}/${buf.length}`, "content-length": b0 - a0 + 1, ...(tag ? { etag: `"${tag[1]}"` } : {}) });
     res.end(buf.subarray(a0, b0 + 1));
   } else { res.writeHead(200, { "content-length": buf.length }); res.end(buf); }
 });
@@ -219,6 +220,30 @@ for (const how of ["client", "icechunk"]) {
     check(again.length === 0, `icechunk: the second open fetched none of them again (${again.length})`);
     check(meta.slice(m1).length > 0, "icechunk: what can change (the branch) is still asked for");
   } else check(t.every((r) => r.version === ""), "client: without checksums on the request, rows have no version");
+}
+
+// a geotiff.js client: a file's ranges through the table, under the version
+// the file itself gives
+{
+  const h = heldRefs(), bin = new Uint8Array(fs.readFileSync(path.join(root, "ocean.bin")));
+  const url = `${base}/ocean.bin?etag=one`, n0 = seen.length;
+  const c = await h.geotiff(url);
+  check(c && c.url === url && c.version === 'etag "one"' && seen.length === n0 + 1, `the file is asked once which version it is (${c && c.version})`);
+  const r1 = await c.request({ headers: { Range: "bytes=10-73" } });
+  const d1 = new Uint8Array(await r1.getData());
+  check(r1.ok && r1.status === 206 && same(d1, bin.slice(10, 74)) && r1.getHeader("content-range") === `bytes 10-73/${bin.length}` && r1.getHeader("Content-Type") === "application/octet-stream",
+    `a range comes back as geotiff.js reads one (${r1.getHeader("content-range")})`);
+  const n1 = seen.length;
+  const [r2, r3] = await Promise.all([c.request({ headers: { Range: "bytes=10-73" } }), c.request({ headers: { Range: "bytes=20-29" } })]);
+  check(seen.length === n1 && same(new Uint8Array(await r2.getData()), d1) && same(new Uint8Array(await r3.getData()), bin.slice(20, 30)), "held ranges, and ranges inside them, make no request");
+  check((await r2.getData()) instanceof ArrayBuffer && (await r3.getData()).byteLength === 10, "the data is an ArrayBuffer of the range alone");
+  const again = await h.geotiff(url);
+  await again.request({ headers: { Range: "bytes=10-73" } });
+  check(seen.length === n1 + 1, `the next visit asks only for the version (${seen.length - n1} request)`);
+  const other = await h.geotiff(`${base}/ocean.bin?etag=two`);
+  check(other.version === 'etag "two"' && h.find(url, 10, 64, 'etag "two"') === null, "another version of the file is not answered from the first's rows");
+  check((await h.geotiff(`${base}/ocean.bin`)) === null, "a file that does not say which version it is gets no client");
+  check((await h.geotiff(`${base}/none.bin`)) === null, "nor does one that cannot be read");
 }
 
 // a range store of many keys (icechunk-js keeps one for every native chunk):
