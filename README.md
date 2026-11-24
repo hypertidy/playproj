@@ -588,6 +588,16 @@ place, so twice a level's reads for ACCESS-ESM1.6. Its colours come from where
 the bottom is deeper than 1,000 m, as the basins differ by a degree or two
 where a shelf's bottom can be as warm as the surface; shallower bottoms run
 off the top of the scale, and a click gives each cell's value and level. A
+section (`section=row` or `section=col`) runs through the picked cell along its
+row or its column: every level of every cell along it, as whole chunks (4 for
+ACCESS-ESM1.6, half of them read for the map already), drawn in the panel true
+to depth against latitude or longitude, with the model's rock under each cell's
+deepest level and GEBCO 2026 averaged over each cell's sea, and counts of where
+GEBCO falls above, within or below the model's deepest level. Under the map it
+hangs as a curtain, sunk by depth times the exaggeration (`dz`) as profiles
+are, with GEBCO's floor along it, and the map goes see-through while it shows.
+Its colours are the map's, so the level set picks the contrast. Clicking
+another cell moves the section there. A
 collection of profiles (Argo floats, CTD tags on seals, as CF's profile
 discrete sampling geometry: one latitude and longitude per profile, 1D along
 the variable's profile dimension) is not a grid, and is drawn as a point per
@@ -636,7 +646,7 @@ ENS forecast's 2 m temperature; lead times read as spans ("1 d 6 h"). The hash i
 plus `t`, `colour` (`data`, `area`, `omega`, `none`; for profiles `time`,
 `data`, `gap`, `group`, `none`), `chunks`, `cells`, `coast`, `grat`, `pick`
 (column,row, or a profile's index), `cam`, and for profiles `window`, `when`,
-`depth`, `fit`, `hang`, `floor` and `dz`, and for a grid with depth `bottom`, so a link opens in gridlook too. Equal Earth (`projection=equal_earth`), Lambert azimuthal equal-area and
+`depth`, `fit`, `hang`, `floor` and `dz`, and for a grid with depth `bottom`, `section` and `dz`, so a link opens in gridlook too. Equal Earth (`projection=equal_earth`), Lambert azimuthal equal-area and
 Spilhaus are not gridlook's, so its link leaves them out and gridlook opens in
 its own default. `src/core/storecrs.js` and `js/store-read.js`, checked in
 `test/check-storecrs.mjs` against PROJ (pyproj's `CRS.from_cf`) and small

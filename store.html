@@ -81,6 +81,8 @@
           <label><input id="hang" type="checkbox"> Hang the profiles below their points</label>
           <label><input id="floor" type="checkbox"> Sea floor from GEBCO 2026</label>
         </div>
+      </div>
+      <div id="dz-box" hidden>
         <label class="row" for="dz"><span>Depth exaggeration</span><output id="dz-out"></output></label>
         <input id="dz" type="range" min="0" max="3.5" step="0.05" aria-label="Depth exaggeration, as a power of ten">
       </div>
@@ -152,7 +154,7 @@
           <summary>Everything kept per profile</summary>
           <table id="prof-extra" class="readout"></table>
         </details>
-        <div class="buttons"><button id="section" type="button" class="small" hidden></button><button id="column" type="button" class="small" hidden></button></div>
+        <div class="buttons"><button id="section" type="button" class="small" hidden></button><button id="column" type="button" class="small" hidden></button><button id="sec-x" type="button" class="small" hidden></button><button id="sec-y" type="button" class="small" hidden></button></div>
         <canvas id="section-plot" class="plot" hidden></canvas>
         <p id="section-info" class="hint"></p>
       </div>
@@ -174,6 +176,11 @@
           says whether GEBCO falls above, within or below that level. Or map the bottom: each cell's deepest
           level with a value, for twice a level's reads, which shows where the bottom waters reach across the
           basins. Its colours are fitted to bottoms deeper than 1,000 m, so the shelves run off the top.</p>
+        <p>A section cuts through the picked cell along its row or its column: every level of every cell
+          along it, a few chunks, drawn true to depth with the model's rock below and GEBCO's floor as a sand
+          line. Under the map it hangs as a curtain, sunk as the profiles are; the map goes see-through, so
+          tilt the view to see it. It takes the map's colours: map a deep level, or the bottom, to bring out
+          the deep water masses, the surface to see the whole column.</p>
         <p>A collection of profiles (Argo floats, CTD tags on seals: one latitude and longitude per
           profile, not per cell) is no grid, so it is drawn as a point per profile. A click reads that
           profile alone, a single chunk where the store keeps one chunk per profile, and plots it.</p>

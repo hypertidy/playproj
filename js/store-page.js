@@ -44,6 +44,7 @@ const COLORS = {
   bottomFill: "rgba(255,138,101,0.16)",
   floorLine: "#e0c08a",
   floorLight: "rgba(200,164,110,0.3)",
+  rock: "#2b2620",
   coast: 0xd7ecff,
   grat: 0x5b7aa3
 };
@@ -79,8 +80,9 @@ const defaults = { url: PRESETS[0].url, varname: "", projection: "mollweide", la
   // under them, by how much depth is stretched, and whether the colours fit the depth's values
   // or every level's
   when: "", win: 0, depth: 0, hang: 0, floor: 0, dz: 2.5, fit: 0,
-  // a grid with depth: each cell's deepest level with a value, in place of the level set
-  bottom: 0 };
+  // a grid with depth: each cell's deepest level with a value, in place of the level set; and a
+  // section through the picked cell along its row or its column, hung below the map
+  bottom: 0, section: "" };
 const state = { ...defaults, dims: {} };
 
 function readHash() {
@@ -102,6 +104,7 @@ function readHash() {
   const w = num("window"), dp = num("depth"), dz = num("dz"), hang = num("hang"), floor = num("floor"), fit = num("fit"), bottom = num("bottom");
   if (floor !== null) state.floor = floor ? 1 : 0;
   if (bottom !== null) state.bottom = bottom ? 1 : 0;
+  if (["row", "col"].includes(params.get("section"))) state.section = params.get("section");
   if (fit !== null) state.fit = fit ? 1 : 0;
   if (w !== null && w >= 0) state.win = w;
   if (dp !== null && dp >= 0) state.depth = dp;
@@ -135,6 +138,7 @@ function writeHash() {
       if (state.dz !== defaults.dz) p.dz = state.dz;
     }
     if (bottomOn()) p.bottom = 1;
+    if (cur && cur.kind === "grid" && cur.zd && state.section) { p.section = state.section; if (state.dz !== defaults.dz) p.dz = state.dz; }
     if (state.assume) p.assume = state.assume;
     if (state.cam) p.cam = state.cam.map((x) => +x.toFixed(2)).join(",");
     history.replaceState(null, "", "#" + C.hashString(state.url, p));
@@ -394,7 +398,8 @@ function morph(arr, sphere, flat, e) {
 function place() {
   if (!cur || (!cur.mesh && cur.kind !== "profiles")) return;
   const e = cur.earth && cur.D ? ease(state.t) : cur.earth ? 0 : 1;
-  const meshes = cur.kind === "profiles" ? PROF_MESHES.filter((M) => M.visible && M.userData.sphere).map((M) => [M, M.userData]) : [[gridMesh, cur.mesh]];
+  const meshes = cur.kind === "profiles" ? PROF_MESHES.filter((M) => M.visible && M.userData.sphere).map((M) => [M, M.userData]) :
+    [[gridMesh, cur.mesh], ...[curtainMesh, curtainFloor].filter((M) => M.visible && M.userData.sphere).map((M) => [M, M.userData])];
   for (const [M, u] of meshes) {
     const pos = M.geometry.attributes.position;
     morph(pos.array, u.sphere, u.flat, e);
@@ -884,6 +889,10 @@ function setMode(kind) {
   $("column").hidden = true;
   if (!prof) { $("section").hidden = true; $("section-plot").hidden = true; $("section-info").textContent = ""; }
   $("when-box").hidden = !prof;
+  $("dz-box").hidden = !prof;
+  curtainMesh.visible = curtainFloor.visible = false;
+  gridMesh.material.opacity = 1;
+  $("sec-x").hidden = $("sec-y").hidden = true;
   if (prof) $("when-time").hidden = !cur.perDay;
   $("centre-grid").textContent = prof ? "On the profiles" : "On the grid";
   if (prof) $("dims").innerHTML = "";
@@ -1585,8 +1594,9 @@ $("depth").addEventListener("input", () => {
   syncWhen(); colourProfiles(); place(); showLegend(); redrawProfile(); redrawSection(); writeHash();
 });
 $("dz").addEventListener("input", () => {
-  if (!cur || cur.kind !== "profiles") return;
+  if (!cur) return;
   state.dz = +$("dz").value;
+  if (cur.kind === "grid") { syncDz(); buildCurtain(); place(); showLegend(); writeHash(); return; }
   syncWhen(); buildColumns(); buildFloor(); buildShell(); place(); showLegend(); writeHash();
 });
 $("fit").addEventListener("change", () => {
@@ -2289,6 +2299,11 @@ function showLegend() {
       `how far each cell is from square on the ground, 0 to ${sc.hi.toPrecision(3)}${DEG} (the grid has no CRS, so this is the cells' own shape)`;
   }
   if (cur.drawNote) t = (t ? t.replace(/\.$/, "") + ". " : "") + cur.drawNote[0].toUpperCase() + cur.drawNote.slice(1) + ".";
+  if (curtainMesh.visible && cur.gsec) {
+    const E = Math.round(10 ** state.dz).toLocaleString("en");
+    t = (t ? t.replace(/\.$/, "") + ". " : "") + `The section along ${sectionDim(cur.gsec.along)} hangs below the map as a curtain in the same colours, sunk by depth x${E}` +
+      `${curtainFloor.visible ? ", over GEBCO 2026's floor along it (the sand line)" : ""}; the map is see-through while it shows: tilt the view to see it.`;
+  }
   el.textContent = t;
 }
 
@@ -2304,7 +2319,11 @@ async function showPick() {
   const tbl = $("pick"), info = $("pick-info");
   tbl.innerHTML = "";
   const p = cur && pickCell();
-  if (!p) { columnSerial++; $("profile-box").hidden = true; info.textContent = cur ? "Click the grid for the cell and chunk under the pointer." : ""; return; }
+  if (!p) {
+    columnSerial++; gsecSerial++;
+    if (cur && cur.kind === "grid") { hideCurtain(); $("sec-x").hidden = $("sec-y").hidden = true; $("section-plot").hidden = true; $("section-info").textContent = ""; }
+    $("profile-box").hidden = true; info.textContent = cur ? "Click the grid for the cell and chunk under the pointer." : ""; return;
+  }
   const [col, row] = p, { v, g, F } = cur;
   const ci = Math.floor(col / cur.cxs), cj = Math.floor(row / cur.cys);
   const idx = chunkIdx(cj, ci);
@@ -2339,6 +2358,7 @@ async function showPick() {
   tbl.innerHTML = "";
   for (const [k, val2] of rows) { const tr = tbl.insertRow(); tr.insertCell().textContent = k; tr.insertCell().textContent = val2; }
   showColumn(col, row);
+  gridSection(col, row);
 }
 
 // ---------------------------------------------------------------- a grid's column
@@ -2404,6 +2424,338 @@ function cellFloor(col, row) {
   cur.colFloor = { key, p };
   p.catch(() => { if (cur.colFloor && cur.colFloor.key === key) cur.colFloor = null; });
   return p;
+}
+
+// ---------------------------------------------------------------- a grid's section
+
+// A section through the picked cell along its row (the x index varies) or
+// its column (y varies): every level of every cell along it, read as whole
+// chunks (for ACCESS-ESM1.6, 4: a row of chunks and both halves of the
+// levels, half of them read for the map already). In the panel, depth
+// against distance, true to depth; under the map, the same hung as a
+// curtain, sunk by depth times the exaggeration as profiles are. Its
+// colours are the map's, so the level set picks the contrast.
+const SECTION_AUTO = 96 * 2 ** 20;
+let gsecSerial = 0;
+const curtainMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
+const curtainFloor = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: COLORS.floorLine }));
+curtainMesh.visible = curtainFloor.visible = false;
+scene.add(curtainMesh, curtainFloor);
+const sectionDim = (along) => (along === "row" ? cur.v.dims[cur.v.ix] : cur.v.dims[cur.v.iy]);
+function sectionCells(col, row, along) {
+  const g = cur.g;
+  return along === "row" ? Array.from({ length: g.nx }, (_, i) => [i, row]) : Array.from({ length: g.ny }, (_, j) => [col, j]);
+}
+function sectionChunks(col, row, along) {
+  const seen = new Map();
+  for (const [c, r] of sectionCells(col, row, along)) {
+    const cj = Math.floor(r / cur.cys), ci = Math.floor(c / cur.cxs), base = chunkIdx(cj, ci);
+    for (let k = 0; k < zChunks(); k++) { const idx = base.slice(); idx[cur.zd.d] = k; seen.set(idx.join(","), idx); }
+  }
+  return [...seen.values()];
+}
+function syncDz() {
+  $("dz").value = state.dz;
+  $("dz-out").textContent = `x${Math.round(10 ** state.dz).toLocaleString("en")}`;
+  if (cur && cur.kind === "grid") $("dz").disabled = false;
+}
+function hideCurtain() {
+  curtainMesh.visible = curtainFloor.visible = false;
+  gridMesh.material.opacity = 1;
+  if (cur && cur.kind === "grid") { under.scale.setScalar(1); $("dz-box").hidden = true; }
+}
+function toggleSection(along) {
+  state.section = state.section === along ? "" : along;
+  writeHash();
+  const p = pickCell();
+  if (p) gridSection(p[0], p[1], true);
+}
+
+async function gridSection(col, row, force = false) {
+  const serial = ++gsecSerial, c0 = cur, cv = $("section-plot"), info = $("section-info"), bx = $("sec-x"), by = $("sec-y");
+  const zd = cur.zd;
+  // depths in metres only: the section is drawn, and hung, true to depth
+  if (!zd || zd.n < 2 || !zdMetres(zd)) { bx.hidden = by.hidden = true; hideCurtain(); return; }
+  const costOf = (along) => {
+    const list = sectionChunks(col, row, along), todo = list.filter((idx) => !cur.chunkData.has(idx.join(",")));
+    return { list, todo, bytes: todo.length * cur.cost.chunkBytes };
+  };
+  for (const [along, b] of [["row", bx], ["col", by]]) {
+    const c = costOf(along);
+    b.textContent = state.section === along ? `Hide the section along ${sectionDim(along)}` :
+      `Section along ${sectionDim(along)}` + (c.todo.length ? ` (${plural(c.todo.length, "more chunk")}, ${fmtBytes(c.bytes)})` : " (read already)");
+    b.onclick = () => toggleSection(along);
+    b.hidden = false;
+  }
+  if (!state.section) { cv.hidden = true; info.textContent = ""; cur.gsec = null; hideCurtain(); showLegend(); return; }
+  const { list, todo, bytes } = costOf(state.section);
+  if (!force && bytes > SECTION_AUTO) {
+    cv.hidden = true; hideCurtain();
+    info.textContent = `The section along ${sectionDim(state.section)} here needs ${plural(todo.length, "more chunk")} (${fmtBytes(bytes)}): use its button to read it.`;
+    return;
+  }
+  if (todo.length) info.textContent = `reading the section: ${plural(todo.length, "chunk")} ...`;
+  try { await Promise.all(list.map(loadChunkIdx)); }
+  catch (e) { if (serial === gsecSerial) info.textContent = `section not read: ${e.message}`; return; }
+  if (serial !== gsecSerial || cur !== c0) return;
+  if (todo.length) showReads();
+  const sec = await sectionData(col, row, state.section);
+  if (serial !== gsecSerial || cur !== c0) return;
+  cur.gsec = sec;
+  drawGridSection(); buildCurtain(); place(); showLegend();
+  for (const [along, b] of [["row", bx], ["col", by]]) if (state.section !== along) b.textContent = `Section along ${sectionDim(along)}`;
+  const f = await sectionFloor(sec);
+  if (f && cur.gsec === sec) { drawGridSection(); buildCurtain(); place(); showLegend(); }
+}
+
+// every level of every cell along the section, where each cell is, its edges
+// across the section, the distance along it, and the levels' edges in metres
+async function sectionData(col, row, along) {
+  const zd = cur.zd, cells = sectionCells(col, row, along), n = cells.length, nz = zd.n, toM = zdMetres(zd);
+  const vals = new Float32Array(n * nz).fill(NaN), last = new Int16Array(n).fill(-1);
+  const groups = new Map();
+  cells.forEach(([c, r], p) => {
+    const key = `${Math.floor(r / cur.cys)},${Math.floor(c / cur.cxs)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(p);
+  });
+  for (const [key, ps] of groups) {
+    const [cj, ci] = key.split(",").map(Number), base = chunkIdx(cj, ci), zl = [];
+    for (let k = 0; k < zChunks(); k++) { const idx = base.slice(); idx[zd.d] = k; zl.push(idx); }
+    const chunks = await Promise.all(zl.map(loadChunkIdx));
+    for (const p of ps) {
+      const [c, r] = cells[p], col1 = columnValues(chunks, cj, ci, c, r, zd);
+      vals.set(col1, p * nz);
+      for (let k = nz - 1; k >= 0; k--) if (Number.isFinite(col1[k])) { last[p] = k; break; }
+    }
+  }
+  const E = new Float64Array(nz + 1);
+  for (let k = 0; k < nz; k++) E[k + 1] = (zd.edges ? zd.edges[k + 1] : C.bottomEdge(zd.z, k)) * toM;
+  E[0] = zd.edges ? zd.edges[0] * toM : 0;
+  const ll = [], L = [], R = [], dist = new Float64Array(n).fill(NaN);
+  let prev = null, d = 0;
+  cells.forEach(([c, r], p) => {
+    ll[p] = cur.at(c + 0.5, r + 0.5);
+    L[p] = along === "row" ? cur.at(c, r + 0.5) : cur.at(c + 0.5, r);
+    R[p] = along === "row" ? cur.at(c + 1, r + 0.5) : cur.at(c + 0.5, r + 1);
+    if (!ll[p]) return;
+    if (prev) d += gcKm(prev, ll[p]);
+    dist[p] = d; prev = ll[p];
+  });
+  return { along, col, row, cells, n, nz, vals, last, E, ll, L, R, dist, floor: new Float32Array(n).fill(NaN), floorRes: null,
+    key: along === "row" ? `row ${row}` : `col ${col}`, pick: along === "row" ? col : row };
+}
+const gcKm = (a, b) => {
+  const p1 = a[1] * D2R, p2 = b[1] * D2R, dl = (b[0] - a[0]) * D2R;
+  return EARTH_KM * Math.acos(Math.min(1, Math.max(-1, Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dl))));
+};
+
+// GEBCO 2026 along the section, each cell's mean over its sea, from one
+// window over the section's box (about 2,000 GEBCO cells along its longer side)
+async function sectionFloor(sec) {
+  if (!cur.earth) return false;
+  const memo = cur.secFloor || (cur.secFloor = new Map());
+  if (!memo.has(sec.key)) memo.set(sec.key, (async () => {
+    const ok = sec.ll.filter(Boolean), box = C.lonLatBox(ok.map((q) => q[0]), ok.map((q) => q[1]), 1);
+    if (!box) return null;
+    const g = await readElevation(box, Math.max(1 / 240, Math.max(box.east - box.west, box.north - box.south) / 2000));
+    const fl = new Float32Array(sec.n).fill(NaN);
+    sec.cells.forEach(([c, r], p) => {
+      const q = [cur.at(c, r), cur.at(c + 1, r), cur.at(c + 1, r + 1), cur.at(c, r + 1)];
+      if (!sec.ll[p] || q.some((x) => !x)) return;
+      const m = C.cellMean(g, q);
+      if (m.n) fl[p] = m.wet >= 0.5 && Number.isFinite(m.ocean) ? -m.ocean : 0;
+      else { const e = C.gridSample(g, sec.ll[p][0], sec.ll[p][1]); if (Number.isFinite(e)) fl[p] = Math.max(0, -e); }
+    });
+    return { fl, res: g.dx };
+  })().catch(() => null));
+  const f = await memo.get(sec.key);
+  if (!f) { memo.delete(sec.key); return false; }
+  sec.floor = f.fl; sec.floorRes = f.res;
+  return true;
+}
+
+// the section's colours: the map's where it has them, else its own 2% and 98%
+function sectionScale(sec) {
+  if (state.colour === "data" && cur.scale) return { lo: cur.scale.lo, hi: cur.scale.hi, map: true };
+  if (!sec.own) {
+    const vals = [];
+    for (let i = 0; i < sec.vals.length; i += 3) if (Number.isFinite(sec.vals[i])) vals.push(sec.vals[i]);
+    const lo = vals.length ? quantile(vals, 0.02) : 0, hi = vals.length ? quantile(vals, 0.98) : 1;
+    sec.own = { lo, hi: hi > lo ? hi : lo + 1, map: false };
+  }
+  return sec.own;
+}
+// the model and GEBCO along the section: GEBCO above, within or below each cell's deepest wet level
+function sectionCompare(sec) {
+  let within = 0, deeper = 0, shallower = 0;
+  for (let p = 0; p < sec.n; p++) {
+    const k = sec.last[p], g = sec.floor[p];
+    if (k < 0 || !(g > 0)) continue;
+    if (g < sec.E[k]) deeper++; else if (g > sec.E[k + 1]) shallower++; else within++;
+  }
+  return { within, deeper, shallower, n: within + deeper + shallower };
+}
+
+function drawGridSection() {
+  const sec = cur.gsec, cv = $("section-plot"), info = $("section-info");
+  if (!sec) return;
+  cv.hidden = false;
+  const { ctx, W, H, L, R: Rm, T, B } = plotFrame(cv);
+  const { n, nz, vals, last, E, dist, floor } = sec, sc = sectionScale(sec), zd = cur.zd;
+  const okP = [];
+  for (let p = 0; p < n; p++) if (Number.isFinite(dist[p])) okP.push(p);
+  if (okP.length < 2) { info.textContent = "The section has no cells on the earth."; return; }
+  const half = (p, side) => {
+    const q = p + side;
+    return q >= 0 && q < n && Number.isFinite(dist[q]) ? (dist[p] + dist[q]) / 2 : dist[p] + side * 0.5 * (Math.abs(dist[p - side] - dist[p]) || 0);
+  };
+  const d0 = half(okP[0], -1), d1 = half(okP[okP.length - 1], 1);
+  let zMax = 0;
+  for (const p of okP) { if (last[p] >= 0) zMax = Math.max(zMax, E[last[p] + 1]); if (floor[p] > 0) zMax = Math.max(zMax, floor[p]); }
+  zMax = (zMax || E[nz]) * 1.03;
+  const X = (d) => L + ((d - d0) / (d1 - d0)) * (W - L - Rm), Y = (z) => T + (z / zMax) * (H - T - B);
+  for (const p of okP) {
+    const x0 = X(half(p, -1)), x1 = X(half(p, 1)), w = Math.max(1, x1 - x0) + 0.4;
+    for (let k = 0; k <= last[p]; k++) {
+      const v = vals[p * nz + k];
+      if (!Number.isFinite(v)) continue;
+      const rgb = rampAt(VIRIDIS, (v - sc.lo) / (sc.hi - sc.lo));
+      ctx.fillStyle = `rgb(${rgb[0] | 0},${rgb[1] | 0},${rgb[2] | 0})`;
+      ctx.fillRect(x0, Y(E[k]), w, Y(E[k + 1]) - Y(E[k]) + 0.4);
+    }
+    // the model's rock, under its deepest wet level (all of a land column)
+    const top = last[p] >= 0 ? Y(E[last[p] + 1]) : T;
+    ctx.fillStyle = COLORS.rock; ctx.fillRect(x0, top, w, H - B - top);
+  }
+  // GEBCO's floor, a line over it all
+  ctx.strokeStyle = COLORS.floorLine; ctx.lineWidth = 1.5; ctx.beginPath();
+  let pen = false;
+  for (const p of okP) {
+    if (!(floor[p] > 0)) { pen = false; continue; }
+    if (pen) ctx.lineTo(X(dist[p]), Y(floor[p])); else ctx.moveTo(X(dist[p]), Y(floor[p]));
+    pen = true;
+  }
+  ctx.stroke();
+  // the map's level, and the picked cell
+  ctx.save(); ctx.strokeStyle = COLORS.pick; ctx.setLineDash([4, 3]); ctx.lineWidth = 1;
+  if (!bottomOn()) { const k = Math.min(nz - 1, state.dims[zd.name] || 0), y = Y(zd.z[k] * zdMetres(zd)); ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - Rm, y); ctx.stroke(); }
+  if (Number.isFinite(dist[sec.pick])) { const x = X(dist[sec.pick]); ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, H - B); ctx.stroke(); }
+  ctx.restore();
+  // depth down the side; latitude or longitude along the bottom
+  ctx.fillStyle = "#8a97ab"; ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const t of niceTicks(0, zMax)) if (t <= zMax) ctx.fillText(fmtNum(t), L - 4, Y(t));
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  let lastX = -Infinity;
+  for (const [d, label] of sectionTicks(sec)) { const x = X(d); if (x - lastX < 44 || x < L || x > W - Rm) continue; ctx.fillText(label, x, H - B + 4); lastX = x; }
+  ctx.save(); ctx.translate(10, (T + H - B) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillText(`${zd.name} (m)`, 0, -4); ctx.restore();
+  ctx.fillStyle = "#dfe7f2"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  const name = cur.v.path.split("/").pop(), u = cur.v.meta.attrs.units ? ` ${cur.v.meta.attrs.units}` : "";
+  ctx.fillText(`${name}${u} along ${sectionDim(sec.along)}`, L, 4);
+  const cmp = sectionCompare(sec), km = Math.round(d1 - d0).toLocaleString("en");
+  info.textContent = `${plural(okP.length, "cell")} along ${sectionDim(sec.along)} through cell ${sec.col}, ${sec.row} (${km} km), every level, true to depth: ` +
+    `viridis from ${fmtNum(sc.lo)} to ${fmtNum(sc.hi)}${u} (${sc.map ? "the map's colours, so the level set picks the contrast" : "2% and 98% of the section"}); ` +
+    `dashed, ${bottomOn() ? "" : "the map's level and "}the picked cell; dark, the model's rock under each cell's deepest level with a value` +
+    (sec.floorRes ? `; sand, GEBCO 2026 averaged over each cell's sea (from ${resLabel(sec.floorRes)} cells). Where both: GEBCO's floor is within the model's deepest level at ${cmp.within.toLocaleString("en")}, ` +
+      `above it (the model deeper) at ${cmp.deeper.toLocaleString("en")} and below it (the model shallower) at ${cmp.shallower.toLocaleString("en")}` : "; GEBCO 2026 along it once read") + ".";
+}
+// where the section crosses round latitudes (along a column) or longitudes (along a row)
+function sectionTicks(sec) {
+  const out = [], lat = sec.along === "col", a = [], ds = [];
+  let prev = null, acc = 0;
+  for (let p = 0; p < sec.n; p++) {
+    if (!sec.ll[p]) continue;
+    let x = lat ? sec.ll[p][1] : sec.ll[p][0];
+    if (!lat && prev !== null) { acc += ((((x - prev) % 360) + 540) % 360) - 180; prev = x; x = acc; } else if (!lat) { prev = x; acc = x; }
+    a.push(x); ds.push(sec.dist[p]);
+  }
+  if (a.length < 2) return out;
+  const span = Math.abs(a[a.length - 1] - a[0]), step = lat ? (span > 60 ? 15 : span > 20 ? 5 : 1) : span > 180 ? 60 : span > 60 ? 30 : 10;
+  for (let i = 1; i < a.length; i++) {
+    const lo = Math.min(a[i - 1], a[i]), hi = Math.max(a[i - 1], a[i]);
+    for (let m = Math.ceil(lo / step) * step; m <= hi && hi > lo; m += step) {
+      if (m === lo && i > 1) continue;
+      const d = ds[i - 1] + ((m - a[i - 1]) / (a[i] - a[i - 1])) * (ds[i] - ds[i - 1]);
+      const v = lat ? m : ((((m + 180) % 360) + 360) % 360) - 180;
+      out.push([d, v === 0 ? "0°" : `${Math.abs(v)}°${lat ? (v < 0 ? "S" : "N") : v < 0 ? "W" : "E"}`]);
+    }
+  }
+  return out;
+}
+
+// the section hung below the map: a quad for each level of each cell, from
+// its edge on one side to the other, sunk by depth times the exaggeration;
+// GEBCO's floor along it as a line; the map see-through over it
+function buildCurtain() {
+  const sec = cur.gsec;
+  curtainMesh.visible = curtainFloor.visible = false;
+  if (!sec || !cur.earth || !state.section) { hideCurtain(); return; }
+  const D = cur.D, frame = cur.frame, sink = (z) => (z * 10 ** state.dz) / R_EARTH, sc = sectionScale(sec), lut = viridisLut();
+  const flatOf = (q) => { if (!D) return null; const xy = D.fwd(q[0], q[1]); return xy ? cur.place(xy) : null; };
+  // scene units per earth radius on the map, near the section's middle
+  let kf = 1;
+  const mid = sec.ll[Math.floor(sec.n / 2)] || sec.ll.find(Boolean);
+  if (D && mid) {
+    const q2 = [mid[0], mid[1] + (mid[1] > 0 ? -0.5 : 0.5)], f1 = flatOf(mid), f2 = flatOf(q2);
+    if (f1 && f2) kf = Math.hypot(f2[0] - f1[0], f2[1] - f1[1]) / (0.5 * D2R);
+  }
+  const quads = [];
+  let deep = 0;
+  for (let p = 0; p < sec.n; p++) {
+    const a = sec.L[p], b = sec.R[p];
+    if (!a || !b || sec.last[p] < 0) continue;
+    const fa = D ? flatOf(a) : null, fb = D ? flatOf(b) : null;
+    if (D && (!fa || !fb || Math.hypot(fa[0] - fb[0], fa[1] - fb[1]) > 0.3)) continue;
+    for (let k = 0; k <= sec.last[p]; k++) {
+      const v = sec.vals[p * sec.nz + k];
+      if (Number.isFinite(v)) quads.push([a, b, fa, fb, sink(sec.E[k]), sink(sec.E[k + 1]), v]);
+    }
+    deep = Math.max(deep, sink(sec.E[sec.last[p] + 1]));
+  }
+  if (!quads.length) { hideCurtain(); return; }
+  const nv = quads.length * 6, sp = new Float32Array(nv * 3), fp = new Float32Array(nv * 3), cl = new Float32Array(nv * 3);
+  let o = 0;
+  const put = (q, f, s, j) => {
+    sp.set(frame(q[0], q[1], 1 - s), 3 * o);
+    if (f) { fp[3 * o] = f[0]; fp[3 * o + 1] = f[1]; fp[3 * o + 2] = 1 - s * kf; } else fp.set(sp.subarray(3 * o, 3 * o + 3), 3 * o);
+    cl[3 * o] = lut[j]; cl[3 * o + 1] = lut[j + 1]; cl[3 * o + 2] = lut[j + 2];
+    o++;
+  };
+  for (const [a, b, fa, fb, s0, s1, v] of quads) {
+    const j = 3 * Math.max(0, Math.min(255, Math.round(((v - sc.lo) / (sc.hi - sc.lo)) * 255)));
+    put(a, fa, s0, j); put(b, fb, s0, j); put(b, fb, s1, j);
+    put(a, fa, s0, j); put(b, fb, s1, j); put(a, fa, s1, j);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(sp.slice(), 3));
+  g.setAttribute("color", new THREE.BufferAttribute(cl, 3));
+  curtainMesh.geometry.dispose(); curtainMesh.geometry = g;
+  curtainMesh.userData = { sphere: sp, flat: fp };
+  curtainMesh.visible = true;
+  // GEBCO's floor between neighbouring cells' centres
+  const fs = [], ff = [];
+  for (let p = 1; p < sec.n; p++) {
+    const q0 = sec.ll[p - 1], q1 = sec.ll[p], z0 = sec.floor[p - 1], z1 = sec.floor[p];
+    if (!q0 || !q1 || !(z0 > 0) || !(z1 > 0)) continue;
+    const f0 = D ? flatOf(q0) : null, f1 = D ? flatOf(q1) : null;
+    if (D && (!f0 || !f1 || Math.hypot(f0[0] - f1[0], f0[1] - f1[1]) > 0.3)) continue;
+    for (const [q, f, z] of [[q0, f0, z0], [q1, f1, z1]]) {
+      const s = sink(z), sv = frame(q[0], q[1], 1 - s);
+      fs.push(...sv); ff.push(...(f ? [f[0], f[1], 1 - s * kf] : sv));
+      deep = Math.max(deep, s);
+    }
+  }
+  if (fs.length) {
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute("position", new THREE.BufferAttribute(Float32Array.from(fs), 3));
+    curtainFloor.geometry.dispose(); curtainFloor.geometry = lg;
+    curtainFloor.userData = { sphere: Float32Array.from(fs), flat: Float32Array.from(ff) };
+    curtainFloor.visible = true;
+  }
+  gridMesh.material.opacity = 0.55;
+  under.scale.setScalar(Math.max(0.3, (0.99 - deep * 1.02) / 0.99));
+  $("dz-box").hidden = false;
+  syncDz();
 }
 
 async function showColumn(col, row, force = false) {
