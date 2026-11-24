@@ -635,7 +635,13 @@ the data. Colouring by height above the sea floor (`colour=gap`) shows which
 profiles reach the bottom and which go deeper than GEBCO has it (pressure in
 decibars taken as metres). The wheel zooms toward the pointer, Shift-drag or
 right-drag moves the view, and a double-click turns it about the place
-clicked. The
+clicked: the nearest thing there, on the surface or hung below it.
+Shift-double-click looks through the surface (the map, the globe, the grid,
+the profiles' points) and turns the view about what hangs below: a curtain, a
+hung profile or its bead, the sea floor. A Shift-click picks nothing, so a
+section's curtain stays where it hangs. That is how to get under a section
+and look up at it: Shift-double-click the curtain, then drag across it. While the view turns, a ring marks the place it turns
+about. The
 MEOP preset is 126,518 seal CTD profiles from IMOS, a virtual Icechunk whose
 chunks are byte ranges in IMOS's own NetCDF files, opened on May 2019 at
 200 dbar, hung below the map over GEBCO's sea floor. A chunk can
