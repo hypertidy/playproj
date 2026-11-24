@@ -221,6 +221,24 @@ for (const how of ["client", "icechunk"]) {
   } else check(t.every((r) => r.version === ""), "client: without checksums on the request, rows have no version");
 }
 
+// a range store of many keys (icechunk-js keeps one for every native chunk):
+// reads made together that start at the same offset are different objects
+{
+  const h = heldRefs();
+  const objects = { "chunks/A": new Uint8Array(40).fill(1), "chunks/B": new Uint8Array(40).fill(2), "chunks/C": new Uint8Array(40).fill(3) };
+  const asked = [];
+  const raw = {
+    get: async (key) => objects[key],
+    getRange: async (key, r) => { asked.push(`${key} ${r.offset}+${r.length}`); return objects[key].slice(r.offset, r.offset + r.length); }
+  };
+  const st = h.icechunk({ fetch: there }).withRangeCoalescing(raw);
+  const got = await Promise.all([st.getRange("chunks/B", { offset: 0, length: 10 }), st.getRange("chunks/A", { offset: 0, length: 10 }),
+    st.getRange("chunks/C", { offset: 0, length: 10 }), st.getRange("chunks/A", { offset: 12, length: 8 })]);
+  check(got.map((d) => `${d[0]}x${d.length}`).join(" ") === "2x10 1x10 3x10 1x8", `reads of several keys at once each get their own object (${got.map((d) => `${d[0]}x${d.length}`).join(" ")})`);
+  check(asked.length === 3 && asked.includes("chunks/A 0+20"), `only reads of one key are joined (${asked.join(", ")})`);
+  check(!asked.some((a) => a.startsWith("/ ")) && h.stats.rows === 0, "a store of many keys is not asked for an address, and is not held here");
+}
+
 server.close();
 if (fails) { console.log(`${fails} failed`); process.exit(1); }
 console.log("heldrefs ok");

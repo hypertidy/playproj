@@ -450,6 +450,9 @@ export function heldRefs({ backend = memoryBackend(), limit = 512 * 2 ** 20, low
         get: (key, options) => raw.get(key, options),
         async getRange(key, rng, options) {
           if (!rng || !("offset" in rng)) return raw.getRange(key, rng, options);
+          // a store of many keys (icechunk-js's one store of all native
+          // chunks) is not one file: no address to learn, joined key by key
+          if (key !== "/") return unheld(key, rng);
           if (who === null) who = identify();
           const f = await who;
           if (!f) return unheld(key, rng);
@@ -499,20 +502,21 @@ export function heldRefs({ backend = memoryBackend(), limit = 512 * 2 ** 20, low
   return { ready, find, findWhole, get, put, range, whole, fetchClient, icechunk, storage, table, clear, settled, stats, get failed() { return failed; } };
 }
 
-// Reads of one range store joined as the table joins them, with nothing held.
+// Reads of one range store joined as the table joins them, with nothing
+// held. A store may serve many keys: only reads of one key are joined.
 function heldless(raw, gap, most) {
   let asks = [];
   const flush = () => {
-    const list = asks.sort((a, b) => a.offset - b.offset);
+    const list = asks.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.offset - b.offset));
     asks = [];
     const runs = [];
     for (const a of list) {
       const r = runs[runs.length - 1];
-      if (r && a.offset - r.end <= gap && Math.max(r.end, a.offset + a.length) - r.offset <= most) { r.asks.push(a); r.end = Math.max(r.end, a.offset + a.length); }
-      else runs.push({ offset: a.offset, end: a.offset + a.length, asks: [a] });
+      if (r && r.key === a.key && a.offset - r.end <= gap && Math.max(r.end, a.offset + a.length) - r.offset <= most) { r.asks.push(a); r.end = Math.max(r.end, a.offset + a.length); }
+      else runs.push({ key: a.key, offset: a.offset, end: a.offset + a.length, asks: [a] });
     }
     for (const r of runs) {
-      raw.getRange(r.asks[0].key, { offset: r.offset, length: r.end - r.offset }).then(
+      raw.getRange(r.key, { offset: r.offset, length: r.end - r.offset }).then(
         (data) => { for (const a of r.asks) a.ok(data.slice(a.offset - r.offset, a.offset - r.offset + a.length)); },
         (e) => { for (const a of r.asks) a.no(e); });
     }
