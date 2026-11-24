@@ -77,6 +77,7 @@
         <label class="row" for="depth"><span id="depth-label">Depth</span><output id="depth-out"></output></label>
         <input id="depth" type="range" min="0" max="1" step="0.001" aria-label="Depth or pressure of the shell">
         <div class="toggles">
+          <label><input id="fit" type="checkbox"> Fit colours to this depth</label>
           <label><input id="hang" type="checkbox"> Hang the profiles below their points</label>
           <label><input id="floor" type="checkbox"> Sea floor from GEBCO 2026</label>
         </div>
@@ -176,6 +177,9 @@
           a tag's month of profiles is a few requests, not hundreds. Then depth is a place, not a read:
           moving the depth recolours the points with each profile's value there, and hung profiles go down
           from their points, sunk by depth times the exaggeration, with a bead where each crosses that depth.
+          The colours span every level of the window's profiles, so they hold still as the depth moves; fit
+          them to the depth and they span only the values there, refitted as it moves, which brings out the
+          small differences at depth that the full range washes out.
           A map of one depth across every profile would still read every chunk.</p>
         <p>Under them, the sea floor: GEBCO 2026 read over the window's box from the overview that suits it
           (and at its full 15 arc seconds under a picked profile), sunk by the same exaggeration, and drawn
