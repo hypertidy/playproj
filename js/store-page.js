@@ -40,6 +40,10 @@ const COLORS = {
   edge: "#6ab787",
   pick: "#ff7ab8",
   floor: "rgba(200,164,110,0.55)",
+  bottom: "#ff8a65",
+  bottomFill: "rgba(255,138,101,0.16)",
+  floorLine: "#e0c08a",
+  floorLight: "rgba(200,164,110,0.3)",
   coast: 0xd7ecff,
   grat: 0x5b7aa3
 };
@@ -616,8 +620,9 @@ function chunkIdx(cj, ci) {
   return v.meta.shape.map((_, d) => (d === v.iy ? cj : d === v.ix ? ci : Math.floor(o[d] / v.meta.chunks[d])));
 }
 
-async function loadChunk(cj, ci) {
-  const idx = chunkIdx(cj, ci), key = idx.join(",");
+const loadChunk = (cj, ci) => loadChunkIdx(chunkIdx(cj, ci));
+async function loadChunkIdx(idx) {
+  const key = idx.join(",");
   if (cur.chunkData.has(key)) return cur.chunkData.get(key);
   const p = (async () => {
     const a = cur.arr || (cur.arr = await cur.s.open(cur.v.path));
@@ -818,6 +823,9 @@ function setMode(kind) {
   if (!opts.some(([k]) => k === state.colour)) state.colour = opts[0][0];
   ui.colour.value = state.colour;
   $("profile-box").hidden = !prof;
+  $("prof-more").hidden = !prof;
+  $("column").hidden = true;
+  if (!prof) { $("section").hidden = true; $("section-plot").hidden = true; $("section-info").textContent = ""; }
   $("when-box").hidden = !prof;
   if (prof) $("when-time").hidden = !cur.perDay;
   $("centre-grid").textContent = prof ? "On the profiles" : "On the grid";
@@ -1738,7 +1746,7 @@ function plotFrame(cv) {
   ctx.font = "11px system-ui, sans-serif";
   return { ctx, W, H, L: 46, R: 10, T: 22, B: 22 };
 }
-function drawProfile(cv, x, z, { title, zTitle, down, mark = null, floor = null, floorText = "" }) {
+function drawProfile(cv, x, z, { title, zTitle, down, mark = null, floor = null, floorText = "", bottom = null, bottomText = "model floor" }) {
   const { ctx, W, H, L, R: Rm, T, B } = plotFrame(cv);
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
   for (let k = 0; k < x.length; k++) if (Number.isFinite(x[k]) && Number.isFinite(z[k])) { x0 = Math.min(x0, x[k]); x1 = Math.max(x1, x[k]); z0 = Math.min(z0, z[k]); z1 = Math.max(z1, z[k]); }
@@ -1747,6 +1755,7 @@ function drawProfile(cv, x, z, { title, zTitle, down, mark = null, floor = null,
   // the sea floor on the axis where it is within half again of the deepest level
   const floorOn = floor !== null && down && floor <= Math.max(z1 * 1.5, z1 + 50);
   if (floorOn) z1 = Math.max(z1, floor * 1.04);
+  if (bottom !== null && down) z1 = Math.max(z1, bottom[1] * 1.02);
   if (z1 === z0) { z0 -= 0.5; z1 += 0.5; }
   const pad = (x1 - x0) * 0.05; x0 -= pad; x1 += pad;
   const X = (v) => L + ((v - x0) / (x1 - x0)) * (W - L - Rm);
@@ -1763,10 +1772,22 @@ function drawProfile(cv, x, z, { title, zTitle, down, mark = null, floor = null,
     ctx.save(); ctx.strokeStyle = COLORS.pick; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(L, Y(mark)); ctx.lineTo(W - Rm, Y(mark)); ctx.stroke(); ctx.restore();
   }
   if (floorOn) {
-    ctx.fillStyle = COLORS.floor; ctx.fillRect(L, Y(floor), W - L - Rm, H - B - Y(floor));
+    ctx.fillStyle = bottom !== null ? COLORS.floorLight : COLORS.floor; ctx.fillRect(L, Y(floor), W - L - Rm, H - B - Y(floor));
+    if (bottom !== null) {
+      // beside a model's floor, GEBCO's gets its own line and name
+      ctx.save(); ctx.strokeStyle = COLORS.floorLine; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(L, Y(floor)); ctx.lineTo(W - Rm, Y(floor)); ctx.stroke();
+      ctx.fillStyle = COLORS.floorLine; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText("GEBCO", W - Rm - 4, Y(floor) + 2); ctx.restore();
+    }
   } else if (floor !== null) {
     ctx.fillStyle = "#c8a46e"; ctx.textAlign = "right"; ctx.textBaseline = "bottom";
     ctx.fillText(floorText, W - Rm - 2, H - B - 2);
+  }
+  // the model's floor: somewhere in the span of its deepest level (partial cells)
+  if (bottom !== null && down) {
+    const [ya, yb] = [Y(bottom[0]), Y(bottom[1])];
+    ctx.save(); ctx.fillStyle = COLORS.bottomFill; ctx.fillRect(L, ya, W - L - Rm, yb - ya);
+    ctx.strokeStyle = COLORS.bottom; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]); ctx.beginPath(); ctx.moveTo(L, ya); ctx.lineTo(W - Rm, ya); ctx.moveTo(L, yb); ctx.lineTo(W - Rm, yb); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = COLORS.bottom; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(bottomText, L + 4, ya + 3); ctx.restore();
   }
   ctx.strokeStyle = "#ffd34d"; ctx.lineWidth = 1.5; ctx.beginPath();
   let pen = false;
@@ -2188,7 +2209,7 @@ async function showPick() {
   const tbl = $("pick"), info = $("pick-info");
   tbl.innerHTML = "";
   const p = cur && pickCell();
-  if (!p) { info.textContent = cur ? "Click the grid for the cell and chunk under the pointer." : ""; return; }
+  if (!p) { columnSerial++; $("profile-box").hidden = true; info.textContent = cur ? "Click the grid for the cell and chunk under the pointer." : ""; return; }
   const [col, row] = p, { v, g, F } = cur;
   const ci = Math.floor(col / cur.cxs), cj = Math.floor(row / cur.cys);
   const idx = chunkIdx(cj, ci);
@@ -2219,6 +2240,138 @@ async function showPick() {
   if (pickCell() !== null && pickCell().join() !== p.join()) return;
   tbl.innerHTML = "";
   for (const [k, val2] of rows) { const tr = tbl.insertRow(); tr.insertCell().textContent = k; tr.insertCell().textContent = val2; }
+  showColumn(col, row);
+}
+
+// ---------------------------------------------------------------- a grid's column
+
+// A grid with a vertical dimension: the picked cell's column, every level at
+// the other dimensions set, read as whole chunks (the map's own among them, so
+// often half read already), plotted against depth with the level set marked.
+// Under it, the model's floor (the lower edge of its deepest level with a
+// value) and GEBCO 2026's, at the cell's centre and averaged over the cell.
+const COLUMN_AUTO = 64 * 2 ** 20;
+let columnSerial = 0;
+function zDimOf() {
+  if (cur.zdim) return cur.zdim;
+  const v = cur.v;
+  cur.zdim = (async () => {
+    for (let d = 0; d < v.meta.shape.length; d++) {
+      if (d === v.ix || d === v.iy) continue;
+      const name = v.dims[d], c = await coordValues(name), attrs = (c && c.attrs) || {};
+      const role = C.verticalRole(name, attrs);
+      if (!role) continue;
+      const n = v.meta.shape[d], has = c && c.values.length === n;
+      // the levels' edges, where the store has them as a 1D array one longer (MOM's st_edges_ocean)
+      const en = attrs.edges || attrs.bounds, e = has && typeof en === "string" ? await coordValues(en) : null;
+      return { d, name, n, cz: v.meta.chunks[d], z: has ? Float64Array.from(c.values) : Float64Array.from({ length: n }, (_, k) => k),
+        units: has ? String(attrs.units || "").trim() : "", down: role.down, pressure: role.pressure, edges: e && e.values.length === n + 1 ? e.values : null };
+    }
+    return null;
+  })();
+  return cur.zdim;
+}
+// metres in a unit of z, where z is a depth (not pressure, not up)
+const zdMetres = (zd) => (!zd.down || zd.pressure ? 0 : /^(m|meters?|metres?)$/i.test(zd.units) ? 1 : /^(km|kilomet(er|re)s?)$/i.test(zd.units) ? 1000 : 0);
+
+function columnValues(chunks, cj, ci, col, row, zd) {
+  const v = cur.v, o = otherIndex(), out = new Float64Array(zd.n).fill(NaN);
+  for (let k = 0; k < zd.n; k++) {
+    const c = chunks[Math.floor(k / zd.cz)];
+    let off = 0;
+    for (let d = 0; d < v.meta.shape.length; d++) {
+      const local = d === v.iy ? row - cj * cur.cys : d === v.ix ? col - ci * cur.cxs : d === zd.d ? k % zd.cz : o[d] % v.meta.chunks[d];
+      off += local * c.stride[d];
+    }
+    let x = c.data[off];
+    if (typeof x === "bigint") x = Number(x);
+    out[k] = Number.isFinite(x) && !cur.fills.has(x) ? x : NaN;
+  }
+  return out;
+}
+
+// GEBCO 2026 under a cell: at its centre, and over the cell (its corners as
+// the grid gives them), at 15 arc seconds where the cell is small enough
+function cellFloor(col, row) {
+  const key = `${col},${row}`;
+  if (cur.colFloor && cur.colFloor.key === key) return cur.colFloor.p;
+  const p = (async () => {
+    const q = [cur.at(col, row), cur.at(col + 1, row), cur.at(col + 1, row + 1), cur.at(col, row + 1)], c = cur.at(col + 0.5, row + 0.5);
+    if (!c || q.some((x) => !x)) return null;
+    const box = C.lonLatBox(q.map((x) => x[0]), q.map((x) => x[1]), 0.02);
+    if (!box) return null;
+    const g = await readElevation(box, Math.max(1 / 240, Math.max(box.east - box.west, box.north - box.south) / 480));
+    return { ...C.cellMean(g, q), at: C.gridSample(g, c[0], c[1]), res: g.dx };
+  })();
+  cur.colFloor = { key, p };
+  p.catch(() => { if (cur.colFloor && cur.colFloor.key === key) cur.colFloor = null; });
+  return p;
+}
+
+async function showColumn(col, row, force = false) {
+  const serial = ++columnSerial, box = $("profile-box"), plot = $("profile-plot"), btn = $("column"), tbl = $("pick"), c0 = cur;
+  btn.hidden = true;
+  const zd = await zDimOf();
+  if (serial !== columnSerial || cur !== c0) return;
+  if (!zd || zd.n < 2) { box.hidden = true; return; }
+  box.hidden = false;
+  plot.hidden = true;
+  const put = (list) => { for (const [k, val] of list) { const tr = tbl.insertRow(); tr.insertCell().textContent = k; tr.insertCell().textContent = val; } };
+  const cj = Math.floor(row / cur.cys), ci = Math.floor(col / cur.cxs), base = chunkIdx(cj, ci), list = [];
+  for (let k = 0; k < Math.ceil(zd.n / zd.cz); k++) { const idx = base.slice(); idx[zd.d] = k; list.push(idx); }
+  const todo = list.filter((idx) => !cur.chunkData.has(idx.join(","))), bytes = todo.length * cur.cost.chunkBytes;
+  if (!force && bytes > COLUMN_AUTO) {
+    btn.textContent = `Read its column: ${plural(todo.length, "more chunk")} along ${zd.name}, ${fmtBytes(bytes)} decoded`;
+    btn.hidden = false;
+    btn.onclick = () => showColumn(col, row, true);
+    return;
+  }
+  let chunks;
+  try { chunks = await Promise.all(list.map(loadChunkIdx)); }
+  catch (e) { if (serial === columnSerial) put([["Column", `not read: ${e.message}`]]); return; }
+  if (serial !== columnSerial || cur !== c0) return;
+  if (todo.length) showReads();
+  const vals = columnValues(chunks, cj, ci, col, row, zd), ok = [];
+  for (let k = 0; k < zd.n; k++) if (Number.isFinite(vals[k])) ok.push(k);
+  const zu = zd.units ? ` ${zd.units}` : "", u = cur.v.meta.attrs.units ? ` ${cur.v.meta.attrs.units}` : "", name = cur.v.path.split("/").pop();
+  if (!ok.length) { put([[`Column (${zd.name})`, "no level has a value here (land, or no data)"]]); return; }
+  let lo = Infinity, hi = -Infinity;
+  for (const k of ok) { lo = Math.min(lo, vals[k]); hi = Math.max(hi, vals[k]); }
+  const last = ok[ok.length - 1], toM = zdMetres(zd);
+  const zn = (x) => fmtNum(+x.toPrecision(5));
+  put([[`Column (${zd.name})`, `${ok.length} of ${zd.n} levels with a value, ${zn(zd.z[ok[0]])} to ${zn(zd.z[last])}${zu}`],
+    [`${name} in it`, `${fmtNum(lo)} to ${fmtNum(hi)}${u}`]]);
+  // the model's floor: in its deepest wet level, which with partial cells can end anywhere in its span;
+  // the span from the store's edges, or half way to the levels either side
+  const edge = (k) => (k < 0 ? 0 : zd.edges ? zd.edges[k + 1] : C.bottomEdge(zd.z, k));
+  const bottom = toM ? [Math.max(0, edge(last - 1)), edge(last)] : null;
+  const mm = (h) => `${Math.round(Math.abs(h)).toLocaleString("en")} m`;
+  if (bottom) put([["Model floor", `in level ${last}, its deepest with a value: ${zd.edges ? "" : "about "}${mm(bottom[0] * toM)} to ${mm(bottom[1] * toM)}` +
+    (last === zd.n - 1 ? " (the deepest level the model has)" : "")]]);
+  const tf = tbl.insertRow();
+  tf.insertCell().textContent = "Sea floor (GEBCO 2026)";
+  tf.insertCell().textContent = toM && cur.earth ? "reading ..." : "not compared: the column is not a depth in metres";
+  const draw = (f) => {
+    const k = Math.min(zd.n - 1, state.dims[zd.name] || 0), fz = f && Number.isFinite(f.ocean) ? -f.ocean / toM : null;
+    drawProfile(plot, vals, zd.z, { title: `${name}${u}`, zTitle: `${zd.name}${zu}`, down: zd.down, mark: zd.z[k], bottom, bottomText: `model floor (level ${last})`,
+      floor: fz, floorText: fz ? `GEBCO's floor at ${Math.round(-f.ocean).toLocaleString("en")} m, further down` : "" });
+  };
+  plot.hidden = false;
+  draw(null);
+  if (!toM || !cur.earth) return;
+  let f;
+  try { f = await cellFloor(col, row); } catch (e) { if (serial === columnSerial) tf.cells[1].textContent = `not read: ${e.message}`; return; }
+  if (serial !== columnSerial || cur !== c0) return;
+  if (!f) { tf.cells[1].textContent = "not read: the cell is not on the earth"; return; }
+  const res = resLabel(f.res);
+  tf.cells[1].textContent = (Number.isFinite(f.at) ? (f.at < 0 ? `${mm(f.at)} at the cell's centre` : `land at the cell's centre (${mm(f.at)} up)`) : "none at the cell's centre") +
+    (f.n ? `; over the cell, ${Number.isFinite(f.ocean) ? `${mm(f.ocean)} on average where it is sea, ${Math.round(100 * f.wet)}% of it` : "all land"} (${f.n.toLocaleString("en")} GEBCO cells at ${res})` : ` (at ${res})`);
+  if (bottom && Number.isFinite(f.ocean)) {
+    const g = -f.ocean, [a, b] = [bottom[0] * toM, bottom[1] * toM];
+    put([["Model and GEBCO", g < a ? `GEBCO's floor over the cell is ${mm(a - g)} above level ${last}: the model is deeper` :
+      g > b ? `GEBCO's floor over the cell is ${mm(g - b)} below level ${last}: the model is shallower` : `GEBCO's floor over the cell is within level ${last}`]]);
+  }
+  draw(f);
 }
 
 // the same view in gridlook, where it has the projection
@@ -2399,8 +2552,12 @@ function tick(now) {
 
 window.addEventListener("hashchange", () => {
   const before = state.url + "|" + state.varname;
-  readHash(); syncControls(); setCamera(state.cam || DEFAULT_CAM);
-  if (state.url + "|" + state.varname !== before || !cur) open();
+  readHash();
+  const same = cur && state.url + "|" + state.varname === before;
+  // a link without a colour: this kind's own default, the first choice, as opening gives it
+  if (same && !state.colour && ui.colour.options.length) state.colour = ui.colour.options[0].value;
+  syncControls(); setCamera(state.cam || DEFAULT_CAM);
+  if (!same) open();
   else if (cur && cur.kind === "profiles") { setWindow(); fitScale(); syncWhen(); buildFlat(); place(); showPick(); showLegend(); readWindow(); readFloor(); }
   else if (cur) { buildFlat(); resetData(); drawTexture(); place(); autoRead(); showPick(); showLegend(); }
 });

@@ -152,7 +152,7 @@
           <summary>Everything kept per profile</summary>
           <table id="prof-extra" class="readout"></table>
         </details>
-        <div class="buttons"><button id="section" type="button" class="small" hidden></button></div>
+        <div class="buttons"><button id="section" type="button" class="small" hidden></button><button id="column" type="button" class="small" hidden></button></div>
         <canvas id="section-plot" class="plot" hidden></canvas>
         <p id="section-info" class="hint"></p>
       </div>
@@ -167,6 +167,11 @@
           on the globe, and unfolds them into another projection.</p>
         <p>Cells that are equal in the store are rarely equal on the earth. Colour by cell area to see
           by how much, or by angular distortion to see where the store's CRS bends shapes.</p>
+        <p>A grid with depth has a column under every cell. A chunk usually holds many levels (25 in the
+          ACCESS-ESM1.6 preset), so a click reads the cell's whole column for a chunk or two, often one the
+          map has already. Under it, the model's floor and GEBCO 2026's: the model's is somewhere in its
+          deepest level with a value (partial cells), GEBCO's is averaged over the cell, and the readout
+          says whether GEBCO falls above, within or below that level.</p>
         <p>A collection of profiles (Argo floats, CTD tags on seals: one latitude and longitude per
           profile, not per cell) is no grid, so it is drawn as a point per profile. A click reads that
           profile alone, a single chunk where the store keeps one chunk per profile, and plots it.</p>
