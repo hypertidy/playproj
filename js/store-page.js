@@ -21,7 +21,7 @@ import { useEqearth } from "../src/core/eqearth.js";
 import { graticule } from "../src/core/geo.js";
 import { loadCoastline } from "./data.js";
 import { readElevation, holdRanges } from "./basemap-load.js";
-import { makeStage, shareLinks, copyText, isEmbed } from "../src/scene/index.js";
+import { makeStage, shareLinks, copyText, isEmbed, addPivot, addClickPick, rayAt, nearestOnScreen, nearestHit } from "../src/scene/index.js";
 
 // proj4js's own Equal Earth is the sphere only: a store in EPSG:8857 needs the ellipsoid
 const proj4 = useEqearth(window.proj4);
@@ -155,7 +155,8 @@ function writeHash() {
     if (bottomOn()) p.bottom = 1;
     if (cur && cur.kind === "grid" && cur.zd && state.section) { p.section = state.section; if (state.dz !== defaults.dz) p.dz = state.dz; }
     if (state.assume) p.assume = state.assume;
-    if (state.cam) p.cam = state.cam.map((x) => +x.toFixed(2)).join(",");
+    // (three places: near straight down, which way the map faces is in a small sideways offset)
+    if (state.cam) p.cam = state.cam.map((x) => +x.toFixed(3)).join(",");
     history.replaceState(null, "", "#" + C.hashString(state.url, p));
     $("open-full").href = location.pathname + location.hash;
     updateGridlook();
@@ -214,13 +215,21 @@ function displayFns(key, lon0, lat0) {
 // ---------------------------------------------------------------- scene
 
 const stage = $("three");
-const { renderer, scene, camera, controls, setCamera, resize } = makeStage(stage, {
+const view = makeStage(stage, {
   bg: COLORS.bg, near: 0.01,
   onCamera: (c) => { state.cam = c; writeHash(); }
 });
+const { renderer, scene, camera, controls, setCamera, resize, controlsFor, turnAbout } = view;
 const DEFAULT_CAM = [0, 0, 6.4, 0, 0, 0.3];
 // the wheel zooms toward the pointer, not the middle of the view
 controls.zoomToCursor = true;
+// The globe turns about its centre's north (+y); the map turns about its own
+// upright (+z) like a turntable, so a drag upwards tips it over its edge and
+// on under it (place() chooses). Looking straight down the upright, the
+// way the map faces is only in which side the camera is off it, and the link
+// rounds that: so the turntable never looks quite straight down (a degree).
+const NORTH = [0, 1, 0], UPRIGHT = [0, 0, 1];
+controlsFor(UPRIGHT).minPolarAngle = 0.02;
 const under = new THREE.Mesh(new THREE.SphereGeometry(0.99, 96, 48), new THREE.MeshBasicMaterial({ color: 0x0b1222, transparent: true }));
 scene.add(under);
 const coastLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: COLORS.coast, transparent: true, opacity: 0.75 }));
@@ -413,6 +422,10 @@ function morph(arr, sphere, flat, e) {
 function place() {
   if (!cur || (!cur.mesh && cur.kind !== "profiles")) return;
   const e = cur.earth && cur.D ? ease(state.t) : cur.earth ? 0 : 1;
+  // the turntable from half way unfolded; the roll leans over with the unfolding
+  // and is the map's upright only once it is flat, so a turned view never jumps
+  camera.up.set(0, 1 - e, e).normalize();
+  turnAbout(e > 0.5 ? UPRIGHT : NORTH);
   const meshes = cur.kind === "profiles" ? PROF_MESHES.filter((M) => M.visible && M.userData.sphere).map((M) => [M, M.userData]) :
     [[gridMesh, cur.mesh], ...[curtainMesh, curtainFloor].filter((M) => M.visible && M.userData.sphere).map((M) => [M, M.userData])];
   for (const [M, u] of meshes) {
@@ -3026,29 +3039,29 @@ for (const k of ["chunks", "cells", "coast", "grat"])
 $("reset-view").addEventListener("click", () => { state.cam = null; setCamera(DEFAULT_CAM); writeHash(); });
 $("copy-proj").addEventListener("click", (e) => copyText(cur && cur.F ? cur.F.def : "", e.target));
 
-// a click (not a drag) on the grid picks the cell under the pointer. With
-// Shift it does not: a Shift-double-click looks through to what hangs below
-// (a section's curtain hangs from the picked cell, and would move away)
-const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
-let downAt = null;
-renderer.domElement.addEventListener("pointerdown", (e) => { downAt = [e.clientX, e.clientY]; });
-renderer.domElement.addEventListener("pointerup", (e) => {
-  if (!cur || !downAt || e.shiftKey || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
-  const r = renderer.domElement.getBoundingClientRect();
-  ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+// a click (not a drag) on the grid picks the cell under the pointer, and
+// on profiles the profile nearest it; pivot.js waits to see that it is not
+// half of a double-click, and a Shift-click picks nothing
+const ray = new THREE.Raycaster();
+addClickPick(view, (px, py) => {
+  if (!cur) return null;
+  const c = cur;
   if (cur.kind === "profiles") {
-    const i = nearestProfile(e.clientX - r.left, e.clientY - r.top);
-    if (i === null) return;
-    state.pick = String(i);
-    showPick(); writeHash();
-    return;
+    const i = nearestProfile(px, py);
+    return i === null ? null : () => {
+      if (cur !== c) return;
+      state.pick = String(i);
+      showPick(); writeHash();
+    };
   }
-  ray.setFromCamera(ptr, camera);
-  const hit = ray.intersectObject(gridMesh)[0];
-  if (!hit) return;
+  const hit = rayAt(view, px, py, ray).intersectObject(gridMesh)[0];
+  if (!hit) return null;
   const col = Math.min(cur.g.nx - 1, Math.floor(hit.uv.x * cur.g.nx)), row = Math.min(cur.g.ny - 1, Math.floor((1 - hit.uv.y) * cur.g.ny));
-  state.pick = `${col},${row}`;
-  drawTexture(); showPick(); writeHash();
+  return () => {
+    if (cur !== c) return;
+    state.pick = `${col},${row}`;
+    drawTexture(); showPick(); writeHash();
+  };
 });
 
 // A double-click turns the view about the place under the pointer: the
@@ -3056,59 +3069,21 @@ renderer.domElement.addEventListener("pointerup", (e) => {
 // the globe or the map) or hung below it (a curtain, a profile hung at
 // depth or its bead, the sea floor), which seen from underneath is the
 // nearer. With Shift it looks through the surface to what hangs below, so
-// the view can be turned about a curtain under the map. The view glides
-// there, so the place comes to the middle with the camera's direction kept,
-// and a ring marks the place the view turns about while it moves.
-let glide = null;
+// the view can be turned about a curtain under the map. pivot.js glides the
+// view there and rings the place while the view moves.
 // inside the globe while it is solid is out of sight
 const hidden = (p) => under.visible && under.material.opacity > 0.5 && p.lengthSq() < 0.98;
-// the point of a mesh's points, or of its line segments, nearest the
-// pointer on the screen within 8 px: [point, distance from the camera]
-function nearestDrawn(Mesh, px, py, lines) {
-  const pos = Mesh.visible && Mesh.geometry.attributes.position;
-  if (!pos) return null;
-  const a = pos.array, r = renderer.domElement.getBoundingClientRect(), v = new THREE.Vector3();
-  const M = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).elements;
-  const screen = (m) => {
-    v.set(a[3 * m], a[3 * m + 1], a[3 * m + 2]);
-    if (hidden(v)) return null;
-    const w = M[3] * v.x + M[7] * v.y + M[11] * v.z + M[15];
-    if (w <= 0) return null;
-    return [(((M[0] * v.x + M[4] * v.y + M[8] * v.z + M[12]) / w + 1) / 2) * r.width, ((1 - (M[1] * v.x + M[5] * v.y + M[9] * v.z + M[13]) / w) / 2) * r.height];
-  };
-  const n = a.length / 3, step = lines ? 2 : 1;
-  let best = null, bd = 64;
-  for (let m = 0; m + step <= n; m += step) {
-    const s0 = screen(m);
-    if (!s0) continue;
-    let t = 0, sx = s0[0], sy = s0[1];
-    if (lines) {
-      const s1 = screen(m + 1);
-      if (!s1) continue;
-      const dx = s1[0] - s0[0], dy = s1[1] - s0[1], L = dx * dx + dy * dy;
-      t = L > 0 ? Math.max(0, Math.min(1, ((px - s0[0]) * dx + (py - s0[1]) * dy) / L)) : 0;
-      sx += t * dx; sy += t * dy;
-    }
-    const d = (sx - px) ** 2 + (sy - py) ** 2;
-    if (d < bd) { bd = d; best = [m, t]; }
-  }
-  if (!best) return null;
-  const [m, t] = best, p = new THREE.Vector3(a[3 * m], a[3 * m + 1], a[3 * m + 2]);
-  if (lines) p.lerp(new THREE.Vector3(a[3 * m + 3], a[3 * m + 4], a[3 * m + 5]), t);
-  return [p, p.distanceTo(camera.position)];
-}
 // the place to turn about under the pointer, or null
 function pivotAt(px, py, through) {
-  const r = renderer.domElement.getBoundingClientRect();
-  ptr.set((px / r.width) * 2 - 1, -(py / r.height) * 2 + 1);
-  ray.setFromCamera(ptr, camera);
+  if (!cur) return null;
+  rayAt(view, px, py, ray);
   const below = [], surface = [];
   for (const M of [curtainMesh, floorMesh]) {
     if (!M.visible || !M.geometry.attributes.position) continue;
     const h = ray.intersectObject(M).find((h) => !hidden(h.point));
     if (h) below.push([h.point, h.distance]);
   }
-  for (const h of [nearestDrawn(profCols, px, py, true), nearestDrawn(profShell, px, py, false)]) if (h) below.push(h);
+  below.push(nearestOnScreen(view, profCols, px, py, { lines: true, skip: hidden }), nearestOnScreen(view, profShell, px, py, { skip: hidden }));
   if (cur.kind === "profiles") {
     const i = nearestProfile(px, py), m = i === null ? -1 : cur.pointOf[i], a = profPoints.geometry.attributes.position;
     if (m >= 0 && a) { const p = new THREE.Vector3(a.array[3 * m], a.array[3 * m + 1], a.array[3 * m + 2]); surface.push([p, p.distanceTo(camera.position)]); }
@@ -3118,53 +3093,10 @@ function pivotAt(px, py, through) {
     if (hit) surface.push([hit.point, hit.distance]);
     else if (under.visible ? ray.ray.intersectSphere(new THREE.Sphere(new THREE.Vector3(), 1), h) : ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -1.003), h)) surface.push([h, h.distanceTo(camera.position)]);
   }
-  const nearest = (l) => l.reduce((b, h) => (!b || h[1] < b[1] ? h : b), null);
-  const got = (through && nearest(below)) || nearest([...surface, ...below]);
+  const got = (through && nearestHit(below)) || nearestHit([...surface, ...below]);
   return got ? got[0] : null;
 }
-renderer.domElement.addEventListener("dblclick", (e) => {
-  if (!cur) return;
-  const r = renderer.domElement.getBoundingClientRect();
-  const p = pivotAt(e.clientX - r.left, e.clientY - r.top, e.shiftKey);
-  if (!p) return;
-  const d = p.clone().sub(controls.target);
-  glide = { t0: performance.now(), from: [camera.position.clone(), controls.target.clone()], d };
-});
-// the ring at the place the view turns about: shown while the view is
-// dragged, zoomed or gliding, then faded
-const pivotMark = (() => {
-  const c = document.createElement("canvas");
-  c.width = c.height = 64;
-  const g = c.getContext("2d");
-  g.strokeStyle = g.fillStyle = "#ffffff"; g.lineWidth = 6;
-  g.beginPath(); g.arc(32, 32, 24, 0, 2 * Math.PI); g.stroke();
-  g.beginPath(); g.arc(32, 32, 5, 0, 2 * Math.PI); g.fill();
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3));
-  const m = new THREE.Points(geo, new THREE.PointsMaterial({ size: 20, sizeAttenuation: false, map: new THREE.CanvasTexture(c), transparent: true, depthTest: false, depthWrite: false }));
-  m.renderOrder = 10; m.frustumCulled = false; m.visible = false;
-  scene.add(m);
-  return m;
-})();
-// (only when the view does move: a click starts the controls too)
-let turning = false, markUntil = 0;
-controls.addEventListener("start", () => { turning = true; });
-controls.addEventListener("end", () => { turning = false; });
-controls.addEventListener("change", () => { if (turning) markUntil = performance.now() + 700; });
-function stepMark(now) {
-  const left = glide ? 1 : (markUntil - now) / 700;
-  pivotMark.visible = left > 0;
-  if (!pivotMark.visible) return;
-  pivotMark.position.copy(controls.target);
-  pivotMark.material.opacity = 0.85 * Math.min(1, left);
-}
-function stepGlide(now) {
-  if (!glide) return;
-  const f = Math.min(1, (now - glide.t0) / 350), e = ease(f);
-  camera.position.copy(glide.from[0]).addScaledVector(glide.d, e);
-  controls.target.copy(glide.from[1]).addScaledVector(glide.d, e);
-  if (f === 1) { glide = null; markUntil = now + 700; state.cam = [camera.position.x, camera.position.y, camera.position.z, controls.target.x, controls.target.y, controls.target.z]; writeHash(); }
-}
+const pivot = addPivot(view, { pivotAt, onCamera: (c) => { state.cam = c; writeHash(); } });
 
 let anim = false, dir = 1, lastT = 0;
 const playBtn = $("play");
@@ -3182,9 +3114,8 @@ function tick(now) {
     place(); syncControls(); writeHash();
   }
   lastT = now;
-  stepGlide(now);
+  pivot.step(now);
   controls.update();
-  stepMark(now);
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }

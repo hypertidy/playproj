@@ -400,3 +400,10 @@ body.cutaway .credit { bottom: auto; top: 6px; }
 canvas.plot { display: block; width: 100%; height: 260px; margin-top: 8px; border: 1px solid var(--line); background: var(--bg); }
 canvas.plot[hidden] { display: none; }
 canvas.strip { display: block; width: 100%; height: 46px; margin: 4px 0 2px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; touch-action: none; }
+
+/* navigate.html: how the camera looks, over the view, and the glossary */
+.nav-hud { position: absolute; left: 12px; top: 12px; max-width: min(70%, 640px); padding: 5px 9px; background: rgba(13, 23, 38, 0.78); color: #e6ecf3; font-size: 12px; border-radius: 5px; pointer-events: none; font-variant-numeric: tabular-nums; }
+.nav-hud:empty { display: none; }
+.glossary { margin: 8px 0; font-size: 13px; }
+.glossary dt { font-weight: 600; margin-top: 8px; }
+.glossary dd { margin: 2px 0 0 12px; color: var(--muted); }
