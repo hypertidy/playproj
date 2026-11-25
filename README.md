@@ -633,16 +633,20 @@ each profile, drawn in 3D as a swath along the window's tracks sunk by the
 same exaggeration, and filled in under a section with its line drawn over
 the data. Colouring by height above the sea floor (`colour=gap`) shows which
 profiles reach the bottom and which go deeper than GEBCO has it (pressure in
-decibars taken as metres). The wheel zooms toward the pointer, Shift-drag or
+decibars taken as metres). A drag turns the globe about its north (the
+centre's), and a map like a turntable: sideways it goes round the map's
+upright, and up it tips the map over its edge and on under it, to look up at
+what hangs below (the roll leans from one to the other as the map unfolds, so
+a turned view never jumps). The wheel zooms toward the pointer, Shift-drag or
 right-drag moves the view, and a double-click turns it about the place
-clicked: the nearest thing there, on the surface or hung below it.
+clicked: the nearest thing there, on the surface or hung below it. It picks
+nothing: a click's pick waits 0.3 s to see whether a second click follows.
 Shift-double-click looks through the surface (the map, the globe, the grid,
 the profiles' points) and turns the view about what hangs below: a curtain, a
 hung profile or its bead, the sea floor. A Shift-click picks nothing, so a
-section's curtain stays where it hangs. That is how to get under a section
-and look up at it: Shift-double-click the curtain, then drag across it. While the view turns, a ring marks the place it turns
-about. The
-MEOP preset is 126,518 seal CTD profiles from IMOS, a virtual Icechunk whose
+section's curtain stays where it hangs. To get under a section and look up
+at it, Shift-double-click the curtain and drag up. While the view turns, a
+ring marks the place it turns about. The MEOP preset is 126,518 seal CTD profiles from IMOS, a virtual Icechunk whose
 chunks are byte ranges in IMOS's own NetCDF files, opened on May 2019 at
 200 dbar, hung below the map over GEBCO's sea floor. A chunk can
 also be a whole GRIB message under the `gribberish` codec, as in

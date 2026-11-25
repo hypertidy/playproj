@@ -155,7 +155,8 @@ function writeHash() {
     if (bottomOn()) p.bottom = 1;
     if (cur && cur.kind === "grid" && cur.zd && state.section) { p.section = state.section; if (state.dz !== defaults.dz) p.dz = state.dz; }
     if (state.assume) p.assume = state.assume;
-    if (state.cam) p.cam = state.cam.map((x) => +x.toFixed(2)).join(",");
+    // (three places: near straight down, which way the map faces is in a small sideways offset)
+    if (state.cam) p.cam = state.cam.map((x) => +x.toFixed(3)).join(",");
     history.replaceState(null, "", "#" + C.hashString(state.url, p));
     $("open-full").href = location.pathname + location.hash;
     updateGridlook();
@@ -214,13 +215,20 @@ function displayFns(key, lon0, lat0) {
 // ---------------------------------------------------------------- scene
 
 const stage = $("three");
-const { renderer, scene, camera, controls, setCamera, resize } = makeStage(stage, {
+const { renderer, scene, camera, controls, setCamera, resize, controlsFor, turnAbout } = makeStage(stage, {
   bg: COLORS.bg, near: 0.01,
   onCamera: (c) => { state.cam = c; writeHash(); }
 });
 const DEFAULT_CAM = [0, 0, 6.4, 0, 0, 0.3];
 // the wheel zooms toward the pointer, not the middle of the view
 controls.zoomToCursor = true;
+// The globe turns about its centre's north (+y); the map turns about its own
+// upright (+z) like a turntable, so a drag upwards tips it over its edge and
+// on under it (place() chooses). Looking straight down the upright, the
+// way the map faces is only in which side the camera is off it, and the link
+// rounds that: so the turntable never looks quite straight down (a degree).
+const NORTH = [0, 1, 0], UPRIGHT = [0, 0, 1];
+controlsFor(UPRIGHT).minPolarAngle = 0.02;
 const under = new THREE.Mesh(new THREE.SphereGeometry(0.99, 96, 48), new THREE.MeshBasicMaterial({ color: 0x0b1222, transparent: true }));
 scene.add(under);
 const coastLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: COLORS.coast, transparent: true, opacity: 0.75 }));
@@ -413,6 +421,10 @@ function morph(arr, sphere, flat, e) {
 function place() {
   if (!cur || (!cur.mesh && cur.kind !== "profiles")) return;
   const e = cur.earth && cur.D ? ease(state.t) : cur.earth ? 0 : 1;
+  // the turntable from half way unfolded; the roll leans over with the unfolding
+  // and is the map's upright only once it is flat, so a turned view never jumps
+  camera.up.set(0, 1 - e, e).normalize();
+  turnAbout(e > 0.5 ? UPRIGHT : NORTH);
   const meshes = cur.kind === "profiles" ? PROF_MESHES.filter((M) => M.visible && M.userData.sphere).map((M) => [M, M.userData]) :
     [[gridMesh, cur.mesh], ...[curtainMesh, curtainFloor].filter((M) => M.visible && M.userData.sphere).map((M) => [M, M.userData])];
   for (const [M, u] of meshes) {
@@ -3028,27 +3040,50 @@ $("copy-proj").addEventListener("click", (e) => copyText(cur && cur.F ? cur.F.de
 
 // a click (not a drag) on the grid picks the cell under the pointer. With
 // Shift it does not: a Shift-double-click looks through to what hangs below
-// (a section's curtain hangs from the picked cell, and would move away)
+// (a section's curtain hangs from the picked cell, and would move away).
+// The pick waits 0.3 s, and a double-click drops it: a double-click turns
+// the view and picks nothing. The wait stops while the button is down again,
+// so a slow double-click is still one; a drag begun in the wait lets the pick
+// go ahead when it ends, and a click on nothing leaves it waiting.
 const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
-let downAt = null;
-renderer.domElement.addEventListener("pointerdown", (e) => { downAt = [e.clientX, e.clientY]; });
+let downAt = null, pending = null, pickTimer = 0;
+const PICK_WAIT = 300;
+function pickNow() {
+  clearTimeout(pickTimer);
+  const f = pending;
+  pending = null;
+  if (f) f();
+}
+function pickLater(f) {
+  clearTimeout(pickTimer);
+  pending = f;
+  if (f) pickTimer = setTimeout(pickNow, PICK_WAIT);
+}
+renderer.domElement.addEventListener("pointerdown", (e) => { downAt = [e.clientX, e.clientY]; clearTimeout(pickTimer); });
+renderer.domElement.addEventListener("pointercancel", pickNow);
 renderer.domElement.addEventListener("pointerup", (e) => {
-  if (!cur || !downAt || e.shiftKey || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
-  const r = renderer.domElement.getBoundingClientRect();
+  if (!downAt) return;
+  if (Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return pickNow();
+  if (!cur || e.shiftKey) return pickLater(pending);
+  const r = renderer.domElement.getBoundingClientRect(), c = cur;
   ptr.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   if (cur.kind === "profiles") {
     const i = nearestProfile(e.clientX - r.left, e.clientY - r.top);
-    if (i === null) return;
-    state.pick = String(i);
-    showPick(); writeHash();
-    return;
+    return pickLater(i === null ? pending : () => {
+      if (cur !== c) return;
+      state.pick = String(i);
+      showPick(); writeHash();
+    });
   }
   ray.setFromCamera(ptr, camera);
   const hit = ray.intersectObject(gridMesh)[0];
-  if (!hit) return;
+  if (!hit) return pickLater(pending);
   const col = Math.min(cur.g.nx - 1, Math.floor(hit.uv.x * cur.g.nx)), row = Math.min(cur.g.ny - 1, Math.floor((1 - hit.uv.y) * cur.g.ny));
-  state.pick = `${col},${row}`;
-  drawTexture(); showPick(); writeHash();
+  pickLater(() => {
+    if (cur !== c) return;
+    state.pick = `${col},${row}`;
+    drawTexture(); showPick(); writeHash();
+  });
 });
 
 // A double-click turns the view about the place under the pointer: the
@@ -3123,6 +3158,7 @@ function pivotAt(px, py, through) {
   return got ? got[0] : null;
 }
 renderer.domElement.addEventListener("dblclick", (e) => {
+  pickLater(null);
   if (!cur) return;
   const r = renderer.domElement.getBoundingClientRect();
   const p = pivotAt(e.clientX - r.left, e.clientY - r.top, e.shiftKey);
