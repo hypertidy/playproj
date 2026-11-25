@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Navigation</title>
+<meta name="description" content="Ways round a 3D scene on GEBCO's relief round Antarctica: turntable, orbit and trackball, turning about a double-clicked place, looking through the sea surface, and what each is called.">
+<link rel="stylesheet" href="css/app.css">
+<script src="js/mobile.js" defer></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/navigate.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <div id="three"></div>
+    <div id="hud" class="nav-hud" aria-live="off"></div>
+    <a id="open-full" class="open-full" href="./navigate.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+    <p id="credit" class="credit">GEBCO Compilation Group (2026) GEBCO 2026 Grid, from <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>; Natural Earth</p>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html">Peeling the orange</a><a href="./tissot.html">Distortion</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./penguin.html">Penguin datum</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./coastlen.html">Coastline length</a><a href="./frame.html">Frame</a><a href="./fourd.html">Time and depth</a><a href="./cutaway.html">Cutaway</a><a href="./voxels.html">Voxels</a><a href="./story.html">Story</a><a href="./navigate.html" aria-current="page">Navigation</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <label class="row" for="orbit"><span>A drag turns the view as</span></label>
+      <select id="orbit" class="wide" aria-label="How a drag turns the view">
+        <option value="turntable">A turntable about the map's upright</option>
+        <option value="north">An orbit about grid north (three.js's own)</option>
+        <option value="trackball">A trackball (free, the horizon rolls)</option>
+      </select>
+      <div class="toggles">
+        <label><input id="zc" type="checkbox"> The wheel zooms toward the pointer</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Reset view</button>
+        <button id="down" type="button">Straight down</button>
+        <button id="below" type="button">From below</button>
+      </div>
+      <p class="hint">Drag turns the view; Shift-drag or right-drag moves it (right-drag only, as a trackball);
+        the wheel zooms. Double-click a place to turn about it; Shift-double-click looks through the sea surface
+        and turns about what is under it: the floor, the section, the dropped line. A click drops a line from
+        the surface to the floor there.</p>
+      <p id="status" class="status" role="status"></p>
+    </section>
+
+    <section>
+      <table id="out" class="readout"></table>
+    </section>
+
+    <section>
+      <div class="toggles">
+        <label><input id="sea" type="checkbox"> Sea surface, coast and graticule</label>
+        <label><input id="cut" type="checkbox"> Section down a meridian</label>
+      </div>
+      <label class="row" for="sec"><span>Section along (degrees east)</span></label>
+      <input id="sec" type="number" class="wide" min="-180" max="180" step="1" aria-label="Longitude of the section, degrees east">
+      <label class="row" for="vx"><span>Vertical exaggeration</span><output id="vx-out"></output></label>
+      <input id="vx" type="range" min="0" max="2.3" step="0.01" aria-label="Vertical exaggeration, as a power of ten">
+      <label class="row" for="n"><span>Cells across</span><output id="n-out"></output></label>
+      <input id="n" type="range" min="128" max="1024" step="64" aria-label="Mesh cells across the square">
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>A page for trying the ways round a 3D scene, and for their names. The scene is GEBCO 2026 round
+          Antarctica on the Antarctic polar stereographic map (EPSG:3031): a square 9,000 km across with the
+          pole in the middle and Greenwich at the top, as one surface of sea floor, land and ice, drawn
+          50 times higher than it is. Over it is a see-through sea surface carrying the coast and graticule,
+          down a meridian hangs a section of the water column (140&deg; E runs from the Antarctic coast to
+          south of Australia), and a click drops a line from the surface to the floor. So there is a surface,
+          and things under it to get to and look at from below, as on the store page's maps.</p>
+        <p><b>The drag.</b> OrbitControls, three.js's usual camera control, turns the camera about one
+          axis fixed when it is made, the camera's <code>up</code>, which is +y unless a page says otherwise.
+          On this map that is grid north, so a drag up or down tips the map until it is edge-on and stops
+          there: the camera cannot get under it that way. The turntable turns about the map's own upright
+          instead, so a drag up tips the map over its edge and on under it, and a drag sideways goes round.
+          It is a second set of OrbitControls made with <code>up</code> along z, which the stage hands the
+          mouse to (<code>src/scene/stage.js</code>); the store page does the same once its map is unfolded.
+          Straight down the upright, which way the map faces lives only in the camera's tiny offset to one
+          side, so the turntable stops a degree short of straight down, and the link carries the camera to
+          three decimals.</p>
+        <p><b>The pivot.</b> A double-click turns the view about the nearest thing under the pointer: the sea
+          surface, the relief, the section or the dropped line. The view glides there with its direction
+          kept, and a ring marks the pivot while the view moves. Shift-double-click leaves the sea surface
+          out, so the pivot can be the floor under it or the section hanging in it: from there a drag up
+          goes under to look up at it. A click waits 0.3 s before it picks, so that the clicks of a
+          double-click pick nothing.</p>
+        <dl class="glossary">
+          <dt>Pivot, target, centre of rotation</dt>
+          <dd>The point the view turns about and zooms toward. three.js calls it the controls' <code>target</code>.
+            Setting it from the place under the pointer is Blender's <i>Orbit Around Selection</i> and
+            <i>Auto Depth</i>, and ParaView's <i>Pick Center</i>.</dd>
+          <dt>Orbit</dt>
+          <dd>Moving the camera round the pivot at the same distance, still looking at it.</dd>
+          <dt>Turntable</dt>
+          <dd>An orbit about a fixed upright through the pivot: sideways goes round it, up and down tilt, and
+            the horizon stays level. Blender's default orbit method has this name.</dd>
+          <dt>Trackball</dt>
+          <dd>The view turns about whatever axis the drag suggests, nothing stays upright, and the horizon
+            rolls. Blender's other orbit method; three.js's <code>TrackballControls</code>.</dd>
+          <dt>Up, roll</dt>
+          <dd>The direction kept at the top of the screen, and turning about the line of sight. A turntable's
+            up is its axis; a trackball has none, so it rolls.</dd>
+          <dt>Pole</dt>
+          <dd>Looking straight along a turntable's axis, sideways no longer means anything and the tilt stops
+            (the trouble often called gimbal lock). The readout's heading goes blank there.</dd>
+          <dt>Pan, truck</dt>
+          <dd>Moving the camera and pivot together across the screen: Shift-drag or right-drag here.</dd>
+          <dt>Dolly, zoom</dt>
+          <dd>The wheel moves the camera toward the pivot (a dolly) rather than narrowing the lens (a zoom),
+            though most viewers call it zoom.</dd>
+          <dt>Zoom to cursor</dt>
+          <dd>The wheel moves toward the place under the pointer, taking the pivot with it, rather than toward
+            the pivot. Blender's <i>Zoom to Mouse Position</i>; three.js's <code>zoomToCursor</code>.</dd>
+          <dt>Damping, inertia</dt>
+          <dd>The view coasts on for a moment after the mouse is let go.</dd>
+          <dt>Picking through</dt>
+          <dd>Picking past a layer that is drawn but not wanted: Shift-double-click here leaves out the sea
+            surface.</dd>
+        </dl>
+        <p>The readout gives the pivot's place and height, the tilt (0&deg; straight down, 90&deg; level,
+          180&deg; straight up from below) and the heading, clockwise from true north at the pivot, where
+          north is away from the pole (grid north, towards 0&deg; E, at the pole itself). GEBCO is read in two
+          halves of the world through geotiff.js from its own overviews (at most 4 arc minutes), with its
+          byte ranges held in the browser as the store page holds them, and sampled at each vertex of the
+          square. Land south of 60&deg; S is tinted as ice. The geometry is
+          <code>src/core/navigate.js</code>, checked by <code>test/check-navigate.mjs</code>; the double-click,
+          ring and click are <code>src/scene/pivot.js</code>, shared with the store page.</p>
+        <p>Hash keys: <code>orbit</code> (<code>turntable</code>, <code>north</code>, <code>trackball</code>),
+          <code>zc</code> (zoom to cursor), <code>sea</code>, <code>cut</code>, <code>sec</code> (the section's
+          longitude), <code>vx</code>, <code>n</code> (cells across), <code>pick</code> (lon,lat of the dropped
+          line), <code>cam</code>.</p>
+        <ul class="credits">
+          <li>Elevation from the GEBCO 2026 Grid (GEBCO Compilation Group), from
+            <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>, read with
+            <a href="https://geotiffjs.github.io/">geotiff.js</a>.</li>
+          <li>Drawn with <a href="https://threejs.org/">three.js</a>; coastlines, Antarctic grounding line and
+            ice shelf fronts from <a href="https://www.naturalearthdata.com/">Natural Earth</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

@@ -35,10 +35,11 @@ export function makeStage(el, { bg = 0x000000, fov = 38, near = 0.05, far = 200,
   // about axis ([x, y, z]) over the same target, and passes its events on to
   // controls. turnAbout(axis) gives that set the mouse as soon as nothing is
   // dragged or still moving, and from then controls.update() moves the camera
-  // with it. The camera's roll is still camera.up's, as lookAt makes it, so a
-  // page can lean that from one axis to the other in its own time. While
-  // another set has the mouse, controls.enabled is false; the other settings
-  // of controls are copied over at each hand-over.
+  // with it; turnAbout(null) gives the mouse to no set, for a page that moves
+  // the camera some other way. The camera's roll is still camera.up's, as
+  // lookAt makes it, so a page can lean that from one axis to the other in its
+  // own time. While another set has the mouse, controls.enabled is false, and
+  // the other settings of controls are that set's.
   const sets = [[camera.up.toArray(), controls]];
   let held = controls, wanted = controls, dragging = false, moved = false;
   controls.addEventListener("start", () => { dragging = true; });
@@ -46,6 +47,18 @@ export function makeStage(el, { bg = 0x000000, fov = 38, near = 0.05, far = 200,
   const own = controls.update;
   const SETTINGS = ["enableDamping", "dampingFactor", "enableZoom", "zoomSpeed", "enableRotate", "rotateSpeed",
     "enablePan", "panSpeed", "screenSpacePanning", "keyPanSpeed", "zoomToCursor", "minDistance", "maxDistance"];
+  function update(dt) {
+    // (before this frame's move, so a page that has just set camera.up for the
+    // new axis never has a frame turned by the old one)
+    if (wanted !== held && !dragging && !moved) {
+      if (held) held.enabled = false;
+      if (wanted) wanted.enabled = true;
+      held = wanted;
+    }
+    if (held && held !== controls) for (const k of SETTINGS) held[k] = controls[k];
+    moved = held === controls ? own(dt) : held ? held.update(dt) : false;
+    return moved;
+  }
   function controlsFor(axis) {
     const a = new THREE.Vector3(...axis).normalize().toArray();
     const got = sets.find(([u]) => u.every((x, i) => Math.abs(x - a[i]) < 1e-9));
@@ -59,25 +72,13 @@ export function makeStage(el, { bg = 0x000000, fov = 38, near = 0.05, far = 200,
     c.mouseButtons = controls.mouseButtons;
     c.touches = controls.touches;
     for (const type of ["start", "change", "end"]) c.addEventListener(type, () => controls.dispatchEvent({ type }));
-    if (sets.length === 1) {
-      controls.update = (dt) => {
-        // (before this frame's move, so a page that has just set camera.up for the
-        // new axis never has a frame turned by the old one)
-        if (wanted !== held && !dragging && !moved) {
-          if (wanted !== controls) for (const k of SETTINGS) wanted[k] = controls[k];
-          held.enabled = false;
-          wanted.enabled = true;
-          held = wanted;
-        }
-        moved = held === controls ? own(dt) : held.update(dt);
-        return moved;
-      };
-    }
+    controls.update = update;
     sets.push([a, c]);
     return c;
   }
   function turnAbout(axis) {
-    wanted = controlsFor(axis);
+    controls.update = update;
+    wanted = axis ? controlsFor(axis) : null;
     return wanted;
   }
 

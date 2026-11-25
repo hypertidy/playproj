@@ -1278,6 +1278,41 @@ Hash keys: `lon`, `lat`, `ext` (km), `n` (cells across), `src` (`dem`,
 0 for storeys), `qu` (`t`, `m3`), `mat`, `shape` (`cube`, `slab`, `pit`),
 `story` (a preset; keys the link also names win), `cam`.
 
+## Navigation
+
+`navigate.html` is for trying the ways round a 3D scene, and for their names.
+The scene is GEBCO 2026 round Antarctica on the Antarctic polar stereographic
+map (EPSG:3031, `src/core/polarstere.js`): a square 9,000 km across with the
+pole in the middle, the sea floor, land and ice as one surface drawn 50 times
+higher than it is, a see-through sea surface carrying the coast and graticule,
+a section of the water column down a meridian (140 E by default, from the
+Antarctic coast to south of Australia), and a line dropped from the surface
+to the floor where a click picks. Seen from beneath, the relief is a dark
+veil, so what hangs in the water above it still shows.
+
+A drag turns the view as a turntable about the map's upright, as an orbit
+about grid north (OrbitControls with `up` along +y, three.js's own), or as a
+free trackball (`TrackballControls`); the same drag up from the same view
+stops edge-on with the orbit and goes on under the map with the other two. A
+double-click turns the view about the nearest thing under the pointer, and
+Shift-double-click leaves out what covers the water (the sea surface from
+above, the floor's underside from beneath) to turn about the section, the
+line or the floor. A click waits 0.3 s before it picks, so a double-click picks
+nothing. The page names each of these (pivot, orbit, turntable, trackball,
+roll, pole, pan, dolly, zoom to cursor, damping, picking through) with the
+names other tools give them, and a readout gives the pivot's place and height,
+the tilt from straight down, the true heading at the pivot and the camera's
+distance. GEBCO is read in two halves of the world from its own overviews (at
+most 4 arc minutes), its byte ranges held as the store page holds them. The
+turntable is a second set of OrbitControls that `src/scene/stage.js` hands the
+mouse to (`turnAbout`), and the double-click, ring and click are
+`src/scene/pivot.js`, both shared with the store page; the geometry is
+`src/core/navigate.js`, checked by `test/check-navigate.mjs`.
+
+Hash keys: `orbit` (`turntable`, `north`, `trackball`), `zc` (zoom to
+cursor), `sea`, `cut`, `sec` (the section's longitude), `vx`, `n` (cells
+across, 128 to 1024), `pick` (lon,lat), `cam`.
+
 ## Shallow water
 
 `shallows.html` runs a two-dimensional shallow water solver live in the page.
@@ -1410,6 +1445,7 @@ cutaway.html (sondage)                 Cutaway: a section and block diagram thro
 voxels.html, js/voxels.js              Voxels: GEBCO topography as voxel columns, three cell systems, MagicaVoxel export
 voxels-gallery.html, js/voxels-gallery.js  Voxel gallery: preset blocks live in an embedded frame, with links and embeds
 story.html, js/story.js                Story: a block of storeys set down on draped terrain (2 m DEM or GEBCO, Esri imagery)
+navigate.html, js/navigate.js          Navigation: turntable, orbit and trackball on GEBCO round Antarctica, pivots, looking through, a glossary
 shallows.html                          Shallow water: the shallows solver live on generated, extracted or opened terrain and analytic benchmarks
 
 js/data.js          loads the coastlines in data/
@@ -1420,7 +1456,8 @@ js/basemap-ui.js    basemap picker and cell GeoTIFF button for the cells pages
 js/tissot-draw.js   indicatrices, the enlarged one and contours drawn on a 2D canvas
 
 src/scene/index.js   the scene layer in one import: three.js and the browser, on top of the core
-src/scene/stage.js   renderer, scene, camera and orbit controls sized to a page element
+src/scene/stage.js   renderer, scene, camera and orbit controls sized to a page element; a set of controls per orbit axis
+src/scene/pivot.js   double-click to turn about a place (glide and ring), a click that waits out a double-click, screen-space nearest point
 src/scene/hash.js    page state in the URL hash, written only where it differs from the defaults
 src/scene/share.js   copy link, copy embed and open full buttons; embedded mode
 src/scene/homes.js   two homes for every vertex (index space and the world) and the warp between them
@@ -1468,6 +1505,7 @@ src/core/track.js                 ship tracks from underway CSV or parquet rows;
 src/core/rhumb.js                 rhumb lines, geodesics and great circles, the whole loxodrome, composite sailing
 src/core/voxels.js                voxel columns over lon/lat or equal-area cells, any-CRS windows and sampling, column means, quantising, .vox files
 src/core/story.js                 story scenes: a terrain grid on an equal-area plane, its heights and triangles, where a block stands
+src/core/navigate.js              the Navigation page: an EPSG:3031 lattice, GEBCO windows sampled onto it, a meridian section, tilt and heading
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification

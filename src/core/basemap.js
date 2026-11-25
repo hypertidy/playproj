@@ -55,6 +55,13 @@ export async function readGebcoOverview(levels, src = sources.gebco, status = ()
 const OCEAN = [[-9000, 8, 20, 50], [-6000, 16, 45, 95], [-4000, 28, 78, 140], [-2000, 50, 115, 180], [-200, 95, 165, 215], [0, 165, 212, 236]];
 const LAND = [[0, 72, 122, 72], [300, 122, 152, 92], [1000, 172, 162, 112], [2000, 152, 122, 92], [3500, 205, 196, 186], [5500, 252, 252, 252]];
 
+// GEBCO's tint for an elevation in metres as [r, g, b] (0 to 255), as
+// colourElevation draws it before its hillshade.
+export function elevationTint(z) {
+  const c = ramp(z > 0 ? LAND : OCEAN, z);
+  return [c[1], c[2], c[3]];
+}
+
 function ramp(stops, z) {
   if (z <= stops[0][0]) return stops[0];
   for (let i = 1; i < stops.length; i++) {

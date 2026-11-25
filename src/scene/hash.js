@@ -32,13 +32,13 @@ export function readParams(state, defaults, parse = {}, hash = location.hash) {
 }
 
 // The hash for state: keys that differ from their defaults, numbers rounded
-// to digits and the camera to 2, leaving out any key skip(k) says to.
-export function paramString(state, defaults, { digits = 3, skip = () => false } = {}) {
+// to digits and the camera to camDigits, leaving out any key skip(k) says to.
+export function paramString(state, defaults, { digits = 3, camDigits = 2, skip = () => false } = {}) {
   const h = new URLSearchParams();
   for (const k of Object.keys(defaults)) {
     if (skip(k)) continue;
     if (k === "cam") {
-      if (state.cam) h.set("cam", state.cam.map((x) => +x.toFixed(2)).join(","));
+      if (state.cam) h.set("cam", state.cam.map((x) => +x.toFixed(camDigits)).join(","));
       continue;
     }
     const v = typeof state[k] === "number" ? +state[k].toFixed(digits) : state[k];
