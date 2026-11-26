@@ -3,13 +3,15 @@
 // Ways round a 3D scene, tried on GEBCO's relief round Antarctica in polar
 // stereographic (EPSG:3031): the sea floor, the land and the ice as one
 // exaggerated surface under a see-through sea surface, a section hung down
-// a meridian, and a line dropped to the floor where a click picks; or on a
-// teapot, three linked rings, a globe or a penguin (navigate-scenes.js).
+// a meridian, and a line dropped to the floor where a click picks; under
+// an ice shelf, from BedMachine (navigate-cavity.js); or on a teapot,
+// three linked rings, a globe or a penguin (navigate-scenes.js).
 // The drag turns the view as a turntable about the scene's upright, as an
 // orbit about +y (three.js's own up; grid north on the map), or as a free
 // trackball; a double-click turns it about the place under the pointer,
 // and Shift-double-click looks through the sea surface to what is under
-// it (on the map) or turns about the middle of the thing double-clicked.
+// it (on the map), into the water under the ice (under the ice shelf), or
+// turns about the middle of the thing double-clicked.
 // Any scene draws solid, as a wire mesh, or both. The geometry is in
 // src/core/navigate.js, the gestures in src/scene/pivot.js and stage.js.
 
@@ -17,6 +19,8 @@ import * as THREE from "three";
 import { TrackballControls } from "three/addons/controls/TrackballControls.js";
 import * as N from "../src/core/navigate.js";
 import * as SC from "./navigate-scenes.js";
+import * as CV from "./navigate-cavity.js";
+import * as C from "../src/core/cavity.js";
 import { elevationTint } from "../src/core/basemap.js";
 import { openHeld } from "../src/load/heldrefs.js";
 import { readElevation, holdRanges } from "./basemap-load.js";
@@ -42,6 +46,13 @@ const SCENES = {
     y: "on this map grid north (towards 0° E), so up and down stop edge-on, at the map's top and bottom",
     shift: "looks through the sea surface and turns about what is under it: the floor, the section, the dropped line. A click drops a line from the surface to the floor there",
     task: "Get under the section and look up at it: Shift-double-click it, then drag up. The orbit stops level; the turntable and trackball go on under."
+  },
+  cavity: {
+    label: "Under an ice shelf (BedMachine)", up: "the map's upright", yShort: "grid north",
+    turn: "sideways goes round the block, up tips it over its edge and on under it",
+    y: "on this map grid north (towards 0° E), so up and down stop with the block edge-on",
+    shift: "looks through the ice and the sea surface and turns about the middle of the water under the place: the cavity, under floating ice (under grounded ice, the bed). A click drops a line down the column there",
+    task: "Get into the cavity: set Section to none, Shift-double-click the shelf to turn about the water under it, then zoom in until the Camera row says it is in the cavity, and look along it to where the ice meets the bed. The turntable keeps the ice overhead level; the trackball soon has it rolling; the orbit about +y stops with the block edge-on."
   },
   teapot: {
     label: "Teapot on a pedestal", up: "the teapot's upright", yShort: "front to back here",
@@ -72,8 +83,9 @@ const SCENES = {
     task: "Look up under the beak, into the inside of a flipper, and down on the tops of the feet: the places no ray from the penguin's centre leaves it last, so no penguin longitude and latitude reaches them (see the Penguin datum page). Double-click a flipper to turn about it."
   }
 };
-const DRAWS = ["solid", "wire", "both"];
-const defaults = { scene: "relief", draw: "solid", orbit: "turntable", zc: 1, sea: 1, cut: 1, sec: 140, vx: 50, n: 512, pick: "", cam: null };
+const DRAWS = ["solid", "wire", "both"], ICES = ["solid", "see", "off"], SLICES = ["held", "view", "none"];
+const defaults = { scene: "relief", draw: "solid", orbit: "turntable", zc: 1, sea: 1, cut: 1, sec: 140, vx: 50, n: 512,
+  shelf: "amery", cvx: 0, ice: "solid", slice: "held", sl: "", pick: "", cam: null };
 const state = { ...defaults };
 const lonLat = (raw) => {
   const v = String(raw).split(",").map(Number);
@@ -82,9 +94,13 @@ const lonLat = (raw) => {
 function readHash() {
   readParams(state, defaults, {
     scene: oneOf(Object.keys(SCENES), "relief"), draw: oneOf(DRAWS, "solid"),
-    orbit: oneOf(["turntable", "north", "trackball"], "turntable"), pick: lonLat
+    orbit: oneOf(["turntable", "north", "trackball"], "turntable"), pick: lonLat,
+    shelf: oneOf(Object.keys(C.SHELVES), "amery"), ice: oneOf(ICES, "solid"), slice: oneOf(SLICES, "held"),
+    sl: (raw) => { const v = String(raw).split(",").map(Number); return v.length === 3 && v.every(isFinite) ? v.join(",") : undefined; }
   });
   state.vx = Math.max(1, Math.min(200, state.vx));
+  // (0: the shelf's own, C.shelfVx)
+  state.cvx = state.cvx > 0 ? Math.max(1, Math.min(200, state.cvx)) : 0;
   state.n = Math.max(128, Math.min(1024, 64 * Math.round(state.n / 64)));
   state.sec = ((((state.sec + 180) % 360) + 360) % 360) - 180;
 }
@@ -99,6 +115,8 @@ const stage = makeStage($("three"), {
   onResize: () => { if (tb) tb.handleResize(); }
 });
 const { scene, camera, controls, renderer } = stage;
+// (the cavity's section cuts the block away with a clipping plane)
+renderer.localClippingEnabled = true;
 const UPRIGHT = [0, 0, 1], NORTH = [0, 1, 0];
 // straight down (or up) the upright the way the map faces is only in the
 // camera's small offset to one side, which the link rounds: so never quite
@@ -177,7 +195,7 @@ const shapes = {};
 const BUILD = { teapot: SC.teapotScene, rings: SC.ringsScene, globe: SC.globeScene, penguin: SC.penguinScene };
 function shape() {
   const k = state.scene;
-  if (k === "relief") return null;
+  if (k === "relief" || k === "cavity") return null;
   if (!shapes[k]) {
     shapes[k] = BUILD[k]();
     if (k === "globe" && coast) shapes[k].setCoast(coast.world, coast.south);
@@ -186,14 +204,15 @@ function shape() {
   }
   return shapes[k];
 }
-const sceneCam = () => (state.scene === "relief" ? DEFAULT_CAM : shape().cam);
+const sceneCam = () => (state.scene === "relief" ? DEFAULT_CAM : state.scene === "cavity" ? (cav() ? cav().defaultCam(cvxNow()) : CAVITY_CAM) : shape().cam);
 
 // ---------------------------------------------------------------- the relief
 
-// (the relief's progress shows only while the relief is the scene)
-let said = "";
-const status = (s) => { said = s; if (state.scene === "relief") $("status").textContent = s; };
-let world = null, job = 0, coast = null, started = false;
+// (a scene's progress shows only while it is the scene)
+const said = {};
+const sayFor = (k) => (s) => { said[k] = s; if (state.scene === k) $("status").textContent = s; };
+const status = sayFor("relief");
+let world = null, job = 0, coast = null, started = false, reliefVx = 0;
 const tris = new Map(), wires = new Map();
 
 // GEBCO south of the square's corners in two halves of the world, each at
@@ -236,6 +255,7 @@ async function build() {
   for (const h of z) { if (h < lo) lo = h; if (h > hi) hi = h; }
   world = { grid, z, col, sample, wins, lo, hi };
   status("");
+  reliefVx = state.vx;
   drawRelief();
   drawLines(); drawCurtain(); drawDrop(); readout();
 }
@@ -277,6 +297,7 @@ function applyDraw() {
   reliefWire.visible = d !== "solid";
   reliefWire.material = d === "wire" ? WIRE_LIT : WIRE_DARK;
   for (const s of Object.values(shapes)) SC.drawAs(s.meshes, d);
+  for (const { scene: cv } of cavities.values()) if (cv) { SC.drawAs(cv.meshes, d); cv.clipAll(); }
 }
 
 // a lon/lat polyline as segments on the surface, cut where it leaves the
@@ -367,6 +388,90 @@ function drawDrop() {
   }
 }
 
+// ---------------------------------------------------------------- the cavity
+
+// BedMachine read for each shelf the first time it is shown, and kept
+const cavities = new Map(), cavStatus = sayFor("cavity");
+const CAVITY_CAM = [0, -5.2, 3.2, 0, 0, 0];
+const cav = () => (state.scene === "cavity" && cavities.get(state.shelf)?.scene) || null;
+const cvxNow = () => state.cvx || C.shelfVx(C.shelfBox(C.SHELVES[state.shelf].ext));
+function loadCavity(key) {
+  if (cavities.has(key)) return;
+  const entry = { scene: null }, sh = C.SHELVES[key], box = C.shelfBox(sh.ext), plan = C.readPlan(box);
+  cavities.set(key, entry);
+  const say = (s) => { if (state.shelf === key) cavStatus(s); };
+  CV.readBedMachine(plan, say).then((layers) => {
+    const cv = CV.cavityScene(C.columnsOf(layers), plan, box);
+    cv.name = sh.name;
+    entry.scene = cv;
+    scene.add(cv.group);
+    cv.setVx(cvxNow());
+    cv.setIce(state.ice);
+    SC.drawAs(cv.meshes, state.draw);
+    cv.clipAll();
+    say("");
+    cv.group.visible = state.scene === "cavity" && state.shelf === key;
+    if (!cv.group.visible) return;
+    if (!state.cam) { level(); stage.setCamera(cv.defaultCam(cvxNow())); }
+    applySlice(); drawCavityPick();
+    lastCam = ""; readout();
+  }).catch((e) => { cavities.delete(key); say(`BedMachine not read: ${e.message}`); });
+}
+
+// The section: an upright plane, and what is on the camera's side of it
+// cut away. Held, it stays put in the block as the view turns and pans:
+// the shelf's own (its opening view's, along the cavity) until Cut here
+// puts it through the pivot facing the view, as map metres and the way it
+// faces (degrees clockwise from grid north) in the link. Following the
+// view, it goes through the pivot and faces the way the camera looks (or,
+// looking straight down, the way the top of the screen faces).
+function viewPlane() {
+  const c = camera.position, t = controls.target;
+  let nx = t.x - c.x, ny = t.y - c.y;
+  if (Math.hypot(nx, ny) < 1e-3 * c.distanceTo(t)) {
+    const u = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    nx = u.x; ny = u.y;
+  }
+  const L = Math.hypot(nx, ny) || 1;
+  return { x: t.x, y: t.y, nx: nx / L, ny: ny / L };
+}
+function holdPlane(cv) {
+  const p = viewPlane(), m = cv.toMap(new THREE.Vector3(p.x, p.y, 0));
+  state.sl = `${Math.round(m.x)},${Math.round(m.y)},${+((Math.atan2(p.nx, p.ny) * 180) / Math.PI).toFixed(1)}`;
+}
+function heldPlane(cv) {
+  if (!state.sl) { const o = cv.openingSection(); if (o) return o; holdPlane(cv); }
+  const [x, y, a] = state.sl.split(",").map(Number), p = cv.fromMap(x, y, 0), r = (a * Math.PI) / 180;
+  return { x: p.x, y: p.y, nx: Math.sin(r), ny: Math.cos(r) };
+}
+let sliceKey = "";
+function applySlice() {
+  const cv = cav();
+  if (!cv) return;
+  sliceKey = "";
+  cv.setSection(state.slice === "none" ? null : state.slice === "held" ? heldPlane(cv) : viewPlane());
+}
+// (as the view moves, the section facing it follows)
+function followSlice() {
+  const cv = cav();
+  if (!cv || state.slice !== "view") return;
+  const k = [...camera.position.toArray(), ...controls.target.toArray()].map((x) => x.toFixed(4)).join();
+  if (k === sliceKey) return;
+  sliceKey = k;
+  cv.setSection(viewPlane());
+}
+
+function cavityPicked() {
+  const cv = cav();
+  if (!state.pick || !cv) return null;
+  const [lon, lat] = state.pick.split(",").map(Number), [x, y] = N.PS.forward(lon, lat), c = cv.sample(x, y);
+  return c && { lon, lat, x, y, ...c };
+}
+function drawCavityPick() {
+  const cv = cav(), p = cavityPicked();
+  if (cv) cv.setPick(p ? p.x : null, p ? p.y : null);
+}
+
 // ---------------------------------------------------------------- pointer
 
 const ray = new THREE.Raycaster();
@@ -399,6 +504,7 @@ function reliefHits() {
 function pivotAt(px, py, through) {
   const s = shape();
   if (s) return shapePivot(s, px, py, through);
+  if (state.scene === "cavity") return cavityPivot(px, py, through);
   if (!world) return null;
   rayAt(stage, px, py, ray);
   const r = reliefHits();
@@ -425,9 +531,25 @@ function shapePivot(s, px, py, through) {
   const b = hits.find((h) => h.object === a.object && h.distance > a.distance + 1e-6);
   return b ? a.point.clone().lerp(b.point, 0.5) : a.point;
 }
+// Under the ice shelf a double-click turns about the nearest thing under
+// the pointer, on the side the section keeps; with Shift about the middle
+// of the water in the column there (under floating ice, the cavity), or
+// the bed where there is no water.
+function cavityPivot(px, py, through) {
+  const cv = cav();
+  if (!cv) return null;
+  rayAt(stage, px, py, ray);
+  const h = cv.hits(ray)[0];
+  if (!h) return null;
+  if (!through) return h.point.clone();
+  const m = cv.toMap(h.point), c = cv.sample(m.x, m.y);
+  if (!c) return h.point.clone();
+  return cv.fromMap(m.x, m.y, c.base > c.bed + 0.5 ? (c.base + c.bed) / 2 : c.bed);
+}
 const pivot = addPivot(stage, { pivotAt, onCamera: (c) => { state.cam = c; writeHash(); } });
 // a click drops a line to the floor at the place on the relief under it
 addClickPick(stage, (px, py) => {
+  if (state.scene === "cavity") return cavityClick(px, py);
   if (state.scene !== "relief" || !world) return null;
   rayAt(stage, px, py, ray);
   const r = reliefHits(), h = nearestHit([r.top, r.under]);
@@ -435,6 +557,17 @@ addClickPick(stage, (px, py) => {
   const [lon, lat] = N.PS.inverse(h[0].x / S, h[0].y / S);
   return () => { state.pick = lonLat(`${lon},${lat}`); drawDrop(); readout(); writeHash(); };
 });
+
+// under the ice shelf, a line down the column at the place clicked
+function cavityClick(px, py) {
+  const cv = cav();
+  if (!cv) return null;
+  rayAt(stage, px, py, ray);
+  const h = cv.hits(ray)[0];
+  if (!h) return null;
+  const m = cv.toMap(h.point), [lon, lat] = N.PS.inverse(m.x, m.y);
+  return () => { state.pick = lonLat(`${lon},${lat}`); drawCavityPick(); readout(); writeHash(); };
+}
 
 // ---------------------------------------------------------------- readout
 
@@ -507,9 +640,54 @@ function shapeRows(s) {
   rows.push(["Try", m.task]);
   return rows;
 }
+// Under the ice shelf: the angles as on the map, where the pivot and the
+// camera are in their columns, and what a click picked.
+function cavityView(cv) {
+  const c = camera.position, t = controls.target, { s, cx, cy } = cv.frame;
+  const a = N.viewAngles([c.x + cx * s, c.y + cy * s, c.z], [t.x + cx * s, t.y + cy * s, t.z]);
+  const tm = cv.toMap(t), cm = cv.toMap(c), [lon, lat] = N.PS.inverse(tm.x, tm.y);
+  const tc = cv.sample(tm.x, tm.y), cc = cv.sample(cm.x, cm.y);
+  return { ...a, lon, lat, h: tm.z, at: tc && C.whereIn(tc, tm.z), cam: cc && C.whereIn(cc, cm.z), dist: c.distanceTo(t) / s };
+}
+const fmtM = (m) => `${Math.round(m).toLocaleString()} m`;
+function whereWords(w, short) {
+  if (!w) return "beyond the block's sides";
+  if (w.in === "cavity") return short ? `in the cavity, ${fmtM(w.below)} under the ice` : `in the cavity: ${fmtM(w.below)} under the ice, ${fmtM(w.above)} above the sea floor`;
+  if (w.in === "sea" || w.in === "lake") return short ? `in the ${w.in}, ${fmtM(w.below)} down` : `in the ${w.in === "lake" ? "lake" : "open sea"}: ${fmtM(w.below)} down, ${fmtM(w.above)} above the floor`;
+  if (w.in === "ice") return short ? "in the ice" : `in the ice: ${fmtM(w.below)} under its top, ${fmtM(w.above)} above its base`;
+  if (w.in === "rock") return short ? "in the rock" : `in the rock, ${fmtM(w.below)} under the bed`;
+  if (w.in === "bed") return w.below > 0.5 ? `on the bed${short ? "" : `, under ${fmtM(w.below)} of ice`}` : "on the ground";
+  return `${w.in}${short ? "" : `, ${fmtKm(w.above)}`}`;
+}
+function columnWords(c) {
+  const name = C.KIND_NAMES[c.kind];
+  if (c.kind === 0) return `${name}, the floor ${fmtH(c.bed)}`;
+  if (c.kind === 1) return `${name}, ${fmtH(c.top)}`;
+  if (c.kind === 2) return `${name} ${fmtM(c.top - c.bed)} thick, its top ${fmtH(c.top)}, on a bed ${fmtH(c.bed)}`;
+  return `${name} ${fmtM(c.top - c.base)} thick, its top ${fmtH(c.top)} and its base ${fmtH(c.base)}, over ${fmtM(c.base - c.bed)} of water to a floor ${fmtH(c.bed)}`;
+}
+function cavityHud(cv) {
+  const v = cavityView(cv);
+  const head = v.heading === null ? "" : ` · heading ${Math.round(v.heading)}${DEG} ${N.compass(v.heading)}`;
+  return `tilt ${Math.round(v.tilt)}${DEG} (${tiltWords(v.tilt)})${head} · ${fmtKm(v.dist)} from the pivot · camera ${whereWords(v.cam, true)}`;
+}
+function cavityRows(cv) {
+  const v = cavityView(cv), p = cavityPicked(), sv = cv.view, pl = cv.plan;
+  return [
+    ["Drag", dragWords()],
+    ["Turning about", `${fmtLL(v.lon, v.lat)}, ${fmtH(v.h)}, ${whereWords(v.at)}`],
+    ["Looking", `${Math.round(v.tilt)}${DEG} from straight down (${tiltWords(v.tilt)})${v.heading === null ? "" : `, heading ${Math.round(v.heading)}${DEG} ${N.compass(v.heading)} true`}`],
+    ["Camera", `${fmtKm(v.dist)} from the pivot at the map's scale; ${whereWords(v.cam)}`],
+    p && ["Picked", `${fmtLL(p.lon, p.lat)}: ${columnWords(p)}`],
+    ["Shelf", `${cv.name}${sv ? `; in the box, ${Math.round(sv.area / 1e6).toLocaleString()} km² of floating ice, up to ${fmtM(sv.thick)} thick, over up to ${fmtM(sv.water)} of water, and the bed down to ${fmtM(-sv.deep)} below sea level` : ""}. BedMachine v4.1 at ${CV.cellWords(pl.d)}, ${pl.w} x ${pl.h} cells, heights drawn x ${cvxNow()}`],
+    ["Try", SCENES.cavity.task]
+  ];
+}
+
 function hud() {
   const s = shape();
   if (s) { $("hud").textContent = shapeHud(s); return; }
+  if (state.scene === "cavity") { const cv = cav(); $("hud").textContent = cv ? cavityHud(cv) : ""; return; }
   const v = view();
   const head = v.heading === null ? "" : ` · heading ${Math.round(v.heading)}${DEG} ${N.compass(v.heading)}${v.grid ? " (grid)" : ""}`;
   $("hud").textContent = `tilt ${Math.round(v.tilt)}${DEG} (${tiltWords(v.tilt)})${head} · ${fmtKm(v.dist)} from the pivot${v.below ? " · under the sea surface" : ""}`;
@@ -517,6 +695,11 @@ function hud() {
 function readout() {
   const s = shape();
   if (s) { $("out").innerHTML = shapeRows(s).map(([k, val]) => `<tr><th>${k}</th><td>${val}</td></tr>`).join(""); return; }
+  if (state.scene === "cavity") {
+    const cv = cav(), rows = cv ? cavityRows(cv) : [["Drag", dragWords()], ["Try", SCENES.cavity.task]];
+    $("out").innerHTML = rows.filter(Boolean).map(([k, val]) => `<tr><th>${k}</th><td>${val}</td></tr>`).join("");
+    return;
+  }
   const v = view(), p = picked();
   const rows = [
     ["Drag", dragWords()],
@@ -547,6 +730,7 @@ function follow(now) {
 const GEBCO_CREDIT = $("credit").innerHTML;
 const CREDITS = {
   relief: GEBCO_CREDIT, globe: "Coastlines from Natural Earth", rings: "",
+  cavity: `MEaSUREs BedMachine Antarctica v4.1 (Morlighem; NSIDC-0756, <a href="https://doi.org/${C.BEDMACHINE.doi}">doi:${C.BEDMACHINE.doi}</a>), from <a href="https://source.coop/ausantarctic/bedmachine">Source Cooperative</a>`,
   teapot: "The Utah teapot (Martin Newell, 1975), as three.js's TeapotGeometry makes it",
   penguin: "The king penguin of the Penguin datum page"
 };
@@ -554,9 +738,12 @@ function showScene() {
   const k = state.scene, m = SCENES[k];
   shape();
   reliefGroup.visible = k === "relief";
-  headlight.intensity = k === "relief" ? 0 : 1.1;
+  headlight.intensity = k === "relief" ? 0 : k === "cavity" ? 0.8 : 1.1;
   for (const [key, s] of Object.entries(shapes)) s.group.visible = key === k;
+  for (const [key, e] of cavities) if (e.scene) e.scene.group.visible = k === "cavity" && key === state.shelf;
   $("relief-controls").hidden = k !== "relief";
+  $("cavity-controls").hidden = k !== "cavity";
+  $("heights").hidden = k !== "relief" && k !== "cavity";
   $("below").hidden = k === "globe";
   const o = $("orbit").options;
   o[0].textContent = `A turntable about ${m.up}`;
@@ -564,20 +751,33 @@ function showScene() {
   $("shift-hint").textContent = m.shift;
   $("credit").innerHTML = CREDITS[k];
   $("credit").hidden = !CREDITS[k];
-  $("status").textContent = k === "relief" ? said : "";
+  $("status").textContent = said[k] || "";
   if (k === "relief" && !started) build();
+  // (drawn again where the exaggeration changed while another scene was shown)
+  if (k === "relief" && world && reliefVx !== state.vx) { reliefVx = state.vx; drawRelief(); drawLines(); drawCurtain(); drawDrop(); }
+  if (k === "cavity") {
+    loadCavity(state.shelf);
+    const cv = cav();
+    if (cv) { cv.setVx(cvxNow()); cv.setIce(state.ice); drawCavityPick(); }
+  }
+  syncVx();
   lastCam = "";
   readout();
 }
 function syncControls() {
   $("scene").value = state.scene;
   $("draw").value = state.draw;
+  $("shelf").value = state.shelf; $("ice").value = state.ice; $("slice").value = state.slice;
   $("orbit").value = state.orbit;
   $("zc").checked = !!state.zc; $("sea").checked = !!state.sea; $("cut").checked = !!state.cut;
   $("sec").value = state.sec; $("sec").disabled = !state.cut;
-  $("vx").value = Math.log10(state.vx); $("vx-out").textContent = `x ${state.vx}`;
+  syncVx();
   $("n").value = state.n; $("n-out").textContent = state.n;
 }
+// the relief and the ice shelves each have their own exaggeration, a
+// shelf's its box's (C.shelfVx) until the slider sets it
+const vxNow = () => (state.scene === "cavity" ? cvxNow() : state.vx);
+function syncVx() { const v = vxNow(); $("vx").value = Math.log10(v); $("vx-out").textContent = `x ${v}`; }
 // a new scene or Reset view also levels the trackball's roll
 const level = () => { if (state.orbit === "trackball") camera.up.set(0, 0, 1); };
 $("scene").addEventListener("change", (e) => {
@@ -586,9 +786,42 @@ $("scene").addEventListener("change", (e) => {
   showScene();
   level();
   stage.setCamera(sceneCam());
+  applySlice();
   writeHash();
 });
 $("draw").addEventListener("change", (e) => { state.draw = e.target.value; applyDraw(); writeHash(); });
+$("shelf").addEventListener("change", (e) => {
+  state.shelf = e.target.value;
+  state.cam = null; state.sl = ""; state.cvx = 0;
+  showScene();
+  level();
+  stage.setCamera(sceneCam());
+  applySlice();
+  writeHash();
+});
+$("ice").addEventListener("change", (e) => {
+  state.ice = e.target.value;
+  const cv = cav();
+  if (cv) { cv.setIce(state.ice); SC.drawAs(cv.meshes, state.draw); cv.clipAll(); }
+  writeHash();
+});
+// (a section that was following the view is held where it is; one that
+// was off comes back where it was last held)
+$("slice").addEventListener("change", (e) => {
+  const was = state.slice, cv = cav();
+  state.slice = e.target.value;
+  if (cv && was === "view" && state.slice === "held") holdPlane(cv);
+  applySlice();
+  writeHash();
+});
+$("cut-here").addEventListener("click", () => {
+  const cv = cav();
+  if (!cv) return;
+  state.slice = "held"; $("slice").value = "held";
+  holdPlane(cv);
+  applySlice();
+  writeHash();
+});
 $("orbit").addEventListener("change", (e) => { state.orbit = e.target.value; setOrbit(); readout(); writeHash(); });
 $("zc").addEventListener("change", (e) => { state.zc = e.target.checked ? 1 : 0; setOrbit(); writeHash(); });
 $("sea").addEventListener("change", (e) => { state.sea = e.target.checked ? 1 : 0; drawLines(); writeHash(); });
@@ -600,19 +833,32 @@ $("sec").addEventListener("change", (e) => {
 });
 // the exaggeration keeps the pivot on the same thing: its height scales too
 $("vx").addEventListener("input", (e) => {
-  const before = state.vx;
-  state.vx = Math.round(10 ** +e.target.value);
-  $("vx-out").textContent = `x ${state.vx}`;
-  if (!world || state.vx === before) return;
-  const k = state.vx / before;
-  camera.position.z += controls.target.z * (k - 1);
-  controls.target.z *= k;
-  drawRelief(); drawLines(); drawCurtain(); drawDrop(); readout(); writeHash();
+  const before = vxNow(), v = Math.round(10 ** +e.target.value);
+  if (state.scene === "cavity") state.cvx = v;
+  else state.vx = v;
+  syncVx();
+  if (v === before) return;
+  const relief = state.scene === "relief" && world, cv = cav();
+  if (relief || cv) {
+    const k = v / before;
+    camera.position.z += controls.target.z * (k - 1);
+    controls.target.z *= k;
+  }
+  if (relief) { reliefVx = state.vx; drawRelief(); drawLines(); drawCurtain(); drawDrop(); }
+  if (cv) { cv.setVx(v); applySlice(); }
+  readout(); writeHash();
 });
 $("n").addEventListener("input", (e) => { $("n-out").textContent = e.target.value; });
 $("n").addEventListener("change", (e) => { state.n = +e.target.value; writeHash(); build(); });
 const distNow = () => camera.position.distanceTo(controls.target);
-$("reset-view").addEventListener("click", () => { state.cam = null; level(); stage.setCamera(sceneCam()); writeHash(); });
+$("reset-view").addEventListener("click", () => {
+  state.cam = null;
+  if (state.scene === "cavity") state.sl = "";
+  level();
+  stage.setCamera(sceneCam());
+  applySlice();
+  writeHash();
+});
 // Straight down the upright; on the globe straight down onto the pivot
 // where it is on the surface, and where it is inside, the camera at the
 // same height over the place in the middle of the view. (Over a pole, a
@@ -649,9 +895,10 @@ window.addEventListener("hashchange", () => {
   const n = state.n;
   readHash(); syncControls(); setOrbit(); showScene(); applyDraw();
   stage.setCamera(state.cam || sceneCam());
+  if (state.scene === "cavity") { applySlice(); drawCavityPick(); readout(); return; }
   if (state.scene !== "relief" || !world) return;
   if (state.n !== n) build();
-  else { drawRelief(); drawLines(); drawCurtain(); drawDrop(); readout(); }
+  else { reliefVx = state.vx; drawRelief(); drawLines(); drawCurtain(); drawDrop(); readout(); }
 });
 Promise.all([
   loadCoastline("50m"),
@@ -668,6 +915,7 @@ renderer.setAnimationLoop((now) => {
   if (state.orbit === "trackball") tb.update();
   headlight.position.copy(camera.position);
   headlight.target.position.copy(controls.target);
+  followSlice();
   follow(now);
   renderer.render(scene, camera);
 });
