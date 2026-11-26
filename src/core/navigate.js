@@ -1,7 +1,9 @@
 // The Navigation page's geometry, without three.js: a square of Antarctic
 // polar stereographic (EPSG:3031) as a lattice, GEBCO's heights read onto
 // it from a lon/lat window, a section along a meridian, and the camera's
-// tilt and heading as a reader would say them.
+// tilt and heading as a reader would say them; and for its other scenes,
+// a chain of rings at right angles, a globe, and which way things point
+// on the screen.
 
 import { polarStere } from "./polarstere.js";
 
@@ -122,4 +124,80 @@ export function compass(deg) {
   if (deg === null) return "";
   const P = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
   return P[Math.round(deg / 22.5) % 16];
+}
+
+// The lattice's rows and columns as line segments (pairs of vertex
+// indices), without the triangles' diagonals: its cells drawn as a wire
+// mesh.
+export function latticeLines(n) {
+  const m = n + 1, out = new Uint32Array(4 * n * m);
+  let o = 0;
+  for (let j = 0; j < m; j++)
+    for (let i = 0; i < n; i++) { const a = j * m + i; out[o++] = a; out[o++] = a + 1; }
+  for (let j = 0; j < n; j++)
+    for (let i = 0; i < m; i++) { const a = j * m + i; out[o++] = a; out[o++] = a + m; }
+  return out;
+}
+
+// ------------------------------------------------------------------ other scenes
+
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const unit = (a) => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+
+// Three rings of radius r in a chain, each at right angles to the others:
+// the first flat (its axis z), the second standing across it through its
+// hole (axis y), the third standing the other way through the second's
+// (axis x), set out past the first's rim and raised, so the first neither
+// touches it nor reaches its plane. [{ centre, axis }], about the middle of
+// their centres. The rings come no nearer each other than 0.4 r.
+export function linkedRings(r) {
+  const R = [
+    { centre: [0, 0, 0], axis: [0, 0, 1] },
+    { centre: [r, 0, 0], axis: [0, 1, 0] },
+    { centre: [1.3 * r, 0, 0.5 * r], axis: [1, 0, 0] }
+  ];
+  const m = [0, 1, 2].map((k) => (R[0].centre[k] + R[1].centre[k] + R[2].centre[k]) / 3);
+  return R.map((q) => ({ centre: q.centre.map((v, k) => v - m[k]), axis: q.axis }));
+}
+
+// The angle in degrees between a line of sight and an axis, either way
+// along it: 0 looking straight along it (through a ring about it), 90
+// across it.
+export function axisAngle(dir, axis) {
+  return Math.acos(Math.min(1, Math.abs(dot(unit(dir), unit(axis))))) * R2D;
+}
+
+// Which way a direction v points on the screen, in degrees clockwise from
+// straight up the screen, for a camera whose screen right and up are the
+// world directions right and up; null when v is nearly along the line of
+// sight, so has no way on the screen.
+export function screenBearing(v, right, up) {
+  const x = dot(v, right), y = dot(v, up);
+  if (Math.hypot(x, y) < 0.02 * Math.hypot(...v)) return null;
+  return Math.atan2(x, y) * R2D;
+}
+
+// A globe about the origin with its north pole on +z and 0 E on +x: lon,
+// lat in degrees to a point at radius r, and back.
+export function globeXYZ(lon, lat, r = 1) {
+  const l = lon / R2D, p = lat / R2D;
+  return [r * Math.cos(p) * Math.cos(l), r * Math.cos(p) * Math.sin(l), r * Math.sin(p)];
+}
+export function globeLonLat(p) {
+  const [x, y, z] = unit(p);
+  return [Math.atan2(y, x) * R2D, Math.asin(Math.max(-1, Math.min(1, z))) * R2D];
+}
+// North along the globe at p (a unit vector along the meridian, towards
+// the north pole), or null at a pole.
+export function northAt(p) {
+  const u = unit(p), n = [-u[2] * u[0], -u[2] * u[1], 1 - u[2] * u[2]];
+  return Math.hypot(...n) < 1e-6 ? null : unit(n);
+}
+// Where a line of sight from cam along dir first meets a sphere of radius
+// r about the origin, or null where it misses.
+export function sphereHit(cam, dir, r) {
+  const d = unit(dir), b = dot(cam, d), c = dot(cam, cam) - r * r, disc = b * b - c;
+  if (disc < 0) return null;
+  const t = -b - Math.sqrt(disc);
+  return t < 0 ? null : [cam[0] + t * d[0], cam[1] + t * d[1], cam[2] + t * d[2]];
 }

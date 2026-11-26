@@ -3,16 +3,20 @@
 // Ways round a 3D scene, tried on GEBCO's relief round Antarctica in polar
 // stereographic (EPSG:3031): the sea floor, the land and the ice as one
 // exaggerated surface under a see-through sea surface, a section hung down
-// a meridian, and a line dropped to the floor where a click picks. The drag
-// turns the view as a turntable about the map's upright, as an orbit about
-// grid north (three.js's own), or as a free trackball; a double-click turns
-// it about the place under the pointer, and Shift-double-click looks
-// through the sea surface to what is under it. The geometry is in
+// a meridian, and a line dropped to the floor where a click picks; or on a
+// teapot, three linked rings, a globe or a penguin (navigate-scenes.js).
+// The drag turns the view as a turntable about the scene's upright, as an
+// orbit about +y (three.js's own up; grid north on the map), or as a free
+// trackball; a double-click turns it about the place under the pointer,
+// and Shift-double-click looks through the sea surface to what is under
+// it (on the map) or turns about the middle of the thing double-clicked.
+// Any scene draws solid, as a wire mesh, or both. The geometry is in
 // src/core/navigate.js, the gestures in src/scene/pivot.js and stage.js.
 
 import * as THREE from "three";
 import { TrackballControls } from "three/addons/controls/TrackballControls.js";
 import * as N from "../src/core/navigate.js";
+import * as SC from "./navigate-scenes.js";
 import { elevationTint } from "../src/core/basemap.js";
 import { openHeld } from "../src/load/heldrefs.js";
 import { readElevation, holdRanges } from "./basemap-load.js";
@@ -28,19 +32,58 @@ holdRanges(openHeld({ name: "playproj-held", limit: 1024 * 2 ** 20 }).catch(() =
 
 // ---------------------------------------------------------------- state
 
-const ORBITS = {
-  turntable: "a turntable about the map's upright: sideways goes round it, up tips the map over its edge and on under it",
-  north: "an orbit about grid north (+y, towards 0 E), three.js's own: up and down stop edge-on, at the map's top and bottom",
-  trackball: "a trackball: the view turns any way the drag goes, and the horizon rolls with it"
+// The scenes, and what the turntable's upright and three.js's +y are in
+// each: all stand on z, so the drags do the same thing everywhere and only
+// what they turn differs.
+const SCENES = {
+  relief: {
+    label: "Antarctic relief (GEBCO 2026)", up: "the map's upright", yShort: "grid north",
+    turn: "sideways goes round it, up tips the map over its edge and on under it",
+    y: "on this map grid north (towards 0° E), so up and down stop edge-on, at the map's top and bottom",
+    shift: "looks through the sea surface and turns about what is under it: the floor, the section, the dropped line. A click drops a line from the surface to the floor there",
+    task: "Get under the section and look up at it: Shift-double-click it, then drag up. The orbit stops level; the turntable and trackball go on under."
+  },
+  teapot: {
+    label: "Teapot on a pedestal", up: "the teapot's upright", yShort: "front to back here",
+    turn: "sideways goes round it, up looks down into it, down looks up under it, and it stays upright on the screen",
+    y: "here it runs from the front of the teapot to the back, as it does for a model made with z up and opened with y up, so a sideways drag spins the teapot on the screen like a clock hand",
+    shift: "turns about the middle of the thing, half way through it along the line of sight",
+    task: "Go right round the teapot, then look up under its spout. The turntable keeps it upright all the way; the trackball soon has it leaning; the orbit about +y spins it like a clock hand."
+  },
+  rings: {
+    label: "Three linked rings", up: "the red ring's axis (z)", yShort: "the green ring's axis",
+    turn: "sideways goes round it, and straight through the red ring is its pole",
+    y: "the green ring's axis, so straight through the green ring is its pole",
+    shift: "turns about the middle of the ring's tube",
+    task: "Look straight through each ring in turn: its axis shrinks to a dot and its angle above to 0°. Every fixed axis has a pole, straight through one of the rings (red for the turntable, green for the orbit), and lining up on it is awkward; the trackball has none."
+  },
+  globe: {
+    label: "Globe", up: "the earth's axis", yShort: "through the equator at 90° E",
+    turn: "as a desk globe turns: sideways spins the globe, up and down tip a pole towards you, and north stays up the screen",
+    y: "an axis through the equator at 90° E and 90° W, so a drag can go over the poles, and leaves north on its side",
+    shift: "turns about the point half way through the globe along the line of sight",
+    task: "Look straight down on the North Pole, then come down over Antarctica. The turntable keeps north up but stops a degree short of each pole; the trackball goes straight over, and north wanders (the readout says how far); the orbit about +y goes over both poles and lays north on its side."
+  },
+  penguin: {
+    label: "Penguin (from the Penguin datum page)", up: "the penguin's upright", yShort: "belly to back here",
+    turn: "sideways goes round it, up looks down on it, down looks up from under the floe",
+    y: "here it runs from the penguin's belly to its back, so the penguin leans as soon as the view is off to one side of it, and a sideways drag spins it on the screen like a clock hand",
+    shift: "turns about the middle of the thing, half way through it along the line of sight",
+    task: "Look up under the beak, into the inside of a flipper, and down on the tops of the feet: the places no ray from the penguin's centre leaves it last, so no penguin longitude and latitude reaches them (see the Penguin datum page). Double-click a flipper to turn about it."
+  }
 };
-const defaults = { orbit: "turntable", zc: 1, sea: 1, cut: 1, sec: 140, vx: 50, n: 512, pick: "", cam: null };
+const DRAWS = ["solid", "wire", "both"];
+const defaults = { scene: "relief", draw: "solid", orbit: "turntable", zc: 1, sea: 1, cut: 1, sec: 140, vx: 50, n: 512, pick: "", cam: null };
 const state = { ...defaults };
 const lonLat = (raw) => {
   const v = String(raw).split(",").map(Number);
   return v.length === 2 && v.every(isFinite) && v[1] >= -90 && v[1] <= 90 ? `${+v[0].toFixed(4)},${+v[1].toFixed(4)}` : undefined;
 };
 function readHash() {
-  readParams(state, defaults, { orbit: oneOf(Object.keys(ORBITS), "turntable"), pick: lonLat });
+  readParams(state, defaults, {
+    scene: oneOf(Object.keys(SCENES), "relief"), draw: oneOf(DRAWS, "solid"),
+    orbit: oneOf(["turntable", "north", "trackball"], "turntable"), pick: lonLat
+  });
   state.vx = Math.max(1, Math.min(200, state.vx));
   state.n = Math.max(128, Math.min(1024, 64 * Math.round(state.n / 64)));
   state.sec = ((((state.sec + 180) % 360) + 360) % 360) - 180;
@@ -57,10 +100,12 @@ const stage = makeStage($("three"), {
 });
 const { scene, camera, controls, renderer } = stage;
 const UPRIGHT = [0, 0, 1], NORTH = [0, 1, 0];
-// straight down the upright the way the map faces is only in the camera's
-// small offset to one side, which the link rounds: so never quite straight
-// down (a degree)
-stage.controlsFor(UPRIGHT).minPolarAngle = 0.02;
+// straight down (or up) the upright the way the map faces is only in the
+// camera's small offset to one side, which the link rounds: so never quite
+// straight down or up (a degree)
+const turntable = stage.controlsFor(UPRIGHT);
+turntable.minPolarAngle = 0.02;
+turntable.maxPolarAngle = Math.PI - 0.02;
 tb = new TrackballControls(camera, renderer.domElement);
 tb.enabled = false;
 tb.target = controls.target;
@@ -73,6 +118,8 @@ function setOrbit() {
   const o = state.orbit;
   controls.zoomToCursor = !!state.zc;
   if (o === "trackball") {
+    // (it starts level, whatever roll the orbit about +y left)
+    camera.up.fromArray(UPRIGHT);
     stage.turnAbout(null);
     tb.enabled = true;
     return;
@@ -86,39 +133,68 @@ scene.add(new THREE.HemisphereLight(0xe8eef8, 0x202a3c, 1.4));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(-1, 1.3, 1.8);
 scene.add(sun);
+// off the map, a light from the camera too, so what is looked at is lit
+// from wherever it is looked at, below included
+const headlight = new THREE.DirectionalLight(0xffffff, 0);
+scene.add(headlight, headlight.target);
 
 // the relief, lit from above; seen from beneath it is a dark veil, so what
 // hangs in the water above it still shows through
+const reliefGroup = new THREE.Group();
+scene.add(reliefGroup);
 const relief = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true }));
 const underside = new THREE.Mesh(relief.geometry,
   new THREE.MeshBasicMaterial({ vertexColors: true, color: 0x55657a, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.BackSide }));
 underside.renderOrder = 3;
-scene.add(relief, underside);
+// the relief as a wire mesh: its cells' edges, in its own colours, or dark
+// over the solid
+const WIRE_LIT = new THREE.LineBasicMaterial({ vertexColors: true });
+const WIRE_DARK = new THREE.LineBasicMaterial({ color: 0x0b1220, transparent: true, opacity: 0.3 });
+const reliefWire = new THREE.LineSegments(new THREE.BufferGeometry(), WIRE_LIT);
+reliefGroup.add(relief, underside, reliefWire);
 // the sea surface, see-through, with the coast and graticule draped on the
 // surface (the sea's, or the land's where that is higher)
 const sea = new THREE.Mesh(new THREE.PlaneGeometry(2 * HALF * S, 2 * HALF * S),
   new THREE.MeshBasicMaterial({ color: 0x5b9bd5, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }));
 sea.renderOrder = 2;
-scene.add(sea);
+reliefGroup.add(sea);
 const coastLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xf1f4f8, transparent: true, opacity: 0.8 }));
 const gratLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x8fa3bd, transparent: true, opacity: 0.45 }));
-scene.add(coastLines, gratLines);
+reliefGroup.add(coastLines, gratLines);
 // the section: the water column down a meridian, light at the top, dark at the floor
 const curtain = new THREE.Mesh(new THREE.BufferGeometry(),
   new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }));
 curtain.renderOrder = 1;
 const curtainEdge = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffd166 }));
-scene.add(curtain, curtainEdge);
+reliefGroup.add(curtain, curtainEdge);
 // the picked place: a line from the surface to the floor, a bead at each end
 const drop = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff6b5a }));
 const beads = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: 0xff6b5a, size: 9, sizeAttenuation: false }));
-scene.add(drop, beads);
+reliefGroup.add(drop, beads);
+
+// the other scenes, made the first time they are shown
+const shapes = {};
+const BUILD = { teapot: SC.teapotScene, rings: SC.ringsScene, globe: SC.globeScene, penguin: SC.penguinScene };
+function shape() {
+  const k = state.scene;
+  if (k === "relief") return null;
+  if (!shapes[k]) {
+    shapes[k] = BUILD[k]();
+    if (k === "globe" && coast) shapes[k].setCoast(coast.world, coast.south);
+    scene.add(shapes[k].group);
+    SC.drawAs(shapes[k].meshes, state.draw);
+  }
+  return shapes[k];
+}
+const sceneCam = () => (state.scene === "relief" ? DEFAULT_CAM : shape().cam);
 
 // ---------------------------------------------------------------- the relief
 
-const status = (s) => { $("status").textContent = s; };
-let world = null, job = 0, coast = null;
-const tris = new Map();
+// (the relief's progress shows only while the relief is the scene)
+let said = "";
+const status = (s) => { said = s; if (state.scene === "relief") $("status").textContent = s; };
+let world = null, job = 0, coast = null, started = false;
+const tris = new Map(), wires = new Map();
 
 // GEBCO south of the square's corners in two halves of the world, each at
 // about a third of a mesh cell (not finer than 4 arc minutes: two windows
@@ -139,6 +215,7 @@ function iceTint(z) {
 }
 
 async function build() {
+  started = true;
   const my = ++job;
   status("Reading GEBCO 2026...");
   let wins;
@@ -178,6 +255,28 @@ function drawRelief() {
   g.computeBoundingSphere();
   relief.geometry.dispose();
   relief.geometry = underside.geometry = g;
+  if (!wires.has(grid.n)) wires.set(grid.n, new THREE.BufferAttribute(N.latticeLines(grid.n), 1));
+  const w = new THREE.BufferGeometry();
+  w.setAttribute("position", g.attributes.position);
+  w.setAttribute("color", g.attributes.color);
+  w.setIndex(wires.get(grid.n));
+  w.boundingSphere = g.boundingSphere;
+  reliefWire.geometry.dispose();
+  reliefWire.geometry = w;
+}
+
+// Solid, wire mesh, or both: on the relief its cells' edges, on the other
+// scenes their triangles' (navigate-scenes.js). The solid is still there
+// to pick when only the wire is drawn.
+function applyDraw() {
+  const d = state.draw;
+  relief.material.visible = underside.visible = d !== "wire";
+  relief.material.polygonOffset = d === "both";
+  relief.material.polygonOffsetFactor = relief.material.polygonOffsetUnits = 1;
+  relief.material.needsUpdate = true;
+  reliefWire.visible = d !== "solid";
+  reliefWire.material = d === "wire" ? WIRE_LIT : WIRE_DARK;
+  for (const s of Object.values(shapes)) SC.drawAs(s.meshes, d);
 }
 
 // a lon/lat polyline as segments on the surface, cut where it leaves the
@@ -298,6 +397,8 @@ function reliefHits() {
 // the sea surface from above and the floor's underside from beneath: the
 // view turns about what is in or under the water.
 function pivotAt(px, py, through) {
+  const s = shape();
+  if (s) return shapePivot(s, px, py, through);
   if (!world) return null;
   rayAt(stage, px, py, ray);
   const r = reliefHits();
@@ -308,10 +409,26 @@ function pivotAt(px, py, through) {
   const got = (through && nearestHit(below)) || nearestHit([...surface, ...below]);
   return got ? got[0] : null;
 }
+// In the other scenes a double-click turns about the nearest place on a
+// thing under the pointer, and with Shift about the middle of that thing
+// along the line of sight: half way from where the line goes in to where
+// it next comes out.
+function shapePivot(s, px, py, through) {
+  rayAt(stage, px, py, ray);
+  const sides = s.meshes.map((m) => m.material.side);
+  for (const m of s.meshes) m.material.side = THREE.DoubleSide;
+  const hits = ray.intersectObjects(s.meshes, false);
+  s.meshes.forEach((m, i) => { m.material.side = sides[i]; });
+  if (!hits.length) return null;
+  const a = hits[0];
+  if (!through) return a.point;
+  const b = hits.find((h) => h.object === a.object && h.distance > a.distance + 1e-6);
+  return b ? a.point.clone().lerp(b.point, 0.5) : a.point;
+}
 const pivot = addPivot(stage, { pivotAt, onCamera: (c) => { state.cam = c; writeHash(); } });
 // a click drops a line to the floor at the place on the relief under it
 addClickPick(stage, (px, py) => {
-  if (!world) return null;
+  if (state.scene !== "relief" || !world) return null;
   rayAt(stage, px, py, ray);
   const r = reliefHits(), h = nearestHit([r.top, r.under]);
   if (!h) return null;
@@ -334,20 +451,81 @@ function view() {
 function tiltWords(t) {
   return t < 2 ? "straight down" : t > 178 ? "straight up" : t < 88 ? "down" : t > 92 ? "up, from below" : "level";
 }
+function dragWords() {
+  const m = SCENES[state.scene];
+  if (state.orbit === "turntable") return `a turntable about ${m.up}: ${m.turn}`;
+  if (state.orbit === "north") return `an orbit about +y, three.js's own up: ${m.y}`;
+  return "a trackball: the view turns any way the drag goes, and the horizon rolls with it";
+}
+// the screen's right and up as world directions
+const _r = new THREE.Vector3(), _u = new THREE.Vector3();
+function screenAxes() {
+  return [_r.set(1, 0, 0).applyQuaternion(camera.quaternion).toArray(), _u.set(0, 1, 0).applyQuaternion(camera.quaternion).toArray()];
+}
+const fmtBearing = (b) => (b === null ? "along the line of sight" : Math.abs(b) < 1 ? "straight up the screen"
+  : `${Math.round(Math.abs(b))}${DEG} ${b > 0 ? "clockwise" : "anticlockwise"} from straight up the screen`);
+const shortBearing = (b) => (b === null ? "end on" : Math.abs(b) < 1 ? "up" : `${Math.round(Math.abs(b))}${DEG} ${b > 0 ? "right" : "left"}`);
+// the other scenes: tilt, which way the upright (or north, on the globe)
+// is on the screen, how far the camera is, and on the rings how near the
+// line of sight is to each ring's axis
+function shapeView(s) {
+  const c = camera.position.toArray(), t = controls.target.toArray(), d = [t[0] - c[0], t[1] - c[1], t[2] - c[2]];
+  const [R, U] = screenAxes(), dist = Math.hypot(...d);
+  const v = { tilt: N.viewAngles(c, t).tilt, up: N.screenBearing([0, 0, 1], R, U), dist, below: c[2] < 0 };
+  if (s.rings) v.rings = s.rings.map((q) => N.axisAngle(d, q.axis));
+  if (state.scene === "globe") {
+    const p = N.sphereHit(c, d, SC.GLOBE_R), north = p && N.northAt(p);
+    v.at = p && N.globeLonLat(p);
+    v.atTilt = p ? Math.acos(Math.max(-1, Math.min(1, -(d[0] * p[0] + d[1] * p[1] + d[2] * p[2]) / (dist * SC.GLOBE_R)))) * 180 / Math.PI : null;
+    v.north = p && !north ? "pole" : north ? N.screenBearing(north, R, U) : null;
+    v.over = N.globeLonLat(c);
+    v.alt = (Math.hypot(...c) / SC.GLOBE_R - 1) * 6371e3;
+  }
+  return v;
+}
+function shapeHud(s) {
+  const v = shapeView(s);
+  if (v.rings) return `through: ${v.rings.map((a, k) => `${SC.RING_COLOURS[k][1]} ${Math.round(a)}${DEG}`).join(" · ")} · tilt ${Math.round(v.tilt)}${DEG}`;
+  if (v.alt !== undefined) {
+    const n = v.north === "pole" ? "at a pole" : v.north === null ? "off the globe" : `north ${shortBearing(v.north)}`;
+    return `${v.at ? fmtLL(...v.at) : "space"} · ${n}${v.atTilt === null ? "" : ` · tilt ${Math.round(v.atTilt)}${DEG}`} · ${fmtKm(v.alt)} up`;
+  }
+  return `tilt ${Math.round(v.tilt)}${DEG} (${tiltWords(v.tilt)}) · upright ${shortBearing(v.up)} · ${v.dist.toFixed(2)} from the pivot`;
+}
+function shapeRows(s) {
+  const v = shapeView(s), m = SCENES[state.scene], rows = [["Drag", dragWords()]];
+  if (v.alt !== undefined) {
+    rows.push(["Looking at", v.at ? `${fmtLL(...v.at)} in the middle of the view, ${Math.round(v.atTilt)}${DEG} from straight down there` : "space: the middle of the view misses the globe"]);
+    rows.push(["North", v.north === "pole" ? "none: the middle of the view is a pole" : v.north === null ? "" : fmtBearing(v.north)]);
+    rows.push(["Camera", `${fmtKm(v.alt)} up, over ${fmtLL(...v.over)}, at the earth's scale`]);
+  } else {
+    if (v.rings) rows.push(["Through the rings", `${v.rings.map((a, k) => `${SC.RING_COLOURS[k][1]} ${Math.round(a)}${DEG}`).join(", ")} off their axes (0${DEG} is straight through)`]);
+    rows.push(["Looking", `${Math.round(v.tilt)}${DEG} from straight down (${tiltWords(v.tilt)})`]);
+    rows.push([v.rings ? "Red ring's axis" : "Upright", `${fmtBearing(v.up)}${v.up === null ? "" : Math.abs(v.up) < 1 ? ": no roll" : ": rolled"}`]);
+    rows.push(["Camera", `${v.dist.toFixed(2)} from the pivot; the ${s.what} is ${s.size.toFixed(1)} across${v.below && s.height ? ", and the camera is below its floor" : ""}`]);
+  }
+  rows.push(["Try", m.task]);
+  return rows;
+}
 function hud() {
+  const s = shape();
+  if (s) { $("hud").textContent = shapeHud(s); return; }
   const v = view();
   const head = v.heading === null ? "" : ` · heading ${Math.round(v.heading)}${DEG} ${N.compass(v.heading)}${v.grid ? " (grid)" : ""}`;
   $("hud").textContent = `tilt ${Math.round(v.tilt)}${DEG} (${tiltWords(v.tilt)})${head} · ${fmtKm(v.dist)} from the pivot${v.below ? " · under the sea surface" : ""}`;
 }
 function readout() {
+  const s = shape();
+  if (s) { $("out").innerHTML = shapeRows(s).map(([k, val]) => `<tr><th>${k}</th><td>${val}</td></tr>`).join(""); return; }
   const v = view(), p = picked();
   const rows = [
-    ["Drag", ORBITS[state.orbit]],
+    ["Drag", dragWords()],
     ["Turning about", `${fmtLL(v.lon, v.lat)}, ${fmtH(v.h)}`],
     ["Looking", `${Math.round(v.tilt)}${DEG} from straight down (${tiltWords(v.tilt)})${v.heading === null ? "" : `, heading ${Math.round(v.heading)}${DEG} ${N.compass(v.heading)}${v.grid ? " from grid north" : " true"}`}`],
     ["Camera", `${fmtKm(v.dist)} from the pivot at the map's scale, ${v.below ? "under" : "above"} the sea surface`],
     p && ["Picked", `${fmtLL(p.lon, p.lat)}: GEBCO ${p.h < 0 ? `${Math.round(-p.h).toLocaleString()} m deep` : `${Math.round(p.h).toLocaleString()} m up`}`],
-    world && ["Relief", `${state.n} x ${state.n} cells of ${fmtKm((2 * HALF) / state.n)}, ${Math.round(world.lo).toLocaleString()} to ${Math.round(world.hi).toLocaleString()} m, drawn x ${state.vx}; GEBCO read at ${Math.round(world.wins[0].dx * 60)} arc minutes`]
+    world && ["Relief", `${state.n} x ${state.n} cells of ${fmtKm((2 * HALF) / state.n)}, ${Math.round(world.lo).toLocaleString()} to ${Math.round(world.hi).toLocaleString()} m, drawn x ${state.vx}; GEBCO read at ${Math.round(world.wins[0].dx * 60)} arc minutes`],
+    ["Try", SCENES.relief.task]
   ];
   $("out").innerHTML = rows.filter(Boolean).map(([k, val]) => `<tr><th>${k}</th><td>${val}</td></tr>`).join("");
 }
@@ -364,13 +542,53 @@ function follow(now) {
 
 // ---------------------------------------------------------------- controls
 
+// what changes with the scene: what is shown, the panel's map controls,
+// the orbits' names, the hint and the credit
+const GEBCO_CREDIT = $("credit").innerHTML;
+const CREDITS = {
+  relief: GEBCO_CREDIT, globe: "Coastlines from Natural Earth", rings: "",
+  teapot: "The Utah teapot (Martin Newell, 1975), as three.js's TeapotGeometry makes it",
+  penguin: "The king penguin of the Penguin datum page"
+};
+function showScene() {
+  const k = state.scene, m = SCENES[k];
+  shape();
+  reliefGroup.visible = k === "relief";
+  headlight.intensity = k === "relief" ? 0 : 1.1;
+  for (const [key, s] of Object.entries(shapes)) s.group.visible = key === k;
+  $("relief-controls").hidden = k !== "relief";
+  $("below").hidden = k === "globe";
+  const o = $("orbit").options;
+  o[0].textContent = `A turntable about ${m.up}`;
+  o[1].textContent = `An orbit about +y (three.js's own): ${m.yShort}`;
+  $("shift-hint").textContent = m.shift;
+  $("credit").innerHTML = CREDITS[k];
+  $("credit").hidden = !CREDITS[k];
+  $("status").textContent = k === "relief" ? said : "";
+  if (k === "relief" && !started) build();
+  lastCam = "";
+  readout();
+}
 function syncControls() {
+  $("scene").value = state.scene;
+  $("draw").value = state.draw;
   $("orbit").value = state.orbit;
   $("zc").checked = !!state.zc; $("sea").checked = !!state.sea; $("cut").checked = !!state.cut;
   $("sec").value = state.sec; $("sec").disabled = !state.cut;
   $("vx").value = Math.log10(state.vx); $("vx-out").textContent = `x ${state.vx}`;
   $("n").value = state.n; $("n-out").textContent = state.n;
 }
+// a new scene or Reset view also levels the trackball's roll
+const level = () => { if (state.orbit === "trackball") camera.up.set(0, 0, 1); };
+$("scene").addEventListener("change", (e) => {
+  state.scene = e.target.value;
+  state.cam = null;
+  showScene();
+  level();
+  stage.setCamera(sceneCam());
+  writeHash();
+});
+$("draw").addEventListener("change", (e) => { state.draw = e.target.value; applyDraw(); writeHash(); });
 $("orbit").addEventListener("change", (e) => { state.orbit = e.target.value; setOrbit(); readout(); writeHash(); });
 $("zc").addEventListener("change", (e) => { state.zc = e.target.checked ? 1 : 0; setOrbit(); writeHash(); });
 $("sea").addEventListener("change", (e) => { state.sea = e.target.checked ? 1 : 0; drawLines(); writeHash(); });
@@ -394,10 +612,21 @@ $("vx").addEventListener("input", (e) => {
 $("n").addEventListener("input", (e) => { $("n-out").textContent = e.target.value; });
 $("n").addEventListener("change", (e) => { state.n = +e.target.value; writeHash(); build(); });
 const distNow = () => camera.position.distanceTo(controls.target);
-$("reset-view").addEventListener("click", () => { state.cam = null; stage.setCamera(DEFAULT_CAM); writeHash(); });
+$("reset-view").addEventListener("click", () => { state.cam = null; level(); stage.setCamera(sceneCam()); writeHash(); });
+// Straight down the upright; on the globe straight down onto the pivot
+// where it is on the surface, and where it is inside, the camera at the
+// same height over the place in the middle of the view. (Over a pole, a
+// hair to one side, as on the map: the turntable's pole.)
 $("down").addEventListener("click", () => {
   const t = controls.target, d = distNow();
-  stage.setCamera([t.x, t.y - 0.001 * d, t.z + d, t.x, t.y, t.z]);
+  if (state.scene === "globe") {
+    const c = camera.position, R = SC.GLOBE_R, onIt = t.length() > 0.5 * R;
+    const at = onIt ? t.toArray() : N.sphereHit(c.toArray(), t.clone().sub(c).toArray(), R) || c.toArray();
+    const u = new THREE.Vector3(...at).normalize();
+    if (Math.abs(u.z) > 0.9999) u.y -= 0.001;
+    const p = onIt ? u.clone().multiplyScalar(d).add(t) : u.clone().multiplyScalar(c.length());
+    stage.setCamera([p.x, p.y, p.z, t.x, t.y, t.z]);
+  } else stage.setCamera([t.x, t.y - 0.001 * d, t.z + d, t.x, t.y, t.z]);
   state.cam = stage.getCamera(); writeHash();
 });
 $("below").addEventListener("click", () => {
@@ -411,14 +640,17 @@ $("below").addEventListener("click", () => {
 readHash();
 syncControls();
 setOrbit();
-stage.setCamera(state.cam || DEFAULT_CAM);
+showScene();
+applyDraw();
+stage.setCamera(state.cam || sceneCam());
 stage.resize();
 shareLinks("Navigation", { height: 560 });
 window.addEventListener("hashchange", () => {
   const n = state.n;
-  readHash(); syncControls(); setOrbit();
-  stage.setCamera(state.cam || DEFAULT_CAM);
-  if (state.n !== n || !world) build();
+  readHash(); syncControls(); setOrbit(); showScene(); applyDraw();
+  stage.setCamera(state.cam || sceneCam());
+  if (state.scene !== "relief" || !world) return;
+  if (state.n !== n) build();
   else { drawRelief(); drawLines(); drawCurtain(); drawDrop(); readout(); }
 });
 Promise.all([
@@ -428,12 +660,14 @@ Promise.all([
   const ring = (a) => Array.from(a);
   coast = { world: c, south: [ring(s.grounding), ring(s.front)] };
   drawLines();
+  if (shapes.globe) shapes.globe.setCoast(coast.world, coast.south);
 }).catch(() => {});
 renderer.setAnimationLoop((now) => {
   pivot.step(now);
   controls.update();
   if (state.orbit === "trackball") tb.update();
+  headlight.position.copy(camera.position);
+  headlight.target.position.copy(controls.target);
   follow(now);
   renderer.render(scene, camera);
 });
-build();

@@ -1,8 +1,10 @@
-// The Navigation page's geometry: the lattice and its triangles, GEBCO's
-// window sampled with longitude wrapped, a meridian section, and the
-// camera's tilt and heading.
+// The Navigation page's geometry: the lattice, its triangles and its wire
+// mesh, GEBCO's window sampled with longitude wrapped, a meridian section,
+// the camera's tilt and heading; the linked rings, the globe, and which way
+// things point on the screen.
 import assert from "node:assert/strict";
-import { PS, lattice, latticeTriangles, squareBox, windowSampler, latticeLonLat, stripSampler, meridianPoints, viewAngles, compass } from "../src/core/navigate.js";
+import { PS, lattice, latticeTriangles, squareBox, windowSampler, latticeLonLat, stripSampler, meridianPoints, viewAngles, compass,
+  latticeLines, linkedRings, axisAngle, screenBearing, globeXYZ, globeLonLat, northAt, sphereHit } from "../src/core/navigate.js";
 
 const near = (a, b, tol, what) => assert.ok(Math.abs(a - b) <= tol, `${what}: ${a} vs ${b}`);
 
@@ -95,4 +97,82 @@ assert.equal(compass(100), "E");
 assert.equal(compass(202.5), "SSW");
 assert.equal(compass(null), "");
 
-console.log("navigate: lattice, triangles, window sampler, meridian section, tilt and heading all agree");
+// the wire mesh: every row and column segment once, each joining neighbours
+const wl = latticeLines(4);
+assert.equal(wl.length, 4 * 4 * 5);
+const seen = new Set();
+for (let s = 0; s < wl.length; s += 2) {
+  const [a, b] = [wl[s], wl[s + 1]], [ia, ja, ib, jb] = [a % 5, Math.floor(a / 5), b % 5, Math.floor(b / 5)];
+  assert.equal(Math.abs(ia - ib) + Math.abs(ja - jb), 1, `segment ${a}-${b} joins neighbours`);
+  seen.add(`${Math.min(a, b)}-${Math.max(a, b)}`);
+}
+assert.equal(seen.size, wl.length / 2, "no segment twice");
+
+// the rings: at right angles, clear of each other, the first two and the
+// last two linked (one ring passes through the other's disc an odd number
+// of times) and the first and last not
+const RR = 1.1, rings = linkedRings(RR);
+const basis = (ax) => {
+  const a = Math.abs(ax[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const u = [ax[1] * a[2] - ax[2] * a[1], ax[2] * a[0] - ax[0] * a[2], ax[0] * a[1] - ax[1] * a[0]];
+  const v = [ax[1] * u[2] - ax[2] * u[1], ax[2] * u[0] - ax[0] * u[2], ax[0] * u[1] - ax[1] * u[0]];
+  return [u, v];
+};
+const onRing = (q, t) => { const [u, v] = basis(q.axis); return [0, 1, 2].map((k) => q.centre[k] + RR * (Math.cos(t) * u[k] + Math.sin(t) * v[k])); };
+const K = 720, pts = rings.map((q) => Array.from({ length: K }, (_, i) => onRing(q, (2 * Math.PI * i) / K)));
+function gap(a, b) {
+  let m = Infinity;
+  for (const p of pts[a]) for (const q of pts[b]) m = Math.min(m, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]));
+  return m;
+}
+function throughDisc(a, b) {
+  // how often ring a crosses the plane of ring b inside its circle
+  const q = rings[b], side = (p) => (p[0] - q.centre[0]) * q.axis[0] + (p[1] - q.centre[1]) * q.axis[1] + (p[2] - q.centre[2]) * q.axis[2];
+  let n = 0;
+  for (let i = 0; i < K; i++) {
+    const p = pts[a][i], r = pts[a][(i + 1) % K], s0 = side(p), s1 = side(r);
+    if (s0 * s1 > 0 || s0 === s1) continue;
+    const t = s0 / (s0 - s1), x = [0, 1, 2].map((k) => p[k] + t * (r[k] - p[k]));
+    if (Math.hypot(x[0] - q.centre[0], x[1] - q.centre[1], x[2] - q.centre[2]) < RR) n++;
+  }
+  return n;
+}
+for (const [a, b] of [[0, 1], [1, 2], [0, 2]]) {
+  near(axisAngle(rings[a].axis, rings[b].axis), 90, 1e-9, `rings ${a} and ${b} at right angles`);
+  assert.ok(gap(a, b) > 0.4 * RR, `rings ${a} and ${b} clear: ${gap(a, b)}`);
+}
+assert.equal(throughDisc(0, 1), 1, "the first ring through the second");
+assert.equal(throughDisc(1, 0), 1, "and the second through the first");
+assert.equal(throughDisc(1, 2), 1, "the second through the third");
+assert.equal(throughDisc(2, 1), 1, "and the third through the second");
+assert.equal(throughDisc(0, 2) + throughDisc(2, 0), 0, "the first and third not through each other at all");
+near(Math.hypot(...[0, 1, 2].map((k) => rings.reduce((s, q) => s + q.centre[k], 0))), 0, 1e-12, "about their middle");
+
+// line of sight against an axis, either way along it
+near(axisAngle([0, 0, -1], [0, 0, 1]), 0, 1e-9, "straight along");
+near(axisAngle([1, 0, 0], [0, 0, 1]), 90, 1e-9, "across");
+near(axisAngle([1, 0, 1], [0, 0, 1]), 45, 1e-9, "half way");
+
+// on the screen: right is +x, up is +z (a camera looking along +y)
+const R = [1, 0, 0], U = [0, 0, 1];
+near(screenBearing([0, 0, 1], R, U), 0, 1e-9, "straight up the screen");
+near(screenBearing([1, 0, 1], R, U), 45, 1e-9, "up and to the right: clockwise");
+near(screenBearing([-1, 0, 0], R, U), -90, 1e-9, "to the left: anticlockwise");
+assert.equal(screenBearing([0, 1, 0], R, U), null, "along the line of sight");
+
+// the globe: round trips, north, and where a line of sight meets it
+for (const [lon, lat] of [[0, 0], [147.3, -42.9], [-120, 60], [179.9, -89]]) {
+  const [a, b] = globeLonLat(globeXYZ(lon, lat, 2.5));
+  near(a, lon, 1e-9, "globe lon"); near(b, lat, 1e-9, "globe lat");
+}
+assert.deepEqual(globeXYZ(90, 0).map((v) => +v.toFixed(12)), [0, 1, 0], "90 E on +y");
+near(northAt(globeXYZ(30, 0))[2], 1, 1e-12, "north at the equator is +z");
+const nh = northAt(globeXYZ(0, 45));
+near(nh[0], -Math.SQRT1_2, 1e-12, "north at 45 N 0 E leans back over the pole"); near(nh[2], Math.SQRT1_2, 1e-12, "and up");
+assert.equal(northAt([0, 0, 3]), null, "no north at the pole");
+const hit = sphereHit([0, -10, 0], [0, 1, 0], 2.5);
+near(hit[1], -2.5, 1e-12, "the near side");
+assert.equal(sphereHit([0, -10, 0], [0, -1, 0], 2.5), null, "looking away");
+assert.equal(sphereHit([0, -10, 3], [0, 1, 0], 2.5), null, "passing over");
+
+console.log("navigate: lattice, triangles, wire mesh, window sampler, meridian section, tilt and heading, rings, globe and screen bearings all agree");

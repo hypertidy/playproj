@@ -19,10 +19,12 @@ export function makeStage(el, { bg = 0x000000, fov = 38, near = 0.05, far = 200,
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
 
+  // (and stops the view coasting on from a drag: see still())
   function setCamera(c) {
     camera.position.set(c[0], c[1], c[2]);
     controls.target.set(c[3], c[4], c[5]);
-    controls.update();
+    if (held) still(held);
+    else controls.update();
   }
   function getCamera() {
     const p = camera.position, t = controls.target;
@@ -47,12 +49,25 @@ export function makeStage(el, { bg = 0x000000, fov = 38, near = 0.05, far = 200,
   const own = controls.update;
   const SETTINGS = ["enableDamping", "dampingFactor", "enableZoom", "zoomSpeed", "enableRotate", "rotateSpeed",
     "enablePan", "panSpeed", "screenSpacePanning", "keyPanSpeed", "zoomToCursor", "minDistance", "maxDistance"];
+  // OrbitControls keep the rest of a drag's turn to spend after the camera
+  // stops moving (held at a pole, say), and spend it the next time they
+  // move the camera: from wherever it has been put since, or when they have
+  // the mouse again. still(c) has c spend it at once (damping off), then
+  // puts the camera back.
+  function still(c) {
+    const p = camera.position.clone(), t = controls.target.clone(), d = c.enableDamping, run = c === controls ? own : () => c.update();
+    c.enableDamping = false;
+    run();
+    camera.position.copy(p); controls.target.copy(t);
+    run();
+    c.enableDamping = d;
+  }
   function update(dt) {
     // (before this frame's move, so a page that has just set camera.up for the
     // new axis never has a frame turned by the old one)
     if (wanted !== held && !dragging && !moved) {
       if (held) held.enabled = false;
-      if (wanted) wanted.enabled = true;
+      if (wanted) { wanted.enabled = true; still(wanted); }
       held = wanted;
     }
     if (held && held !== controls) for (const k of SETTINGS) held[k] = controls[k];

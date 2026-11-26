@@ -1290,10 +1290,25 @@ Antarctic coast to south of Australia), and a line dropped from the surface
 to the floor where a click picks. Seen from beneath, the relief is a dark
 veil, so what hangs in the water above it still shows.
 
-A drag turns the view as a turntable about the map's upright, as an orbit
-about grid north (OrbitControls with `up` along +y, three.js's own), or as a
-free trackball (`TrackballControls`); the same drag up from the same view
-stops edge-on with the orbit and goes on under the map with the other two. A
+The scene can also be a teapot on a pedestal (the Utah teapot, three.js's
+`TeapotGeometry`), three rings linked in a chain at right angles, a globe
+with its coastlines, or the king penguin of the Penguin datum page, each
+chosen for something one way of turning does well and another badly; the
+readout's last row says what to try, and gives what it needs to judge it:
+how far the line of sight is from each ring's axis, where north is on the
+screen over the globe, how far the upright is rolled. All stand on z, so
+each drag means the same in all of them, and three.js's +y is grid north on
+the map, the line from front to back through the teapot and the penguin
+(which is what a model made z-up looks like opened y-up), the green ring's
+axis, and an axis through the equator at 90 E on the globe. Off the map,
+Shift-double-click turns about the middle of the thing under the pointer.
+Any scene draws solid, as a wire mesh (the relief's cells, the other
+scenes' triangles), or both.
+
+A drag turns the view as a turntable about the scene's upright, as an orbit
+about +y (OrbitControls with `up` along +y, three.js's own), or as a free
+trackball (`TrackballControls`); on the map the same drag up from the same
+view stops edge-on with the orbit and goes on under it with the other two. A
 double-click turns the view about the nearest thing under the pointer, and
 Shift-double-click leaves out what covers the water (the sea surface from
 above, the floor's underside from beneath) to turn about the section, the
@@ -1306,10 +1321,13 @@ distance. GEBCO is read in two halves of the world from its own overviews (at
 most 4 arc minutes), its byte ranges held as the store page holds them. The
 turntable is a second set of OrbitControls that `src/scene/stage.js` hands the
 mouse to (`turnAbout`), and the double-click, ring and click are
-`src/scene/pivot.js`, both shared with the store page; the geometry is
+`src/scene/pivot.js`, both shared with the store page; the other scenes are
+`js/navigate-scenes.js`; the geometry (the relief's lattice and wire mesh,
+the rings, the globe, which way things point on the screen) is
 `src/core/navigate.js`, checked by `test/check-navigate.mjs`.
 
-Hash keys: `orbit` (`turntable`, `north`, `trackball`), `zc` (zoom to
+Hash keys: `scene` (`relief`, `teapot`, `rings`, `globe`, `penguin`), `draw`
+(`solid`, `wire`, `both`), `orbit` (`turntable`, `north`, `trackball`), `zc` (zoom to
 cursor), `sea`, `cut`, `sec` (the section's longitude), `vx`, `n` (cells
 across, 128 to 1024), `pick` (lon,lat), `cam`.
 
@@ -1445,7 +1463,8 @@ cutaway.html (sondage)                 Cutaway: a section and block diagram thro
 voxels.html, js/voxels.js              Voxels: GEBCO topography as voxel columns, three cell systems, MagicaVoxel export
 voxels-gallery.html, js/voxels-gallery.js  Voxel gallery: preset blocks live in an embedded frame, with links and embeds
 story.html, js/story.js                Story: a block of storeys set down on draped terrain (2 m DEM or GEBCO, Esri imagery)
-navigate.html, js/navigate.js          Navigation: turntable, orbit and trackball on GEBCO round Antarctica, pivots, looking through, a glossary
+navigate.html, js/navigate.js          Navigation: turntable, orbit and trackball on GEBCO round Antarctica and other scenes, pivots, looking through, wire mesh, a glossary
+js/navigate-scenes.js                  the Navigation page's other scenes: teapot, linked rings, globe, penguin; solid or wire mesh
 shallows.html                          Shallow water: the shallows solver live on generated, extracted or opened terrain and analytic benchmarks
 
 js/data.js          loads the coastlines in data/
@@ -1505,7 +1524,7 @@ src/core/track.js                 ship tracks from underway CSV or parquet rows;
 src/core/rhumb.js                 rhumb lines, geodesics and great circles, the whole loxodrome, composite sailing
 src/core/voxels.js                voxel columns over lon/lat or equal-area cells, any-CRS windows and sampling, column means, quantising, .vox files
 src/core/story.js                 story scenes: a terrain grid on an equal-area plane, its heights and triangles, where a block stands
-src/core/navigate.js              the Navigation page: an EPSG:3031 lattice, GEBCO windows sampled onto it, a meridian section, tilt and heading
+src/core/navigate.js              the Navigation page: an EPSG:3031 lattice and its wire mesh, GEBCO windows sampled onto it, a meridian section, tilt and heading, linked rings, a globe, screen bearings
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
