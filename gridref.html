@@ -53,11 +53,17 @@
           compares them, the eastings and northings and each zone's false origin with PROJ
           (<code>test/make-gridref-fixture.py</code>). The street directory is made up: its pages are 4 km by 5 km
           cut from the kilometre grid in each 100 km square, numbered across then down, with 500 m squares
-          lettered A to H and numbered 1 to 10. Real directories each have their own scheme.</p>
+          lettered A to H and numbered 1 to 10. Real directories each have their own scheme. In Tasmania the page uses
+          the real books instead: the street atlas and map book pages theLIST publishes, looked up after taking the pin from
+          GDA2020 to GDA94 (<code>src/core/mapref.js</code>, checked in <code>test/check-mapref.mjs</code>), and a second
+          part of the story explains them.</p>
         <p>Hash keys: <code>s</code> (step, from 0), <code>at</code> (lon,lat of the pin).</p>
         <ul class="credits">
           <li>Map tiles and street data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>.</li>
           <li>Coastlines from <a href="https://www.naturalearthdata.com/">Natural Earth</a> (public domain).</li>
+          <li>Tasmanian street atlas and map book pages and squares: <a href="https://www.thelist.tas.gov.au/">the LIST</a>
+            &copy; State of Tasmania (CC BY 3.0 AU), from its SearchService layers, tabulated in GDA94 / MGA zone 55
+            (<code>data/tas-mapref.json</code>, made by <code>test/make-mapref-data.py</code>).</li>
           <li><a href="https://proj.org/">PROJ</a> for the reference values; projection definitions from the
             <a href="https://epsg.org/">EPSG Geodetic Parameter Dataset</a> (GDA2020 / MGA zone 55 is EPSG:7855,
             GDA94 / MGA zone 55 EPSG:28355, WGS 84 / UTM zone 55S EPSG:32755).</li>
