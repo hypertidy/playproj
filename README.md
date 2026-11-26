@@ -442,6 +442,20 @@ offsets, false origins, short references and directory pages, checked against
 PROJ by `test/check-gridref.mjs` (`test/fixtures/gridref-proj.json`, from
 `test/make-gridref-fixture.py`). Hash keys: `s` (step), `at` (lon,lat).
 
+In Tasmania the story starts on the real books instead of the made-up
+directory: the street atlas and map book that emergency callouts use, whose
+pages and squares theLIST (Land Tasmania) publishes. Fern Tree is SA-192-A1
+and MB356 C5. A second part follows the grid reference story: the two books
+over the state, the map book's 12 x 18 km lattice and its arithmetic squares
+(A-X, 1-36), the street atlas pages placed by hand over the towns, their
+6 x 7 squares of 500 m on the MGA 500 m lattice inside a 75 m margin, the
+150 m overlaps between frames, the inset (T) and half (N, S, E, W) pages, a
+point's place on its page (dx, dy, u, v), and why the books are on GDA94.
+`data/tas-mapref.json` holds the page frames and street atlas squares in
+GDA94 / MGA zone 55 (theLIST (c) State of Tasmania, CC BY 3.0 AU; made by
+`test/make-mapref-data.py` from tables dumped by mdsumner/lunamap), and
+`src/core/mapref.js` looks a point up; `test/check-mapref.mjs` checks it.
+
 ## AAT grid
 
 `aatgrid.html` is a mini version of [aatgrid](https://github.com/mdsumner/aatgrid),
@@ -1558,6 +1572,7 @@ src/core/navigate.js              the Navigation page: an EPSG:3031 lattice and 
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
+src/core/mapref.js                Tasmanian street atlas and map book: pages, squares, frames, a point's place on its pages
 src/core/gridref.js               grid references: point scale, convergence, true-scale offsets, false origins, short refs, directory pages
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
 src/core/sight.js                 terrain visibility: gnomonic wedges or the sun, a horizon kept front to back

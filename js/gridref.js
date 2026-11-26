@@ -17,6 +17,8 @@ import * as M from "../src/core/mgrs.js";
 import * as G from "../src/core/gridref.js";
 import { readParams, hashWriter } from "../src/scene/hash.js";
 import { shareLinks, isEmbed } from "../src/scene/share.js";
+import * as R from "../src/core/mapref.js";
+import { shift } from "../src/core/vicgrid.js";
 import { loadCoastline } from "./data.js";
 
 const $ = (id) => document.getElementById(id);
@@ -61,6 +63,8 @@ function placeFromState() {
 }
 
 let P = null, D = null, zone = 55, south = true, lon0 = 147, STEPS = [];
+// the Tasmanian street atlas and map book (theLIST), and the pin's place in them
+let MR = null, T = null;
 let fwd = null, inv = null;
 
 function setPlace() {
@@ -70,6 +74,15 @@ function setPlace() {
   fwd = (lon, lat) => { const [x, y] = M.tmerc(lon, lat, lon0); return [x + 5e5, south ? y + 1e7 : y]; };
   inv = (E, N) => M.tmercInverse(E - 5e5, south ? N - 1e7 : N, lon0);
   coastZone = null;
+  T = null;
+  if (MR && zone === 55 && south) {
+    // the books are on GDA94: take the pin there, and keep the offset to draw their frames on this GDA2020 grid
+    const [l94, p94] = shift(P.lon, P.lat, "GDA2020", "GDA94");
+    const u = M.toUTM(l94, p94, 55, true);
+    const hits = R.locate(MR, u.e, u.n);
+    const sa = hits.find((h) => h.book === "SA" && h.square) || null, mb = hits.find((h) => h.book === "MB") || null;
+    if (sa || mb) T = { e94: u.e, n94: u.n, dE: D.e - u.e, dN: D.n - u.n, sa, mb, hits };
+  }
   STEPS = buildSteps();
   renderSteps();
   renderRefbar();
@@ -121,7 +134,20 @@ function buildSteps() {
   const conv = d.conv;
 
   const S = [];
-  S.push({
+  const realCam = T ? bookCam(T.sa ? T.sa.page : T.mb.page) : null;
+  if (T) S.push({
+    title: T.sa ? T.sa.label : T.mb.label,
+    body: `<p>Here is ${P.name}${T.sa ? ` in Tasmania's street atlas: <b>page ${T.sa.square.page}, square ${T.sa.square.col}${T.sa.square.row}</b>,
+      written <b>${T.sa.label}</b> on an emergency callout` : ", outside the street atlas's pages"}. The map book, which covers the whole
+      state at a smaller scale, has it as <b>${T.mb ? T.mb.label : "nothing"}</b>.</p>
+      <p>A page and square find a place the way a row and seat number find a seat, and they only mean something with the book
+      in your hand. The numbers in the margin of a topographic map, or on a phone's GPS, mean the same thing anywhere on
+      Earth. What are they?</p>
+      <p class="hint">Pages and squares from theLIST (the LIST &copy; State of Tasmania). There is more on the two books
+      after the grid reference story.</p>`,
+    cam: realCam, L: { tiles: 1, real: 1 }, rows: ["atl"], hi: ["atl"], click: true
+  });
+  else S.push({
     title: `Map ${a.page}, square ${a.letter}${a.number}`,
     body: `<p>Here is ${P.full}, the way a street directory shows it: <b>Map ${a.page}, square ${a.letter}${a.number}</b>.
       The page is one sheet of a book, and the letter and number find the square on that sheet, the way a row and
@@ -130,7 +156,7 @@ function buildSteps() {
       a phone's GPS, mean the same thing anywhere on Earth. What are they?</p>
       <p class="hint">This directory is made up for the page: its sheets are 4 by 5 km cut from the kilometre grid,
       with 500 m squares. Real directories each have their own.</p>`,
-    cam: { E: pageC[0] - 700, N: pageC[1] + 300, span: 6400 }, L: { tiles: 1, atlas: 1, pages: 1 }, rows: ["atl"], hi: ["atl"]
+    cam: { E: pageC[0] - 700, N: pageC[1] + 300, span: 6400 }, L: { tiles: 1, atlas: 1, pages: 1 }, rows: ["atl"], hi: ["atl"], click: true
   });
   S.push({
     title: "The kilometre grid",
@@ -295,18 +321,226 @@ function buildSteps() {
         <li><b>N ${grp(d.n)}</b> = ${south ? `10 000 000 false northing - ${grp(fromEq)} m south of the equator` : `${grp(d.n)} m north of the equator`}.</li>
         <li><b>${d.square}</b>: the 100 km square, standing in for the leading ${G.splitDigits(d.e).hundredKm} and ${G.splitDigits(d.n).hundredKm}.</li>
         <li><b>${d.six.join(" ")}</b> and <b>${d.eight.join(" ")}</b>: the 100 m and 10 m squares inside it.</li>
-        <li><b>Map ${a.page} ${a.letter}${a.number}</b>: a page in a book.</li>
+        <li><b>${T ? [T.sa && T.sa.label, T.mb && T.mb.label].filter(Boolean).join("</b> and <b>") : `Map ${a.page} ${a.letter}${a.number}`}</b>: a page in a book.</li>
         <li>All of it on a cylinder ${M.K0} the size of the Earth, true to scale ${grp(off / 1000)} km either side of ${lonName(lon0)}.</li>
       </ul>`,
-    cam: { E: pageC[0] - 700, N: pageC[1] + 300, span: 6400 }, L: { tiles: 1, atlas: 1, pages: 1, grid: 0.6 }, rows: ["atl", "six", "eight", "mgrs", "mga", "zone"], hi: ["all"]
+    cam: T ? realCam : { E: pageC[0] - 700, N: pageC[1] + 300, span: 6400 }, L: T ? { tiles: 1, real: 1, grid: 0.6 } : { tiles: 1, atlas: 1, pages: 1, grid: 0.6 },
+    rows: ["atl", "six", "eight", "mgrs", "mga", "zone"], hi: ["all"]
+  });
+  for (let i = 1; i <= 4; i++) S[i].click = true;
+  if (T) S.push(...bookSteps());
+  return S;
+}
+
+// ---------------------------------------------------------------- the street atlas and map book
+
+// GDA94 book coordinates onto this (GDA2020) grid
+const toPlane = (x, y) => [x + T.dE, y + T.dN];
+// a camera on a page frame, with room for its margin labels and tab
+function bookCam(p, pad = 1.22) {
+  const [E, N] = toPlane((p.xmin + p.xmax) / 2, (p.ymin + p.ymax) / 2);
+  return { E, N: N + (p.ymax - p.ymin) * 0.03, span: Math.max(p.ymax - p.ymin, (p.xmax - p.xmin) * 0.9) * pad };
+}
+
+function bookSteps() {
+  const S = [], sa = T.sa, mb = T.mb, nm = P.name;
+  const pages = MR.pages, saP = pages.filter((p) => p.book === "SA"), mbP = pages.filter((p) => p.book === "MB");
+  const saNums = [...new Set(saP.map((p) => p.page))].sort((x, y) => x - y);
+  const box = mbP.reduce((b, p) => [Math.min(b[0], p.xmin), Math.min(b[1], p.ymin), Math.max(b[2], p.xmax), Math.max(b[3], p.ymax)], [Infinity, Infinity, -Infinity, -Infinity]);
+  const [cE, cN] = toPlane((box[0] + box[2]) / 2, (box[1] + box[3]) / 2);
+  const mbCam = mb ? (() => { const c = bookCam(mb.page, 1.14); return { ...c, E: c.E - c.span * 0.1 }; })() : null;
+  const saCam = sa ? bookCam(sa.page) : mbCam;
+  const ext = (p) => `${grp(p.xmax - p.xmin)} by ${grp(p.ymax - p.ymin)} m`;
+  // the nearest inset page, and the squares it carries
+  const pin = [T.e94, T.n94], mid = (p) => [(p.xmin + p.xmax) / 2, (p.ymin + p.ymax) / 2];
+  const near = (list) => list.reduce((b, p) => { const d = Math.hypot(mid(p)[0] - pin[0], mid(p)[1] - pin[1]); return !b || d < b.d ? { p, d } : b; }, null);
+  const tPages = saP.filter((p) => p.suffix === "T"), tFull = tPages.filter((p) => R.squares(MR, p.ref).length);
+  const inset = near(tFull), half = near(saP.filter((p) => p.suffix && p.suffix !== "T"));
+  const insetSq = inset ? R.squares(MR, inset.p.ref).map((q) => q.ref) : [];
+  const insetCam = inset ? (() => { const [E, N] = toPlane(...mid(inset.p)); return { E, N, span: 2600 }; })() : saCam;
+  const nb = sa ? R.neighbours(MR, sa.page.ref) : [];
+  const sq = sa && sa.square, mbs = mb && mb.square;
+
+  S.push({
+    part: 2, title: "Two books",
+    body: `<p>Tasmania has two books of maps that emergency services use for callouts, and theLIST (Land Tasmania) publishes
+      their pages and squares. The <b>map book</b> (grey) covers the whole state in ${mbP.length} pages, MB001 to
+      MB${String(Math.max(...mbP.map((p) => p.page))).padStart(3, "0")}. The <b>street atlas</b> (blue) covers the towns in
+      ${saP.length} page frames, numbered ${saNums[0]} to ${saNums[saNums.length - 1]}.</p>
+      <p>${nm} is on ${mb ? `map book page <b>${mb.page.ref}</b>` : "no map book page"}${sa ? ` and street atlas page <b>${sa.page.ref}</b>` : ""}.
+      Both books are drawn on the national grid of their day, <b>GDA94 / MGA zone 55</b> (EPSG:28355), and every page corner
+      is a whole number of metres in it.</p>`,
+    cam: { E: cE, N: cN, span: (box[3] - box[1]) * 1.08 }, L: { coast: 1, tiles: 0.35, mbAll: 1, saAll: 1 }, rows: ["atl"], hi: ["atl"], click: true
+  });
+  if (mb) S.push({
+    title: "The map book is arithmetic",
+    body: `<p>Map book pages are <b>12 km wide and 18 km tall</b>, on a lattice: their edges are at E 4 000 + 12 000k and
+      N 12 000 + 18 000k (one page, MB001, sits 2 km off it). Each page is a grid of <b>500 m squares</b>, 24 columns
+      lettered A to X from west to east and 36 rows numbered from the top.</p>
+      <p>So the square is arithmetic: column ${mbs.col} is floor((E - ${grp(mb.page.xmin)}) / 500) + 1 = ${"ABCDEFGHIJKLMNOPQRSTUVWX".indexOf(mbs.col) + 1},
+      and row ${mbs.row} is floor((${grp(mb.page.ymax)} - N) / 500) + 1, giving <b>${mb.label}</b>. Only the page number
+      needs the table: pages are numbered in rows from north to south, west to east, but pages that are all sea are skipped.</p>`,
+    cam: mbCam, L: { tiles: 0.7, mbAll: 0.5, mbPage: 1, grid: 0.35 }, rows: ["atl", "mga"], hi: ["atl"], click: true
+  });
+  if (mb) S.push({
+    title: "Street atlas pages are placed by hand",
+    body: `<p>The street atlas pages (blue) on ${mb.page.ref}. They were laid out to cover built-up ground, so they do not
+      sit on a lattice: page positions come only from the table. Pages with a suffix are extensions of their parent:
+      <b>N</b> and <b>S</b> are half-height (3 150 by 1 650 m), <b>E</b> and <b>W</b> half-width (1 500 by 3 650 m), and
+      <b>T</b> pages are small insets.</p>`,
+    cam: mbCam, L: { tiles: 0.6, mbPage: 0.35, saAll: 1, saLabels: 1 }, rows: ["atl"], hi: ["atl"], click: true
+  });
+  if (sa) S.push({
+    title: "Six by seven, on the MGA lattice",
+    body: `<p>${sa.page.ref} is ${ext(sa.page)}. Inside a <b>75 m margin</b> it holds 6 x 7 squares of <b>500 m</b>, columns
+      A to F and rows 1 to 7, with the letters and numbers printed in the margin.</p>
+      <p>The squares sit on the MGA 500 m lattice: every corner is a multiple of 500 m, so every second line is a kilometre grid
+      line (cyan), and a street atlas square is a quarter of a kilometre square. ${nm}'s square <b>${sa.label}</b> runs from
+      E ${grp(sq.xmin)} to ${grp(sq.xmax)} and N ${grp(sq.ymin)} to ${grp(sq.ymax)}, inside the four-figure square
+      ${String(Math.floor(sq.xmin / 1000) % 100).padStart(2, "0")}${String(Math.floor(sq.ymin / 1000) % 100).padStart(2, "0")}.</p>`,
+    cam: saCam, L: { tiles: 0.8, saPage: 1, grid: 1 }, rows: ["atl", "six"], hi: ["atl", "d-km"], click: true
+  });
+  if (sa && nb.length) S.push({
+    title: "Margins overlap",
+    body: `<p>The margins make neighbouring frames overlap by 150 m (orange), so a point near a page edge can be on two
+      pages, each with its own reference for the same square. ${sa.page.ref} shares ground with
+      ${nb.map((p) => p.ref).join(", ")}.${T.hits.filter((h) => h.book === "SA").length > 1 ? ` ${nm} is on ${T.hits.filter((h) => h.book === "SA").map((h) => h.page.ref).join(" and ")}.` : ""}</p>`,
+    cam: { ...saCam, span: saCam.span * 2.1 }, L: { tiles: 0.6, saPage: 0.6, overlap: 1, saAll: 0.5, saLabels: 1 }, rows: ["atl"], hi: ["atl"], click: true
+  });
+  if (inset) S.push({
+    title: "Insets",
+    body: `<p>A <b>T</b> page is a small inset, and it can sit away from its parent page. The nearest to ${nm} is
+      <b>${inset.p.ref}</b> (${ext(inset.p)}), which holds square${insetSq.length === 1 ? "" : "s"} ${insetSq.join(", ") || "none"}:
+      labelled with the parent page's number, so a square reference never has a suffix, but its square can be drawn on a
+      suffix page.${half ? ` The nearest half page is ${half.p.ref} (${ext(half.p)}).` : ""}</p>
+      <p>The published layers are not complete: only ${tFull.length} of the ${tPages.length} insets have squares of their own
+      page number inside them, and nine pages have a frame but no squares at all.</p>`,
+    cam: insetCam, L: { tiles: 0.8, saAll: 0.6, saLabels: 1, inset: 1 }, rows: ["atl"], hi: ["atl"], insetRef: inset.p.ref
+  });
+  if (sa) S.push({
+    title: "Where on the page",
+    body: `<p>A point's place on a page is measured from the frame's top-left corner: ${nm} is <b>${grp(sa.dx)} m east and
+      ${grp(sa.dy)} m south</b> of the corner of ${sa.page.ref}, or u = ${sa.u.toFixed(3)} and v = ${sa.v.toFixed(3)} as
+      fractions of the frame.${mb ? ` On ${mb.page.ref} it is ${grp(mb.dx)} m east and ${grp(mb.dy)} m south (u = ${mb.u.toFixed(3)}, v = ${mb.v.toFixed(3)}).` : ""}</p>
+      <p>A scan of a printed page has the frame's corners as its corners, so u and v scale straight to pixels on it.</p>`,
+    cam: saCam, L: { tiles: 0.8, saPage: 1, uv: 1 }, rows: ["atl"], hi: ["atl"], click: true
+  });
+  S.push({
+    title: "GDA94, and whole metres",
+    body: `<p>The books are on GDA94. The same spot has GDA2020 coordinates about ${Math.hypot(T.dE, T.dN).toFixed(1)} m away
+      (E ${T.dE >= 0 ? "+" : "-"}${Math.abs(T.dE).toFixed(2)}, N ${T.dN >= 0 ? "+" : "-"}${Math.abs(T.dN).toFixed(2)} m here), which
+      matters only within a metre or two of a square's edge. This page takes the pin to GDA94 (EPSG:8048) before it
+      looks it up: on GDA94 ${nm} is E ${grp(T.e94)}, N ${grp(T.n94)}.</p>
+      <p>theLIST serves the pages in Web Mercator, projected from GDA94 / MGA 55 as if GDA94 were WGS84. Taken back to
+      EPSG:28355 with no datum shift, the corners come out in whole metres again: the grid the books were drawn on.</p>`,
+    cam: sa ? { ...toPlaneCam(sa.square), span: 900 } : mbCam, L: { tiles: 1, saPage: 1, grid: 1 }, rows: ["atl", "mga"], hi: ["atl"], click: true
   });
   return S;
+}
+const toPlaneCam = (q) => { const [E, N] = toPlane((q.xmin + q.xmax) / 2, (q.ymin + q.ymax) / 2); return { E, N }; };
+
+// a book rectangle as screen x, y, w, h
+function bookRect(v, x0, y0, x1, y1) {
+  const [a, b] = v.px(...toPlane(x0, y1)), [c, d] = v.px(...toPlane(x1, y0));
+  return [a, b, c - a, d - b];
+}
+function pageTab(ctx, v, p, color, lift = 0) {
+  let [x, y, w] = bookRect(v, p.xmin, p.ymin, p.xmax, p.ymax);
+  y -= lift;
+  const tab = p.ref;
+  ctx.font = "600 15px system-ui, sans-serif";
+  const tw = ctx.measureText(tab).width + 14;
+  ctx.fillStyle = color; ctx.fillRect(x + w - tw, y - 24, tw, 24);
+  label(ctx, tab, x + w - tw / 2, y - 12, { size: 15, bold: true, align: "center", color: "#ffffff", halo: false });
+}
+function hiRect(ctx, r) {
+  ctx.fillStyle = "rgba(255,211,77,0.3)"; ctx.fillRect(...r);
+  ctx.strokeStyle = C.tm; ctx.lineWidth = 2.5; ctx.strokeRect(...r);
+}
+
+function drawSAPage(ctx, v, ref, hi) {
+  const f = R.frame(MR, ref);
+  if (!f) return;
+  const p = f.page, r = bookRect(v, p.xmin, p.ymin, p.xmax, p.ymax);
+  ctx.fillStyle = "rgba(255,250,235,0.12)"; ctx.fillRect(...r);
+  ctx.strokeStyle = "rgba(60,70,200,0.95)"; ctx.lineWidth = 1;
+  for (const s of f.squares) ctx.strokeRect(...bookRect(v, s.xmin, s.ymin, s.xmax, s.ymax));
+  if (hi) for (const s of f.squares) if (s.ref === hi.ref) hiRect(ctx, bookRect(v, s.xmin, s.ymin, s.xmax, s.ymax));
+  ctx.strokeStyle = "#5865f2"; ctx.lineWidth = 3; ctx.strokeRect(...r);
+  const mpx = Math.min(f.margin.top || 75, 75) * v.s, fs = Math.max(9, Math.min(15, mpx * 0.85));
+  if (mpx >= 7) {
+    for (const c of f.cols) for (const yy of [c.yTop, c.yBottom]) {
+      const [x, y] = v.px(...toPlane(c.x, yy));
+      label(ctx, c.label, x, y, { size: fs, bold: true, align: "center", color: "#c3c9ff" });
+    }
+    for (const rw of f.rows) for (const xx of [rw.xLeft, rw.xRight]) {
+      const [x, y] = v.px(...toPlane(xx, rw.y));
+      label(ctx, String(rw.label), x, y, { size: fs, bold: true, align: "center", color: "#c3c9ff" });
+    }
+  }
+  pageTab(ctx, v, p, "#3b44c4");
+}
+
+function drawMBPage(ctx, v, p, hi) {
+  const r = bookRect(v, p.xmin, p.ymin, p.xmax, p.ymax), sq = 500 * v.s;
+  ctx.strokeStyle = "rgba(230,90,40,0.55)"; ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  for (let c = 1; c < 24; c++) { const x = r[0] + c * sq; ctx.moveTo(x, r[1]); ctx.lineTo(x, r[1] + r[3]); }
+  for (let k = 1; k < 36; k++) { const y = r[1] + k * sq; ctx.moveTo(r[0], y); ctx.lineTo(r[0] + r[2], y); }
+  ctx.stroke();
+  if (hi) hiRect(ctx, bookRect(v, hi.xmin, hi.ymin, hi.xmax, hi.ymax));
+  ctx.strokeStyle = "#e8590c"; ctx.lineWidth = 3; ctx.strokeRect(...r);
+  const fs = Math.max(8, Math.min(13, sq * 0.6));
+  if (sq >= 9) {
+    for (let c = 0; c < 24; c++) label(ctx, "ABCDEFGHIJKLMNOPQRSTUVWX"[c], r[0] + (c + 0.5) * sq, r[1] - 8, { size: fs, align: "center", color: "#ffb38a" });
+    for (let k = 0; k < 36; k++) label(ctx, String(k + 1), r[0] - 6, r[1] + (k + 0.5) * sq, { size: fs, align: "right", color: "#ffb38a" });
+  }
+  pageTab(ctx, v, p, "#c2410c", sq >= 9 ? 18 : 0);
+}
+
+function drawBooksAll(ctx, v, book, labels) {
+  const isSA = book === "SA";
+  for (const p of MR.pages) {
+    if (p.book !== book) continue;
+    const r = bookRect(v, p.xmin, p.ymin, p.xmax, p.ymax);
+    if (r[0] > v.w || r[0] + r[2] < 0 || r[1] > v.h || r[1] + r[3] < 0) continue;
+    const mine = T && ((isSA && T.sa && T.sa.page === p) || (!isSA && T.mb && T.mb.page === p));
+    ctx.fillStyle = isSA ? (mine ? "rgba(90,130,255,0.55)" : "rgba(70,110,255,0.28)") : (mine ? "rgba(232,89,12,0.3)" : "rgba(200,205,215,0.06)");
+    ctx.fillRect(...r);
+    ctx.strokeStyle = isSA ? "rgba(110,150,255,0.95)" : mine ? "#e8590c" : "rgba(200,205,215,0.5)"; ctx.lineWidth = mine ? 2 : 1;
+    ctx.strokeRect(...r);
+    const show = isSA ? labels && r[2] > 30 : r[2] > 22;
+    if (show) label(ctx, isSA ? p.ref : String(p.page), r[0] + r[2] / 2, r[1] + r[3] / 2, { size: isSA ? 11 : Math.min(13, r[2] / 3), align: "center", color: isSA ? "#dfe6ff" : mine ? "#ffd0b8" : "rgba(220,226,236,0.8)" });
+  }
+}
+
+function drawOverlap(ctx, v) {
+  if (!T.sa) return;
+  const p = T.sa.page;
+  for (const q of R.neighbours(MR, p.ref)) {
+    const x0 = Math.max(p.xmin, q.xmin), x1 = Math.min(p.xmax, q.xmax), y0 = Math.max(p.ymin, q.ymin), y1 = Math.min(p.ymax, q.ymax);
+    if (x1 <= x0 || y1 <= y0) continue;
+    ctx.fillStyle = "rgba(255,159,67,0.55)"; ctx.fillRect(...bookRect(v, x0, y0, x1, y1));
+  }
+}
+
+function drawUV(ctx, v) {
+  if (!T.sa) return;
+  const p = T.sa.page, [x0, y0] = v.px(...toPlane(p.xmin, p.ymax)), [xp, yp] = v.px(D.e, D.n);
+  arrow(ctx, x0, y0 - 14, xp, y0 - 14, C.tm, `dx ${grp(T.sa.dx)} m, u ${T.sa.u.toFixed(3)}`, { both: false });
+  arrow(ctx, x0 - 14, y0, x0 - 14, yp, C.tm, "", { both: false });
+  label(ctx, `dy ${grp(T.sa.dy)} m`, x0 - 20, (y0 + yp) / 2 - 8, { color: C.tm, size: 13, bold: true, align: "right" });
+  label(ctx, `v ${T.sa.v.toFixed(3)}`, x0 - 20, (y0 + yp) / 2 + 10, { color: C.tm, size: 13, bold: true, align: "right" });
+  ctx.strokeStyle = C.tm; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(x0, yp); ctx.lineTo(xp, yp); ctx.moveTo(xp, y0); ctx.lineTo(xp, yp); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = C.tm; ctx.beginPath(); ctx.arc(x0, y0, 5, 0, 2 * Math.PI); ctx.fill();
 }
 
 // ---------------------------------------------------------------- panel and refbar
 
 function renderSteps() {
-  $("steps").innerHTML = STEPS.map((s, i) => `<section class="step" data-i="${i}"><h2><span class="n">${i + 1}</span>${s.title}</h2>${s.body}</section>`).join("");
+  $("steps").innerHTML = STEPS.map((s, i) => (s.part === 2 ? `<div class="part-head"><h2>Part 2: the street atlas and the map book</h2><p class="hint">Tasmania's two emergency map books, from theLIST.</p></div>` : "") +
+    `<section class="step" data-i="${i}"><h2><span class="n">${i + 1}</span>${s.title}</h2>${s.body}</section>`).join("");
   const j = $("jump");
   j.innerHTML = STEPS.map((s, i) => `<option value="${i}">${i + 1}. ${s.title}</option>`).join("");
   stepEls = [...document.querySelectorAll("#steps .step")];
@@ -315,7 +549,8 @@ function renderSteps() {
 function renderRefbar() {
   const d = D, a = d.atlas;
   const rows = {
-    atl: `<span class="k">Directory</span><span class="v"><i class="atl">Map ${a.page}</i> <i class="atl">${a.letter}${a.number}</i></span>`,
+    atl: T ? `<span class="k">Map books</span><span class="v">${[T.sa && T.sa.label, T.mb && T.mb.label].filter(Boolean).map((x) => `<i class="atl">${x}</i>`).join(" ")}</span>`
+      : `<span class="k">Directory</span><span class="v"><i class="atl">Map ${a.page}</i> <i class="atl">${a.letter}${a.number}</i></span>`,
     six: `<span class="k">6-figure</span><span class="v">${shortSpans(d.six)}</span>`,
     eight: `<span class="k">8-figure</span><span class="v">${shortSpans(d.eight)}</span>`,
     mgrs: `<span class="k">MGRS</span><span class="v"><i class="d-gzd">${d.gzd}</i> <i class="d-hk">${d.square}</i> ${shortSpans(G.shortRef(d.e, d.n, 10))}</span>`,
@@ -485,6 +720,17 @@ function drawPlane(ctx, cam, L, w, h, dpr) {
   if (L("grat") > 0.01) { ctx.globalAlpha = al("grat"); drawGraticule(ctx, v); }
   if (L("pages") > 0.01) { ctx.globalAlpha = al("pages"); drawPages(ctx, v, false); }
   if (L("atlas") > 0.01) { ctx.globalAlpha = al("atlas"); drawPages(ctx, v, true); }
+  if (T && MR) {
+    if (L("mbAll") > 0.01) { ctx.globalAlpha = al("mbAll"); drawBooksAll(ctx, v, "MB", false); }
+    if (L("saAll") > 0.01) { ctx.globalAlpha = al("saAll"); drawBooksAll(ctx, v, "SA", L("saLabels") > 0.5); }
+    if (L("mbPage") > 0.01 && T.mb) { ctx.globalAlpha = al("mbPage"); drawMBPage(ctx, v, T.mb.page, T.mb.square); }
+    if (L("overlap") > 0.01) { ctx.globalAlpha = al("overlap"); drawOverlap(ctx, v); }
+    const rp = Math.max(L("saPage"), L("real"));
+    if (rp > 0.01 && T.sa) { ctx.globalAlpha = base * rp; drawSAPage(ctx, v, T.sa.page.ref, T.sa.square); }
+    if (L("real") > 0.01 && !T.sa && T.mb) { ctx.globalAlpha = al("real"); drawMBPage(ctx, v, T.mb.page, T.mb.square); }
+    if (L("inset") > 0.01) { const st = STEPS.find((q) => q.insetRef); if (st) { ctx.globalAlpha = al("inset"); drawSAPage(ctx, v, st.insetRef, null); } }
+    if (L("uv") > 0.01) { ctx.globalAlpha = al("uv"); drawUV(ctx, v); }
+  }
   if (L("grid") > 0.01) { ctx.globalAlpha = al("grid"); drawGrid(ctx, v); }
   if (L("sq100") > 0.01) { ctx.globalAlpha = al("sq100"); drawSquares(ctx, v); }
   if (L("cell100") > 0.01) { ctx.globalAlpha = al("cell100"); drawCell(ctx, v, 100, C.hm); }
@@ -1128,10 +1374,11 @@ function updateScalebar(f) {
   const m = [1, 2, 5, 10].map((k) => k * p).filter((x) => x <= target).pop();
   bar.querySelector("span").style.width = `${m * view.s}px`;
   bar.querySelector("b").textContent = m >= 1000 ? `${grp(m / 1000)} km of grid` : `${m} m of grid`;
-  const tilesOn = STEPS[f.i] && (STEPS[f.i].L.tiles || 0) > 0;
-  $("credit").innerHTML = tilesOn
+  const st = STEPS[f.i], tilesOn = st && (st.L.tiles || 0) > 0;
+  const books = T && st && ["real", "saPage", "mbPage", "saAll", "mbAll", "inset"].some((k) => st.L[k]);
+  $("credit").innerHTML = (tilesOn
     ? `Map tiles &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>`
-    : "Coastlines: Natural Earth";
+    : "Coastlines: Natural Earth") + (books ? `; map book pages: the LIST &copy; State of Tasmania` : "");
 }
 
 // ---------------------------------------------------------------- input
@@ -1159,7 +1406,7 @@ map.addEventListener("pointerdown", (e) => { down = [e.clientX, e.clientY]; });
 map.addEventListener("pointerup", (e) => {
   if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4 || !view) { down = null; return; }
   down = null;
-  if (Math.round(t) > 4) return;
+  if (!(STEPS[Math.round(t)] || {}).click) return;
   const r = map.getBoundingClientRect(), [lon, lat] = inv(...view.en(e.clientX - r.left, e.clientY - r.top));
   if (!(lat > -80 && lat < 84)) return;
   state.at = `${lon.toFixed(5)},${lat.toFixed(5)}`;
@@ -1177,6 +1424,7 @@ window.addEventListener("hashchange", () => {
 new ResizeObserver(() => { if (!embed) t = scrollT(); schedule(); }).observe($("stage"));
 
 shareLinks("playproj: Grid references", { height: 600 });
+MR = await fetch(new URL("../data/tas-mapref.json", import.meta.url)).then((r) => (r.ok ? r.json() : null)).then((j) => (j ? R.read(j) : null)).catch(() => null);
 setPlace();
 syncPlaceSel();
 // start at the step in the hash
