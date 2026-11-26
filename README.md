@@ -427,7 +427,7 @@ past the South Pole, which itself sits at N 2 035), why eastings have six
 digits and northings seven (the false northing is, nearly, the meridian
 quadrant that defined the metre), the 0.9996 scale and its lines of true scale
 about 180 km either side of the central meridian, the sixty zones and their
-bands (with the Norway and Svalbard exceptions), and UPS at the poles. A bar
+bands (around the pin's own grid zone), and UPS at the poles. A bar
 over the map keeps the place's references in view, each digit coloured by what
 it counts, and the grid lines on the map carry the same colours.
 
