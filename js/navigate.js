@@ -63,7 +63,7 @@ const SCENES = {
     turn: "sideways goes round the station's plumb line, up tips the ground towards the horizon and on under it",
     y: "north at the station, so up and down stop with the ground edge-on to the north and south",
     shift: "turns about the ground under the pointer, as a double-click does (there is nothing over the ground to look through)",
-    task: "Come down from space to the station: keep zooming with the pointer on the yellow marker, about 70 notches of the wheel from 22,000 km to the ground; then back out to a few hundred metres and drag up towards the horizon (the pivot is on the ground, so close in the camera comes down to it) and look round. The Near and far row shows the planes following the camera; set them fixed to see why they have to. Drawn as a wire mesh, REMA's levels show nested round the station."
+    task: "Come down from space to the station: keep zooming with the pointer on the yellow marker, about 70 notches of the wheel from 22,000 km to the ground; then back out to a few hundred metres and drag up towards the horizon (the pivot is on the ground, so close in the camera comes down to it) and look round. The Near and far row shows the planes following the camera; set them fixed to see why they have to. Drawn as a wire mesh, REMA's levels show nested round the station; with Imagery set to none, the tints under Sentinel-2 show."
   },
   teapot: {
     label: "Teapot on a pedestal", up: "the teapot's upright", yShort: "front to back here",
@@ -94,9 +94,9 @@ const SCENES = {
     task: "Look up under the beak, into the inside of a flipper, and down on the tops of the feet: the places no ray from the penguin's centre leaves it last, so no penguin longitude and latitude reaches them (see the Penguin datum page). Double-click a flipper to turn about it."
   }
 };
-const DRAWS = ["solid", "wire", "both"], ICES = ["solid", "see", "off"], SLICES = ["held", "view", "none"], NEARS = ["follow", "globe", "ground"];
+const DRAWS = ["solid", "wire", "both"], ICES = ["solid", "see", "off"], SLICES = ["held", "view", "none"], NEARS = ["follow", "globe", "ground"], IMGS = ["s2", "none"];
 const defaults = { scene: "relief", draw: "solid", orbit: "turntable", zc: 1, sea: 1, cut: 1, sec: 140, vx: 50, n: 512,
-  shelf: "amery", cvx: 0, ice: "solid", slice: "held", sl: "", station: "davis", near: "follow", pick: "", cam: null };
+  shelf: "amery", cvx: 0, ice: "solid", slice: "held", sl: "", station: "davis", near: "follow", img: "s2", pick: "", cam: null };
 const state = { ...defaults };
 const lonLat = (raw) => {
   const v = String(raw).split(",").map(Number);
@@ -107,7 +107,7 @@ function readHash() {
     scene: oneOf(Object.keys(SCENES), "relief"), draw: oneOf(DRAWS, "solid"),
     orbit: oneOf(["turntable", "north", "trackball"], "turntable"), pick: lonLat,
     shelf: oneOf(Object.keys(C.SHELVES), "amery"), ice: oneOf(ICES, "solid"), slice: oneOf(SLICES, "held"),
-    station: oneOf(Object.keys(T.STATIONS), "davis"), near: oneOf(NEARS, "follow"),
+    station: oneOf(Object.keys(T.STATIONS), "davis"), near: oneOf(NEARS, "follow"), img: oneOf(IMGS, "s2"),
     sl: (raw) => { const v = String(raw).split(",").map(Number); return v.length === 3 && v.every(isFinite) ? v.join(",") : undefined; }
   });
   state.vx = Math.max(1, Math.min(200, state.vx));
@@ -498,8 +498,10 @@ function stationEntry(key = state.station) {
     stations.set(key, e);
     e.scene = STN.stationScene(key, {
       status: (s) => { if (state.station === key) stnStatus(s); },
-      changed: () => stationChanged(key)
+      changed: () => stationChanged(key),
+      anisotropy: renderer.capabilities.getMaxAnisotropy()
     });
+    if (state.img !== "none") e.scene.startImagery();
     scene.add(e.scene.group);
     e.scene.group.visible = state.scene === "station" && state.station === key;
     if (coast) e.scene.setCoast(coast.world);
@@ -521,6 +523,13 @@ function stationChanged(key) {
   }
   e.pinned = g;
 }
+// Sentinel-2 over the tints, or the tints alone: every station's patches
+// at once, and the shown station's imagery read if it has not been.
+function applyImagery() {
+  STN.drape.mix.value = state.img === "none" ? 0 : 1;
+  if (state.scene === "station" && state.img !== "none") stationEntry().scene.startImagery();
+}
+
 // The near and far planes: following the camera (station.js nearFar), or
 // fixed, as for the globe (a kilometre to 100,000 km) or for the ground
 // (a metre to 100,000 km).
@@ -792,6 +801,21 @@ function stationHud(st) {
   const v = stationView(st);
   return `camera ${overGround(v.cam)} · ${fmtLen(v.dist)} from the pivot · tilt ${Math.round(v.tilt)}${DEG} · near ${fmtLen(camera.near)}, far ${fmtLen(camera.far)}`;
 }
+const TINTS = "the tints: rock where the ground is steep or BedMachine has no ice, snow and ice (bluer low down), and the sea";
+function imageryWords(st) {
+  const im = st.imagery;
+  if (state.img === "none") return `off: ${TINTS}`;
+  if (!im.id || im.state === "none") return `none here: Sentinel-2's orbit never takes it over the South Pole, so ${TINTS}`;
+  if (im.state === "error") return `not read (${im.why}), so ${TINTS}`;
+  if (!im.item) return "finding the Sentinel-2 pass chosen for this station in Earth Search...";
+  const P = im.item.properties, when = new Date(P.datetime), sat = `Sentinel-${String(P.platform || "").replace(/^sentinel-/i, "").toUpperCase()}`;
+  const date = when.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  const time = when.toISOString().slice(11, 16), sun = P["view:sun_elevation"];
+  const pass = `${sat}, ${date}, ${time} UTC${typeof sun === "number" ? `, the sun ${Math.round(sun)}${DEG} up` : ""}`;
+  const of = Math.max(0, st.patches.length - 1) || T.LADDER.length - 1;
+  if (im.state === "reading") return `${pass}: reading its true-colour tiles for the patches (${im.patches} of ${of} so far)`;
+  return `${pass}; true colour (Level-2A), ${fmtLen(im.res)} pixels at the finest, from ${im.used.size} of the pass's ${im.pass} tiles round the station, on every patch but the continent's. Where the pass has nothing, and fading out round the 500 m patch's edge, ${TINTS}. Snow is brighter than the true-colour image's top, so it shows plain white, shaded by REMA's shapes`;
+}
 function stationRows(st) {
   const v = stationView(st), s = st.station;
   const levels = st.patches.map((p, k) => `${R.cellWords(p.d)} (${p.w} x ${p.h}${k === 0 ? ", the continent" : `, ${fmtLen(p.w * p.d)} across`})`);
@@ -804,6 +828,7 @@ function stationRows(st) {
     ["Scale", `a pixel is ${fmtLen(v.px)} across at the pivot`],
     ["Near and far", nearWords()],
     ["REMA", `${levels.length ? levels.join(", ") : "none yet"}${reading.length ? `; reading ${reading.join(", ")}` : ""}`],
+    ["Imagery", imageryWords(st)],
     ["Station", `${s.name} (${s.who}), ${fmtLL(s.lon, s.lat)}, the ground there ${fmtLen(st.ground())} over the ellipsoid`],
     ["Try", SCENES.station.task]
   ];
@@ -861,7 +886,7 @@ const GEBCO_CREDIT = $("credit").innerHTML;
 const CREDITS = {
   relief: GEBCO_CREDIT, globe: "Coastlines from Natural Earth", rings: "",
   cavity: `MEaSUREs BedMachine Antarctica v4.1 (Morlighem; NSIDC-0756, <a href="https://doi.org/${C.BEDMACHINE.doi}">doi:${C.BEDMACHINE.doi}</a>), from <a href="https://source.coop/ausantarctic/bedmachine">Source Cooperative</a>`,
-  station: `REMA mosaic v2.0 (Howat and others; the Polar Geospatial Center and the Byrd Polar and Climate Research Center, <a href="https://doi.org/${R.REMA.doi}">doi:${R.REMA.doi}</a>), its 100 m to 1 km levels filled from the Copernicus 30 m DEM, through the <a href="https://github.com/mdsumner/rema-ovr">rema-ovr</a> overview VRT; where there is no ice, and the ground where REMA has none (round the South Pole), from BedMachine Antarctica v4.1; sea level from EGM2008; coastlines from Natural Earth`,
+  station: `REMA mosaic v2.0 (Howat and others; the Polar Geospatial Center and the Byrd Polar and Climate Research Center, <a href="https://doi.org/${R.REMA.doi}">doi:${R.REMA.doi}</a>), its 100 m to 1 km levels filled from the Copernicus 30 m DEM, through the <a href="https://github.com/mdsumner/rema-ovr">rema-ovr</a> overview VRT; where there is no ice, and the ground where REMA has none (round the South Pole), from BedMachine Antarctica v4.1; sea level from EGM2008; coastlines from Natural Earth; imagery: contains modified Copernicus Sentinel data 2019–2024 (Sentinel-2 Level-2A, Collection 1, from ESA), as Cloud Optimized GeoTIFFs on the Registry of Open Data on AWS, found through <a href="https://element84.com/earth-search/">Earth Search</a> (Element 84)`,
   teapot: "The Utah teapot (Martin Newell, 1975), as three.js's TeapotGeometry makes it",
   penguin: "The king penguin of the Penguin datum page"
 };
@@ -909,7 +934,7 @@ function syncControls() {
   $("scene").value = state.scene;
   $("draw").value = state.draw;
   $("shelf").value = state.shelf; $("ice").value = state.ice; $("slice").value = state.slice;
-  $("station").value = state.station; $("near").value = state.near;
+  $("station").value = state.station; $("near").value = state.near; $("imagery").value = state.img;
   $("orbit").value = state.orbit;
   $("zc").checked = !!state.zc; $("sea").checked = !!state.sea; $("cut").checked = !!state.cut;
   $("sec").value = state.sec; $("sec").disabled = !state.cut;
@@ -958,6 +983,7 @@ $("station").addEventListener("change", (e) => {
   writeHash();
 });
 $("near").addEventListener("change", (e) => { state.near = e.target.value; lastCam = ""; readout(); writeHash(); });
+$("imagery").addEventListener("change", (e) => { state.img = e.target.value; applyImagery(); readout(); writeHash(); });
 $("slice").addEventListener("change", (e) => {
   const was = state.slice, cv = cav();
   state.slice = e.target.value;
@@ -1039,12 +1065,13 @@ syncControls();
 setOrbit();
 showScene();
 applyDraw();
+applyImagery();
 stage.setCamera(state.cam || sceneCam());
 stage.resize();
 shareLinks("Navigation", { height: 560 });
 window.addEventListener("hashchange", () => {
   const n = state.n;
-  readHash(); syncControls(); setOrbit(); showScene(); applyDraw();
+  readHash(); syncControls(); setOrbit(); showScene(); applyDraw(); applyImagery();
   stage.setCamera(state.cam || sceneCam());
   if (state.scene === "cavity") { applySlice(); drawCavityPick(); readout(); return; }
   if (state.scene === "station") { readout(); return; }

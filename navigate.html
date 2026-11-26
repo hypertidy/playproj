@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>playproj: Navigation</title>
-<meta name="description" content="Ways round a 3D scene, on GEBCO's relief round Antarctica, under an Antarctic ice shelf from BedMachine, from space down to an Antarctic station on REMA, a teapot, linked rings, a globe and a penguin: turntable, orbit and trackball, turning about a double-clicked place, looking through a surface, wire mesh, and what each is called.">
+<meta name="description" content="Ways round a 3D scene, on GEBCO's relief round Antarctica, under an Antarctic ice shelf from BedMachine, from space down to an Antarctic station on REMA with Sentinel-2 draped over it, a teapot, linked rings, a globe and a penguin: turntable, orbit and trackball, turning about a double-clicked place, looking through a surface, wire mesh, and what each is called.">
 <link rel="stylesheet" href="css/app.css">
 <script src="js/mobile.js" defer></script>
 <script type="importmap">
@@ -129,6 +129,11 @@
         <option value="globe">Fixed for the globe: 1 km to 100,000 km</option>
         <option value="ground">Fixed for the ground: 1 m to 100,000 km</option>
       </select>
+      <label class="row" for="imagery"><span>Imagery</span></label>
+      <select id="imagery" class="wide" aria-label="Imagery">
+        <option value="s2">Sentinel-2, one clear summer pass</option>
+        <option value="none">None: tints from slope and ice</option>
+      </select>
     </section>
 
     <section id="heights">
@@ -175,7 +180,15 @@
           the South Pole, which its satellites never saw) the ground is BedMachine's surface, or the sea at
           EGM2008's geoid where BedMachine has the sea; beyond the continent is the globe. Sea, rock and snow are told apart by height, slope and BedMachine's
           mask: ground lying flat at sea level is the sea, and ground too steep for snow to lie on, or where
-          BedMachine's 500 m cells have no ice, is rock (so at 2 m the rock's edges are 500 m soft). The scene stands in the station's
+          BedMachine's 500 m cells have no ice, is rock (so at 2 m the rock's edges are 500 m soft). Over
+          those tints, on every patch but the continent's, is Sentinel-2's true-colour image of one clear
+          summer pass, chosen by eye for each station and found in Element 84's Earth Search: the tile
+          over the station and its neighbours from the same pass, read from their Cloud Optimized GeoTIFFs
+          at the overview nearest each patch's texels (10 m pixels on the two finest), warped from UTM onto
+          each patch's own grid, and faded into the tints where the pass has nothing and round the 500 m
+          patch's edge. Its pixels are 10 m, so at 2 m the station's buildings are REMA's shapes in
+          blurred colour; snow is brighter than the true-colour image's top, so it is plain white, shaded
+          by REMA; and Sentinel-2 never passes over the South Pole. The scene stands in the station's
           own frame, east, north and up from the ellipsoid under it, so the turntable turns about the
           station's plumb line and the horizon stays level there. Each patch's vertices are kept relative to
           its own middle, since the GPU's 32-bit floats would hold 6,400 km from the earth's centre only to
@@ -288,6 +301,7 @@
           <code>globe</code>, <code>penguin</code>, <code>station</code>), <code>station</code> (<code>davis</code>,
           <code>mawson</code>, <code>casey</code>, <code>mcmurdo</code>, <code>rothera</code>, <code>concordia</code>,
           <code>pole</code>), <code>near</code> (<code>follow</code>, <code>globe</code>, <code>ground</code>),
+          <code>img</code> (<code>s2</code>, <code>none</code>),
           <code>shelf</code> (<code>amery</code>, <code>ross</code>,
           <code>filchner-ronne</code>, <code>larsen</code>, <code>totten</code>, <code>pine-island</code>),
           <code>ice</code> (<code>solid</code>, <code>see</code>, <code>off</code>), <code>slice</code>
