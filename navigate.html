@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>playproj: Navigation</title>
-<meta name="description" content="Ways round a 3D scene on GEBCO's relief round Antarctica: turntable, orbit and trackball, turning about a double-clicked place, looking through the sea surface, and what each is called.">
+<meta name="description" content="Ways round a 3D scene, on GEBCO's relief round Antarctica, a teapot, linked rings, a globe and a penguin: turntable, orbit and trackball, turning about a double-clicked place, looking through a surface, wire mesh, and what each is called.">
 <link rel="stylesheet" href="css/app.css">
 <script src="js/mobile.js" defer></script>
 <script type="importmap">
@@ -33,11 +33,25 @@
     </header>
 
     <section class="embed-keep">
+      <label class="row" for="scene"><span>Scene</span></label>
+      <select id="scene" class="wide" aria-label="Scene">
+        <option value="relief">Antarctic relief (GEBCO 2026)</option>
+        <option value="teapot">Teapot on a pedestal</option>
+        <option value="rings">Three linked rings</option>
+        <option value="globe">Globe</option>
+        <option value="penguin">Penguin (from the Penguin datum page)</option>
+      </select>
       <label class="row" for="orbit"><span>A drag turns the view as</span></label>
       <select id="orbit" class="wide" aria-label="How a drag turns the view">
         <option value="turntable">A turntable about the map's upright</option>
-        <option value="north">An orbit about grid north (three.js's own)</option>
+        <option value="north">An orbit about +y (three.js's own): grid north</option>
         <option value="trackball">A trackball (free, the horizon rolls)</option>
+      </select>
+      <label class="row" for="draw"><span>Drawn as</span></label>
+      <select id="draw" class="wide" aria-label="How the surfaces are drawn">
+        <option value="solid">Solid</option>
+        <option value="wire">Wire mesh</option>
+        <option value="both">Solid with its wire mesh</option>
       </select>
       <div class="toggles">
         <label><input id="zc" type="checkbox"> The wheel zooms toward the pointer</label>
@@ -48,9 +62,9 @@
         <button id="below" type="button">From below</button>
       </div>
       <p class="hint">Drag turns the view; Shift-drag or right-drag moves it (right-drag only, as a trackball);
-        the wheel zooms. Double-click a place to turn about it; Shift-double-click looks through the sea surface
-        and turns about what is under it: the floor, the section, the dropped line. A click drops a line from
-        the surface to the floor there.</p>
+        the wheel zooms. Double-click a place to turn about it; Shift-double-click
+        <span id="shift-hint">looks through the sea surface and turns about what is under it: the floor, the
+        section, the dropped line. A click drops a line from the surface to the floor there</span>.</p>
       <p id="status" class="status" role="status"></p>
     </section>
 
@@ -58,7 +72,7 @@
       <table id="out" class="readout"></table>
     </section>
 
-    <section>
+    <section id="relief-controls">
       <div class="toggles">
         <label><input id="sea" type="checkbox"> Sea surface, coast and graticule</label>
         <label><input id="cut" type="checkbox"> Section down a meridian</label>
@@ -81,6 +95,27 @@
           down a meridian hangs a section of the water column (140&deg; E runs from the Antarctic coast to
           south of Australia), and a click drops a line from the surface to the floor. So there is a surface,
           and things under it to get to and look at from below, as on the store page's maps.</p>
+        <p><b>The other scenes</b> are each for something one way of turning does well and another badly, and
+          the readout's last row says what to try. All stand on z, as the map does, so each drag does the same
+          thing in all of them.</p>
+        <ul>
+          <li><b>Teapot on a pedestal</b>, the Utah teapot that 3D graphics has tried its cameras on since 1975.
+            The turntable is the product viewer's way round a thing that stands up. three.js makes the teapot
+            with y up, as most 3D programs do; turned onto z here, the orbit about +y shows what a z-up model
+            looks like opened with y up.</li>
+          <li><b>Three linked rings</b> at right angles, red about z, green about y, blue about x, with no up and
+            no floor. Every fixed axis has a pole, straight through one of the rings; the readout gives how far
+            the line of sight is from each ring's axis.</li>
+          <li><b>Globe</b>, north on +z. The turntable about the earth's axis is a desk globe and keeps north up
+            the screen; the readout says where north is on the screen when it is not.</li>
+          <li><b>Penguin</b>, the king penguin of the <a href="./penguin.html">Penguin datum page</a>, with places
+            (under the beak, inside the flippers, on top of the feet) that no ray from its centre reaches last,
+            and that a camera has to work to see.</li>
+        </ul>
+        <p>Off the map, Shift-double-click turns about the middle of the thing under the pointer: half way
+          along the line of sight from where it goes in to where it comes out. <b>Drawn as</b> draws any scene
+          as a wire mesh: on the relief the edges of its cells (fewer cells across shows them better), on the
+          others the edges of their triangles; the solid is still there to double-click.</p>
         <p><b>The drag.</b> OrbitControls, three.js's usual camera control, turns the camera about one
           axis fixed when it is made, the camera's <code>up</code>, which is +y unless a page says otherwise.
           On this map that is grid north, so a drag up or down tips the map until it is edge-on and stops
@@ -129,6 +164,10 @@
           <dt>Picking through</dt>
           <dd>Picking past a layer that is drawn but not wanted: Shift-double-click here leaves out the sea
             surface.</dd>
+          <dt>Wire mesh, wireframe</dt>
+          <dd>A surface drawn as the edges of its cells or triangles and nothing between, so what is behind
+            shows through and the mesh's own size is plain. Blender's <i>Wireframe</i> shading; three.js's
+            <code>wireframe</code> material setting.</dd>
         </dl>
         <p>The readout gives the pivot's place and height, the tilt (0&deg; straight down, 90&deg; level,
           180&deg; straight up from below) and the heading, clockwise from true north at the pivot, where
@@ -138,7 +177,9 @@
           square. Land south of 60&deg; S is tinted as ice. The geometry is
           <code>src/core/navigate.js</code>, checked by <code>test/check-navigate.mjs</code>; the double-click,
           ring and click are <code>src/scene/pivot.js</code>, shared with the store page.</p>
-        <p>Hash keys: <code>orbit</code> (<code>turntable</code>, <code>north</code>, <code>trackball</code>),
+        <p>Hash keys: <code>scene</code> (<code>relief</code>, <code>teapot</code>, <code>rings</code>,
+          <code>globe</code>, <code>penguin</code>), <code>draw</code> (<code>solid</code>, <code>wire</code>,
+          <code>both</code>), <code>orbit</code> (<code>turntable</code>, <code>north</code>, <code>trackball</code>),
           <code>zc</code> (zoom to cursor), <code>sea</code>, <code>cut</code>, <code>sec</code> (the section's
           longitude), <code>vx</code>, <code>n</code> (cells across), <code>pick</code> (lon,lat of the dropped
           line), <code>cam</code>.</p>
@@ -148,6 +189,8 @@
             <a href="https://geotiffjs.github.io/">geotiff.js</a>.</li>
           <li>Drawn with <a href="https://threejs.org/">three.js</a>; coastlines, Antarctic grounding line and
             ice shelf fronts from <a href="https://www.naturalearthdata.com/">Natural Earth</a>.</li>
+          <li>The Utah teapot, Martin Newell's (1975), as three.js's <code>TeapotGeometry</code> makes it; the
+            penguin from <code>src/core/penguin.js</code>.</li>
         </ul>
       </details>
     </section>
