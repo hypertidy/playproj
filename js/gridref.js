@@ -328,6 +328,8 @@ function buildSteps() {
     rows: ["atl", "six", "eight", "mgrs", "mga", "zone"], hi: ["all"]
   });
   for (let i = 1; i <= 4; i++) S[i].click = true;
+  // in Tasmania, theLIST's own topographic map for the street steps
+  if (T) for (const i of [0, 1, 2, 3, S.length - 1]) { const L = S[i].L; if (L.tiles) { L.topo = L.tiles; delete L.tiles; } }
   if (T) S.push(...bookSteps());
   return S;
 }
@@ -370,7 +372,7 @@ function bookSteps() {
       <p>${nm} is on ${mb ? `map book page <b>${mb.page.ref}</b>` : "no map book page"}${sa ? ` and street atlas page <b>${sa.page.ref}</b>` : ""}.
       Both books are drawn on the national grid of their day, <b>GDA94 / MGA zone 55</b> (EPSG:28355), and every page corner
       is a whole number of metres in it.</p>`,
-    cam: { E: cE, N: cN, span: (box[3] - box[1]) * 1.08 }, L: { coast: 1, tiles: 0.35, mbAll: 1, saAll: 1 }, rows: ["atl"], hi: ["atl"], click: true
+    cam: { E: cE, N: cN, span: (box[3] - box[1]) * 1.08 }, L: { coast: 1, mapbook: 0.55, mbAll: 1, saAll: 1 }, rows: ["atl"], hi: ["atl"], click: true
   });
   if (mb) S.push({
     title: "The map book is arithmetic",
@@ -380,7 +382,7 @@ function bookSteps() {
       <p>So the square is arithmetic: column ${mbs.col} is floor((E - ${grp(mb.page.xmin)}) / 500) + 1 = ${"ABCDEFGHIJKLMNOPQRSTUVWX".indexOf(mbs.col) + 1},
       and row ${mbs.row} is floor((${grp(mb.page.ymax)} - N) / 500) + 1, giving <b>${mb.label}</b>. Only the page number
       needs the table: pages are numbered in rows from north to south, west to east, but pages that are all sea are skipped.</p>`,
-    cam: mbCam, L: { tiles: 0.7, mbAll: 0.5, mbPage: 1, grid: 0.35 }, rows: ["atl", "mga"], hi: ["atl"], click: true
+    cam: mbCam, L: { mapbook: 0.9, mbAll: 0.3, mbPage: 1, grid: 0.35 }, rows: ["atl", "mga"], hi: ["atl"], click: true
   });
   if (mb) S.push({
     title: "Street atlas pages are placed by hand",
@@ -388,7 +390,7 @@ function bookSteps() {
       sit on a lattice: page positions come only from the table. Pages with a suffix are extensions of their parent:
       <b>N</b> and <b>S</b> are half-height (3 150 by 1 650 m), <b>E</b> and <b>W</b> half-width (1 500 by 3 650 m), and
       <b>T</b> pages are small insets.</p>`,
-    cam: mbCam, L: { tiles: 0.6, mbPage: 0.35, saAll: 1, saLabels: 1 }, rows: ["atl"], hi: ["atl"], click: true
+    cam: mbCam, L: { mapbook: 0.8, mbPage: 0.35, saAll: 1, saLabels: 1 }, rows: ["atl"], hi: ["atl"], click: true
   });
   if (sa) S.push({
     title: "Six by seven, on the MGA lattice",
@@ -398,14 +400,14 @@ function bookSteps() {
       line (cyan), and a street atlas square is a quarter of a kilometre square. ${nm}'s square <b>${sa.label}</b> runs from
       E ${grp(sq.xmin)} to ${grp(sq.xmax)} and N ${grp(sq.ymin)} to ${grp(sq.ymax)}, inside the four-figure square
       ${String(Math.floor(sq.xmin / 1000) % 100).padStart(2, "0")}${String(Math.floor(sq.ymin / 1000) % 100).padStart(2, "0")}.</p>`,
-    cam: saCam, L: { tiles: 0.8, saPage: 1, grid: 1 }, rows: ["atl", "six"], hi: ["atl", "d-km"], click: true
+    cam: saCam, L: { topo: 0.8, saPage: 1, grid: 1 }, rows: ["atl", "six"], hi: ["atl", "d-km"], click: true
   });
   if (sa && nb.length) S.push({
     title: "Margins overlap",
     body: `<p>The margins make neighbouring frames overlap by 150 m (orange), so a point near a page edge can be on two
       pages, each with its own reference for the same square. ${sa.page.ref} shares ground with
       ${nb.map((p) => p.ref).join(", ")}.${T.hits.filter((h) => h.book === "SA").length > 1 ? ` ${nm} is on ${T.hits.filter((h) => h.book === "SA").map((h) => h.page.ref).join(" and ")}.` : ""}</p>`,
-    cam: { ...saCam, span: saCam.span * 2.1 }, L: { tiles: 0.6, saPage: 0.6, overlap: 1, saAll: 0.5, saLabels: 1 }, rows: ["atl"], hi: ["atl"], click: true
+    cam: { ...saCam, span: saCam.span * 2.1 }, L: { topo: 0.6, saPage: 0.6, overlap: 1, saAll: 0.5, saLabels: 1 }, rows: ["atl"], hi: ["atl"], click: true
   });
   if (inset) S.push({
     title: "Insets",
@@ -415,7 +417,7 @@ function bookSteps() {
       suffix page.${half ? ` The nearest half page is ${half.p.ref} (${ext(half.p)}).` : ""}</p>
       <p>The published layers are not complete: only ${tFull.length} of the ${tPages.length} insets have squares of their own
       page number inside them, and nine pages have a frame but no squares at all.</p>`,
-    cam: insetCam, L: { tiles: 0.8, saAll: 0.6, saLabels: 1, inset: 1 }, rows: ["atl"], hi: ["atl"], insetRef: inset.p.ref
+    cam: insetCam, L: { topo: 0.8, saAll: 0.6, saLabels: 1, inset: 1 }, rows: ["atl"], hi: ["atl"], insetRef: inset.p.ref
   });
   if (sa) S.push({
     title: "Where on the page",
@@ -423,7 +425,7 @@ function bookSteps() {
       ${grp(sa.dy)} m south</b> of the corner of ${sa.page.ref}, or u = ${sa.u.toFixed(3)} and v = ${sa.v.toFixed(3)} as
       fractions of the frame.${mb ? ` On ${mb.page.ref} it is ${grp(mb.dx)} m east and ${grp(mb.dy)} m south (u = ${mb.u.toFixed(3)}, v = ${mb.v.toFixed(3)}).` : ""}</p>
       <p>A scan of a printed page has the frame's corners as its corners, so u and v scale straight to pixels on it.</p>`,
-    cam: saCam, L: { tiles: 0.8, saPage: 1, uv: 1 }, rows: ["atl"], hi: ["atl"], click: true
+    cam: saCam, L: { topo: 0.8, saPage: 1, uv: 1 }, rows: ["atl"], hi: ["atl"], click: true
   });
   S.push({
     title: "GDA94, and whole metres",
@@ -433,7 +435,7 @@ function bookSteps() {
       looks it up: on GDA94 ${nm} is E ${grp(T.e94)}, N ${grp(T.n94)}.</p>
       <p>theLIST serves the pages in Web Mercator, projected from GDA94 / MGA 55 as if GDA94 were WGS84. Taken back to
       EPSG:28355 with no datum shift, the corners come out in whole metres again: the grid the books were drawn on.</p>`,
-    cam: sa ? { ...toPlaneCam(sa.square), span: 900 } : mbCam, L: { tiles: 1, saPage: 1, grid: 1 }, rows: ["atl", "mga"], hi: ["atl"], click: true
+    cam: sa ? { ...toPlaneCam(sa.square), span: 900 } : mbCam, L: { topo: 1, saPage: 1, grid: 1 }, rows: ["atl", "mga"], hi: ["atl"], click: true
   });
   return S;
 }
@@ -715,8 +717,13 @@ function drawPlane(ctx, cam, L, w, h, dpr) {
   const base = ctx.globalAlpha, al = (k) => base * L(k);
   ctx.fillStyle = C.sea; ctx.globalAlpha = base; ctx.fillRect(0, 0, w, h);
   if (L("scale") > 0.01) { ctx.globalAlpha = al("scale"); drawScale(ctx, v); }
-  if (L("tiles") > 0.01 && cam.span < 2000e3) { ctx.globalAlpha = al("tiles"); drawTiles(ctx, v, dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
-  if (L("coast") > 0.01 || L("tiles") < 0.99) { ctx.globalAlpha = base * Math.max(L("coast"), 0.4 * (1 - L("tiles"))); drawCoast(ctx, v); }
+  let tileA = 0;
+  for (const src of Object.keys(TILESRC)) {
+    const a = L(src);
+    tileA = Math.max(tileA, a);
+    if (a > 0.01 && cam.span < 2000e3) { ctx.globalAlpha = base * a; drawTiles(ctx, v, dpr, src); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+  }
+  if (L("coast") > 0.01 || tileA < 0.99) { ctx.globalAlpha = base * Math.max(L("coast"), 0.4 * (1 - tileA)); drawCoast(ctx, v); }
   if (L("grat") > 0.01) { ctx.globalAlpha = al("grat"); drawGraticule(ctx, v); }
   if (L("pages") > 0.01) { ctx.globalAlpha = al("pages"); drawPages(ctx, v, false); }
   if (L("atlas") > 0.01) { ctx.globalAlpha = al("atlas"); drawPages(ctx, v, true); }
@@ -1136,18 +1143,34 @@ function drawPin(ctx, v) {
   label(ctx, P.name, x + 10, y - 10, { size: 14, bold: true });
 }
 
-// ---------------------------------------------------------------- OpenStreetMap tiles, warped into the grid
+// ---------------------------------------------------------------- web map tiles, warped into the grid
+//
+// OpenStreetMap anywhere; in Tasmania theLIST's own basemaps (ArcGIS tile
+// caches on the same Web Mercator XYZ scheme): the Topographic map for the
+// street steps and the Emergency Services map book cartography for the map
+// book steps. theLIST's tiles are loaded without CORS (their servers allow
+// only some origins); the canvas is only drawn on, never read back.
+
+const LIST = "https://services.thelist.tas.gov.au/arcgis/rest/services/Basemaps/";
+const TILESRC = {
+  tiles: { url: (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`, max: 19, cors: true,
+    credit: `Map tiles &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>` },
+  topo: { url: (z, x, y) => `${LIST}Topographic/MapServer/tile/${z}/${y}/${x}`, max: 18, cors: false,
+    credit: `Topographic basemap: <a href="https://www.thelist.tas.gov.au/">the LIST</a> &copy; State of Tasmania` },
+  mapbook: { url: (z, x, y) => `${LIST}ESgisMapBookPUBLIC/MapServer/tile/${z}/${y}/${x}`, max: 15, cors: false,
+    credit: `Emergency Services map book basemap: <a href="https://www.thelist.tas.gov.au/">the LIST</a> &copy; State of Tasmania` }
+};
 
 const tiles = new Map();
-function tile(z, x, y) {
-  const key = `${z}/${x}/${y}`;
+function tile(src, z, x, y) {
+  const key = `${src}/${z}/${x}/${y}`;
   let t = tiles.get(key);
   if (!t) {
     t = { img: new Image(), ok: false };
-    t.img.crossOrigin = "anonymous";
+    if (TILESRC[src].cors) t.img.crossOrigin = "anonymous";
     t.img.onload = () => { t.ok = true; schedule(); };
     t.img.onerror = () => { t.bad = true; };
-    t.img.src = `https://tile.openstreetmap.org/${key}.png`;
+    t.img.src = TILESRC[src].url(z, x, y);
     tiles.set(key, t);
     if (tiles.size > 600) tiles.delete(tiles.keys().next().value);
   }
@@ -1156,12 +1179,12 @@ function tile(z, x, y) {
 const tileLon = (x, z) => (x / 2 ** z) * 360 - 180;
 const tileLat = (y, z) => Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / 2 ** z))) / D2R;
 
-function drawTiles(ctx, v, dpr) {
+function drawTiles(ctx, v, dpr, which = "tiles") {
   const ll = viewLL(v);
   if (!isFinite(ll.lo0)) return;
   const lat = (ll.la0 + ll.la1) / 2;
   let z = Math.round(Math.log2(156543.03 * Math.cos(lat * D2R) * v.s * Math.min(dpr, 1.5)));
-  z = Math.max(2, Math.min(19, z));
+  z = Math.max(2, Math.min(TILESRC[which].max, z));
   let x0, x1, y0, y1;
   for (;;) {
     const n = 2 ** z;
@@ -1174,11 +1197,11 @@ function drawTiles(ctx, v, dpr) {
   const sub = z >= 12 ? 1 : z >= 8 ? 2 : 6;
   for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
     let src = null, za = z, xa = x, ya = y;
-    const t = tile(z, x, y);
+    const t = tile(which, z, x, y);
     if (t.ok) src = t;
     else for (let up = 1; up <= 5 && za > 0; up++) {
       za--; xa >>= 1; ya >>= 1;
-      const p = tiles.get(`${za}/${xa}/${ya}`);
+      const p = tiles.get(`${which}/${za}/${xa}/${ya}`);
       if (p && p.ok) { src = p; break; }
     }
     if (src) warpTile(ctx, v, dpr, src.img, z, x, y, za, xa, ya, sub);
@@ -1374,11 +1397,10 @@ function updateScalebar(f) {
   const m = [1, 2, 5, 10].map((k) => k * p).filter((x) => x <= target).pop();
   bar.querySelector("span").style.width = `${m * view.s}px`;
   bar.querySelector("b").textContent = m >= 1000 ? `${grp(m / 1000)} km of grid` : `${m} m of grid`;
-  const st = STEPS[f.i], tilesOn = st && (st.L.tiles || 0) > 0;
+  const st = STEPS[f.i], srcs = st ? Object.keys(TILESRC).filter((k) => (st.L[k] || 0) > 0) : [];
   const books = T && st && ["real", "saPage", "mbPage", "saAll", "mbAll", "inset"].some((k) => st.L[k]);
-  $("credit").innerHTML = (tilesOn
-    ? `Map tiles &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>`
-    : "Coastlines: Natural Earth") + (books ? `; map book pages: the LIST &copy; State of Tasmania` : "");
+  $("credit").innerHTML = (srcs.length ? srcs.map((k) => TILESRC[k].credit).join("; ") : "Coastlines: Natural Earth") +
+    (books && !srcs.some((k) => k !== "tiles") ? `; book pages: the LIST &copy; State of Tasmania` : books ? " (and book pages)" : "");
 }
 
 // ---------------------------------------------------------------- input
