@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>playproj: Navigation</title>
-<meta name="description" content="Ways round a 3D scene, on GEBCO's relief round Antarctica, under an Antarctic ice shelf from BedMachine, a teapot, linked rings, a globe and a penguin: turntable, orbit and trackball, turning about a double-clicked place, looking through a surface, wire mesh, and what each is called.">
+<meta name="description" content="Ways round a 3D scene, on GEBCO's relief round Antarctica, under an Antarctic ice shelf from BedMachine, from space down to an Antarctic station on REMA, a teapot, linked rings, a globe and a penguin: turntable, orbit and trackball, turning about a double-clicked place, looking through a surface, wire mesh, and what each is called.">
 <link rel="stylesheet" href="css/app.css">
 <script src="js/mobile.js" defer></script>
 <script type="importmap">
@@ -37,6 +37,7 @@
       <select id="scene" class="wide" aria-label="Scene">
         <option value="relief">Antarctic relief (GEBCO 2026)</option>
         <option value="cavity">Under an ice shelf (BedMachine)</option>
+        <option value="station">Down to a station (REMA)</option>
         <option value="teapot">Teapot on a pedestal</option>
         <option value="rings">Three linked rings</option>
         <option value="globe">Globe</option>
@@ -111,6 +112,25 @@
       </div>
     </section>
 
+    <section id="station-controls" hidden>
+      <label class="row" for="station"><span>Station</span></label>
+      <select id="station" class="wide" aria-label="Station">
+        <option value="davis">Davis (Australia)</option>
+        <option value="mawson">Mawson (Australia)</option>
+        <option value="casey">Casey (Australia)</option>
+        <option value="mcmurdo">McMurdo (United States)</option>
+        <option value="rothera">Rothera (United Kingdom)</option>
+        <option value="concordia">Concordia (France and Italy)</option>
+        <option value="pole">Amundsen–Scott South Pole (United States)</option>
+      </select>
+      <label class="row" for="near"><span>Near and far planes</span></label>
+      <select id="near" class="wide" aria-label="Near and far planes">
+        <option value="follow">Following the camera</option>
+        <option value="globe">Fixed for the globe: 1 km to 100,000 km</option>
+        <option value="ground">Fixed for the ground: 1 m to 100,000 km</option>
+      </select>
+    </section>
+
     <section id="heights">
       <label class="row" for="vx"><span>Vertical exaggeration</span><output id="vx-out"></output></label>
       <input id="vx" type="range" min="0" max="2.3" step="0.01" aria-label="Vertical exaggeration, as a power of ten">
@@ -143,6 +163,27 @@
           every drag. The cavity is
           a few hundred metres of water under ice hundreds of kilometres across, so getting into it and looking
           along it is the hardest place on the page to get to.</p>
+        <p><b>Down to a station</b> is the earth at its own size, in metres, and an Antarctic station on it,
+          to come down to from 22,000 km: about a million times closer, or some 70 notches of the wheel, which
+          goes faster here. The ground is REMA, the Reference Elevation Model of Antarctica, read from the
+          <a href="https://github.com/mdsumner/rema-ovr">rema-ovr</a> overview VRT as GDAL would read it: the
+          VRT's XML, then the 2 m mosaic's tiles, the 10 m and 32 m tile VRTs, and whole-continent COGs at
+          100 m, 500 m and 1 km with their own overviews. It is drawn in six patches: the whole continent at
+          8 km, then 512 cells round the station at 500 m, 100 m, 32 m, 10 m and 2 m, each with a hole where
+          the next one sits and that one's rim pinned onto the hole's edges, so they meet without cracks
+          (drawn as a wire mesh, the nesting shows). Where REMA has nothing (the open sea, and the ground within some 50 km of
+          the South Pole, which its satellites never saw) the ground is BedMachine's surface, or the sea at
+          EGM2008's geoid where BedMachine has the sea; beyond the continent is the globe. Sea, rock and snow are told apart by height, slope and BedMachine's
+          mask: ground lying flat at sea level is the sea, and ground too steep for snow to lie on, or where
+          BedMachine's 500 m cells have no ice, is rock (so at 2 m the rock's edges are 500 m soft). The scene stands in the station's
+          own frame, east, north and up from the ellipsoid under it, so the turntable turns about the
+          station's plumb line and the horizon stays level there. Each patch's vertices are kept relative to
+          its own middle, since the GPU's 32-bit floats would hold 6,400 km from the earth's centre only to
+          about half a metre. And the near and far planes follow the camera: a depth buffer splits the
+          depths between them finest near the camera and coarsest far off, so near is a quarter of the
+          camera's height over the ground and far just past the horizon. Fixed for the globe, things close
+          to the camera are cut away as you come down; fixed for the ground, far off, surfaces flicker and
+          show through each other.</p>
         <p><b>The other scenes</b> are each for something one way of turning does well and another badly, and
           the readout's last row says what to try. All stand on z, as the map does, so each drag does the same
           thing in all of them.</p>
@@ -216,6 +257,20 @@
           <dd>Cutting a model open along a plane to see inside: what is on one side of the plane is not drawn.
             ParaView's <i>Clip</i> filter; three.js's <code>clippingPlanes</code>, which the ice shelf's section
             uses (it draws the bands on the cut face itself, since a clipping plane leaves the cut open).</dd>
+          <dt>Near and far planes, depth buffer, z-fighting</dt>
+          <dd>The camera draws only what lies between two planes across its view, and records how far off
+            each drawn point is in a depth buffer, so nearer things hide farther ones. The buffer holds 24 bits
+            spread between the planes finest near the camera, so the greater far is over near the coarser it
+            is far off, until two surfaces there take turns in front (z-fighting). three.js's
+            <code>camera.near</code> and <code>camera.far</code>; its <code>logarithmicDepthBuffer</code> and
+            Cesium's several frustums are other ways round it.</dd>
+          <dt>Level of detail (LOD), clipmap</dt>
+          <dd>Drawing a surface coarser the farther it is from the camera, here as nested squares round a
+            place, each finer than the one round it. Geometry clipmaps (Losasso and Hoppe) do the same.</dd>
+          <dt>Relative to centre, floating origin</dt>
+          <dd>Keeping a model's vertices relative to a point near them, and that point's place in double
+            precision on the CPU, so the GPU's single precision is spent on what is close to the camera.
+            three.js does it for any object with a <code>position</code>.</dd>
           <dt>Wire mesh, wireframe</dt>
           <dd>A surface drawn as the edges of its cells or triangles and nothing between, so what is behind
             shows through and the mesh's own size is plain. Blender's <i>Wireframe</i> shading; three.js's
@@ -230,7 +285,10 @@
           <code>src/core/navigate.js</code>, checked by <code>test/check-navigate.mjs</code>; the double-click,
           ring and click are <code>src/scene/pivot.js</code>, shared with the store page.</p>
         <p>Hash keys: <code>scene</code> (<code>relief</code>, <code>cavity</code>, <code>teapot</code>, <code>rings</code>,
-          <code>globe</code>, <code>penguin</code>), <code>shelf</code> (<code>amery</code>, <code>ross</code>,
+          <code>globe</code>, <code>penguin</code>, <code>station</code>), <code>station</code> (<code>davis</code>,
+          <code>mawson</code>, <code>casey</code>, <code>mcmurdo</code>, <code>rothera</code>, <code>concordia</code>,
+          <code>pole</code>), <code>near</code> (<code>follow</code>, <code>globe</code>, <code>ground</code>),
+          <code>shelf</code> (<code>amery</code>, <code>ross</code>,
           <code>filchner-ronne</code>, <code>larsen</code>, <code>totten</code>, <code>pine-island</code>),
           <code>ice</code> (<code>solid</code>, <code>see</code>, <code>off</code>), <code>slice</code>
           (<code>held</code>, <code>view</code>, <code>none</code>), <code>sl</code> (where the section is held, if

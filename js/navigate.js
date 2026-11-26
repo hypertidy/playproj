@@ -4,7 +4,8 @@
 // stereographic (EPSG:3031): the sea floor, the land and the ice as one
 // exaggerated surface under a see-through sea surface, a section hung down
 // a meridian, and a line dropped to the floor where a click picks; under
-// an ice shelf, from BedMachine (navigate-cavity.js); or on a teapot,
+// an ice shelf, from BedMachine (navigate-cavity.js); from space down to
+// an Antarctic station on REMA (navigate-station.js); or on a teapot,
 // three linked rings, a globe or a penguin (navigate-scenes.js).
 // The drag turns the view as a turntable about the scene's upright, as an
 // orbit about +y (three.js's own up; grid north on the map), or as a free
@@ -21,6 +22,9 @@ import * as N from "../src/core/navigate.js";
 import * as SC from "./navigate-scenes.js";
 import * as CV from "./navigate-cavity.js";
 import * as C from "../src/core/cavity.js";
+import * as STN from "./navigate-station.js";
+import * as T from "../src/core/station.js";
+import * as R from "../src/core/rema.js";
 import { elevationTint } from "../src/core/basemap.js";
 import { openHeld } from "../src/load/heldrefs.js";
 import { readElevation, holdRanges } from "./basemap-load.js";
@@ -54,6 +58,13 @@ const SCENES = {
     shift: "looks through the ice and the sea surface and turns about the middle of the water under the place: the cavity, under floating ice (under grounded ice, the bed). A click drops a line down the column there",
     task: "Get into the cavity: set Section to none, Shift-double-click the shelf to turn about the water under it, then zoom in until the Camera row says it is in the cavity, and look along it to where the ice meets the bed. The turntable keeps the ice overhead level; the trackball soon has it rolling; the orbit about +y stops with the block edge-on."
   },
+  station: {
+    label: "Down to a station (REMA)", up: "the station's plumb line", yShort: "north at the station",
+    turn: "sideways goes round the station's plumb line, up tips the ground towards the horizon and on under it",
+    y: "north at the station, so up and down stop with the ground edge-on to the north and south",
+    shift: "turns about the ground under the pointer, as a double-click does (there is nothing over the ground to look through)",
+    task: "Come down from space to the station: keep zooming with the pointer on the yellow marker, about 70 notches of the wheel from 22,000 km to the ground; then back out to a few hundred metres and drag up towards the horizon (the pivot is on the ground, so close in the camera comes down to it) and look round. The Near and far row shows the planes following the camera; set them fixed to see why they have to. Drawn as a wire mesh, REMA's levels show nested round the station."
+  },
   teapot: {
     label: "Teapot on a pedestal", up: "the teapot's upright", yShort: "front to back here",
     turn: "sideways goes round it, up looks down into it, down looks up under it, and it stays upright on the screen",
@@ -83,9 +94,9 @@ const SCENES = {
     task: "Look up under the beak, into the inside of a flipper, and down on the tops of the feet: the places no ray from the penguin's centre leaves it last, so no penguin longitude and latitude reaches them (see the Penguin datum page). Double-click a flipper to turn about it."
   }
 };
-const DRAWS = ["solid", "wire", "both"], ICES = ["solid", "see", "off"], SLICES = ["held", "view", "none"];
+const DRAWS = ["solid", "wire", "both"], ICES = ["solid", "see", "off"], SLICES = ["held", "view", "none"], NEARS = ["follow", "globe", "ground"];
 const defaults = { scene: "relief", draw: "solid", orbit: "turntable", zc: 1, sea: 1, cut: 1, sec: 140, vx: 50, n: 512,
-  shelf: "amery", cvx: 0, ice: "solid", slice: "held", sl: "", pick: "", cam: null };
+  shelf: "amery", cvx: 0, ice: "solid", slice: "held", sl: "", station: "davis", near: "follow", pick: "", cam: null };
 const state = { ...defaults };
 const lonLat = (raw) => {
   const v = String(raw).split(",").map(Number);
@@ -96,6 +107,7 @@ function readHash() {
     scene: oneOf(Object.keys(SCENES), "relief"), draw: oneOf(DRAWS, "solid"),
     orbit: oneOf(["turntable", "north", "trackball"], "turntable"), pick: lonLat,
     shelf: oneOf(Object.keys(C.SHELVES), "amery"), ice: oneOf(ICES, "solid"), slice: oneOf(SLICES, "held"),
+    station: oneOf(Object.keys(T.STATIONS), "davis"), near: oneOf(NEARS, "follow"),
     sl: (raw) => { const v = String(raw).split(",").map(Number); return v.length === 3 && v.every(isFinite) ? v.join(",") : undefined; }
   });
   state.vx = Math.max(1, Math.min(200, state.vx));
@@ -195,7 +207,7 @@ const shapes = {};
 const BUILD = { teapot: SC.teapotScene, rings: SC.ringsScene, globe: SC.globeScene, penguin: SC.penguinScene };
 function shape() {
   const k = state.scene;
-  if (k === "relief" || k === "cavity") return null;
+  if (k === "relief" || k === "cavity" || k === "station") return null;
   if (!shapes[k]) {
     shapes[k] = BUILD[k]();
     if (k === "globe" && coast) shapes[k].setCoast(coast.world, coast.south);
@@ -204,7 +216,8 @@ function shape() {
   }
   return shapes[k];
 }
-const sceneCam = () => (state.scene === "relief" ? DEFAULT_CAM : state.scene === "cavity" ? (cav() ? cav().defaultCam(cvxNow()) : CAVITY_CAM) : shape().cam);
+const sceneCam = () => (state.scene === "relief" ? DEFAULT_CAM : state.scene === "cavity" ? (cav() ? cav().defaultCam(cvxNow()) : CAVITY_CAM)
+  : state.scene === "station" ? stationEntry().scene.defaultCam() : shape().cam);
 
 // ---------------------------------------------------------------- the relief
 
@@ -298,6 +311,7 @@ function applyDraw() {
   reliefWire.material = d === "wire" ? WIRE_LIT : WIRE_DARK;
   for (const s of Object.values(shapes)) SC.drawAs(s.meshes, d);
   for (const { scene: cv } of cavities.values()) if (cv) { SC.drawAs(cv.meshes, d); cv.clipAll(); }
+  for (const { scene: e } of stations.values()) SC.drawAs(e.meshes, d);
 }
 
 // a lon/lat polyline as segments on the surface, cut where it leaves the
@@ -472,6 +486,56 @@ function drawCavityPick() {
   if (cv) cv.setPick(p ? p.x : null, p ? p.y : null);
 }
 
+// ---------------------------------------------------------------- the station
+
+// Each station's scene, made the first time it is shown and kept: the
+// globe at once, REMA's levels as they are read (navigate-station.js)
+const stations = new Map(), stnStatus = sayFor("station");
+function stationEntry(key = state.station) {
+  let e = stations.get(key);
+  if (!e) {
+    e = { scene: null, pinned: 0 };
+    stations.set(key, e);
+    e.scene = STN.stationScene(key, {
+      status: (s) => { if (state.station === key) stnStatus(s); },
+      changed: () => stationChanged(key)
+    });
+    scene.add(e.scene.group);
+    e.scene.group.visible = state.scene === "station" && state.station === key;
+    if (coast) e.scene.setCoast(coast.world);
+    SC.drawAs(e.scene.meshes, state.draw);
+  }
+  return e;
+}
+// As each level is drawn: drawn as the others are; and a pivot still on
+// the station's ground as the last level had it is put on the ground as
+// this one has it, the camera moved with it.
+function stationChanged(key) {
+  const e = stations.get(key), st = e.scene, g = st.ground();
+  SC.drawAs(st.meshes, state.draw);
+  if (state.scene === "station" && state.station === key) {
+    const t = controls.target, c = camera.position;
+    if (Math.hypot(t.x, t.y) < 1 && Math.abs(t.z - e.pinned) < 0.5 && g !== e.pinned) stage.setCamera([c.x, c.y, c.z + g - t.z, t.x, t.y, g]);
+    lastCam = "";
+    readout();
+  }
+  e.pinned = g;
+}
+// The near and far planes: following the camera (station.js nearFar), or
+// fixed, as for the globe (a kilometre to 100,000 km) or for the ground
+// (a metre to 100,000 km).
+const _earth = new THREE.Vector3();
+function stationClip() {
+  if (state.scene !== "station") return;
+  const st = stationEntry().scene, c = camera.position;
+  let n = state.near === "globe" ? 1000 : 1, f = 1e8;
+  if (state.near === "follow") {
+    const pl = st.placeOf(c.x, c.y, c.z);
+    [n, f] = T.nearFar(c.distanceTo(_earth.fromArray(st.earthCentre)), pl.h - (pl.ground ?? 0));
+  }
+  if (n !== camera.near || f !== camera.far) { camera.near = n; camera.far = f; camera.updateProjectionMatrix(); }
+}
+
 // ---------------------------------------------------------------- pointer
 
 const ray = new THREE.Raycaster();
@@ -505,6 +569,7 @@ function pivotAt(px, py, through) {
   const s = shape();
   if (s) return shapePivot(s, px, py, through);
   if (state.scene === "cavity") return cavityPivot(px, py, through);
+  if (state.scene === "station") return stationPivot(px, py);
   if (!world) return null;
   rayAt(stage, px, py, ray);
   const r = reliefHits();
@@ -535,6 +600,14 @@ function shapePivot(s, px, py, through) {
 // the pointer, on the side the section keeps; with Shift about the middle
 // of the water in the column there (under floating ice, the cavity), or
 // the bed where there is no water.
+// From space to the station: the ground under the pointer, REMA's or the
+// globe's beyond it.
+function stationPivot(px, py) {
+  const st = stationEntry().scene;
+  rayAt(stage, px, py, ray);
+  const o = ray.ray.origin, d = ray.ray.direction, h = st.hit([o.x, o.y, o.z], [d.x, d.y, d.z]);
+  return h ? new THREE.Vector3(...h.point) : null;
+}
 function cavityPivot(px, py, through) {
   const cv = cav();
   if (!cv) return null;
@@ -684,10 +757,63 @@ function cavityRows(cv) {
   ];
 }
 
+// Down to a station: where the pivot and the camera are over the ground,
+// how the view looks at the pivot (down and north there, not at the
+// station), how far the camera has come, and the near and far planes.
+const fmtLen = (m) => {
+  const a = Math.abs(m);
+  return a >= 1e4 ? `${Math.round(m / 1000).toLocaleString()} km` : a >= 10 ? `${Math.round(m).toLocaleString()} m` : a >= 1 ? `${m.toFixed(1)} m` : `${Math.round(m * 100)} cm`;
+};
+const OPEN_DIST = 2.2e7;
+function stationView(st) {
+  const c = camera.position, t = controls.target, dist = c.distanceTo(t);
+  const cam = st.placeOf(c.x, c.y, c.z), piv = st.placeOf(t.x, t.y, t.z);
+  const L = T.enuFrame(piv.lon, piv.lat), F = st.frame, dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const inF = (v) => [dot(F.e, v), dot(F.n, v), dot(F.u, v)], up = inF(L.u), north = inF(L.n), east = inF(L.e);
+  const d = [(t.x - c.x) / dist, (t.y - c.y) / dist, (t.z - c.z) / dist];
+  const tilt = (Math.acos(Math.max(-1, Math.min(1, -dot(d, up)))) * 180) / Math.PI;
+  const de = dot(d, east), dn = dot(d, north);
+  const heading = Math.hypot(de, dn) < 1e-3 ? null : (((Math.atan2(de, dn) * 180) / Math.PI) + 360) % 360;
+  const px = (2 * dist * Math.tan((camera.fov * Math.PI) / 360)) / (renderer.domElement.clientHeight || 1);
+  return { cam, piv, dist, tilt, heading, px, from: Math.hypot(t.x, t.y, t.z - st.ground()) };
+}
+function overGround(p) {
+  if (p.ground === null) return `${fmtLen(p.h)} over the ellipsoid`;
+  const a = p.h - p.ground;
+  return Math.abs(a) < 0.5 ? "on the ground" : a > 0 ? `${fmtLen(a)} over the ground` : `${fmtLen(-a)} under the ground`;
+}
+function nearWords() {
+  const n = camera.near, f = camera.far, r = `${fmtLen(n)} to ${fmtLen(f)}, far ${Math.round(f / n).toLocaleString()} times near`;
+  if (state.near === "globe") return `${r}: fixed for the globe, so close in, anything within a kilometre of the camera is cut away`;
+  if (state.near === "ground") return `${r}: fixed for the ground, more than a 24-bit depth buffer can split, so far off, surfaces flicker and show through each other`;
+  return `${r}: following the camera, near a quarter of its height over the ground and far just past the horizon`;
+}
+function stationHud(st) {
+  const v = stationView(st);
+  return `camera ${overGround(v.cam)} · ${fmtLen(v.dist)} from the pivot · tilt ${Math.round(v.tilt)}${DEG} · near ${fmtLen(camera.near)}, far ${fmtLen(camera.far)}`;
+}
+function stationRows(st) {
+  const v = stationView(st), s = st.station;
+  const levels = st.patches.map((p, k) => `${R.cellWords(p.d)} (${p.w} x ${p.h}${k === 0 ? ", the continent" : `, ${fmtLen(p.w * p.d)} across`})`);
+  const reading = [...st.reading].sort((a, b) => b - a).map(R.cellWords);
+  return [
+    ["Drag", dragWords()],
+    ["Turning about", `${fmtLL(v.piv.lon, v.piv.lat)}, ${overGround(v.piv)}, ${fmtLen(v.from)} from ${s.name}`],
+    ["Looking", `${Math.round(v.tilt)}${DEG} from straight down at the pivot (${tiltWords(v.tilt)})${v.heading === null ? "" : `, heading ${Math.round(v.heading)}${DEG} ${N.compass(v.heading)} true`}`],
+    ["Camera", `${fmtLen(v.dist)} from the pivot, ${overGround(v.cam)}${v.cam.d ? ` (REMA's ${R.cellWords(v.cam.d)} cells under it)` : ""}, over ${fmtLL(v.cam.lon, v.cam.lat)}; ${v.dist < OPEN_DIST * 0.999 ? `${Math.round(OPEN_DIST / v.dist).toLocaleString()} times closer to the pivot than the opening view` : "as far out as the opening view"}`],
+    ["Scale", `a pixel is ${fmtLen(v.px)} across at the pivot`],
+    ["Near and far", nearWords()],
+    ["REMA", `${levels.length ? levels.join(", ") : "none yet"}${reading.length ? `; reading ${reading.join(", ")}` : ""}`],
+    ["Station", `${s.name} (${s.who}), ${fmtLL(s.lon, s.lat)}, the ground there ${fmtLen(st.ground())} over the ellipsoid`],
+    ["Try", SCENES.station.task]
+  ];
+}
+
 function hud() {
   const s = shape();
   if (s) { $("hud").textContent = shapeHud(s); return; }
   if (state.scene === "cavity") { const cv = cav(); $("hud").textContent = cv ? cavityHud(cv) : ""; return; }
+  if (state.scene === "station") { $("hud").textContent = stationHud(stationEntry().scene); return; }
   const v = view();
   const head = v.heading === null ? "" : ` · heading ${Math.round(v.heading)}${DEG} ${N.compass(v.heading)}${v.grid ? " (grid)" : ""}`;
   $("hud").textContent = `tilt ${Math.round(v.tilt)}${DEG} (${tiltWords(v.tilt)})${head} · ${fmtKm(v.dist)} from the pivot${v.below ? " · under the sea surface" : ""}`;
@@ -695,6 +821,10 @@ function hud() {
 function readout() {
   const s = shape();
   if (s) { $("out").innerHTML = shapeRows(s).map(([k, val]) => `<tr><th>${k}</th><td>${val}</td></tr>`).join(""); return; }
+  if (state.scene === "station") {
+    $("out").innerHTML = stationRows(stationEntry().scene).filter(Boolean).map(([k, val]) => `<tr><th>${k}</th><td>${val}</td></tr>`).join("");
+    return;
+  }
   if (state.scene === "cavity") {
     const cv = cav(), rows = cv ? cavityRows(cv) : [["Drag", dragWords()], ["Try", SCENES.cavity.task]];
     $("out").innerHTML = rows.filter(Boolean).map(([k, val]) => `<tr><th>${k}</th><td>${val}</td></tr>`).join("");
@@ -731,6 +861,7 @@ const GEBCO_CREDIT = $("credit").innerHTML;
 const CREDITS = {
   relief: GEBCO_CREDIT, globe: "Coastlines from Natural Earth", rings: "",
   cavity: `MEaSUREs BedMachine Antarctica v4.1 (Morlighem; NSIDC-0756, <a href="https://doi.org/${C.BEDMACHINE.doi}">doi:${C.BEDMACHINE.doi}</a>), from <a href="https://source.coop/ausantarctic/bedmachine">Source Cooperative</a>`,
+  station: `REMA mosaic v2.0 (Howat and others; the Polar Geospatial Center and the Byrd Polar and Climate Research Center, <a href="https://doi.org/${R.REMA.doi}">doi:${R.REMA.doi}</a>), its 100 m to 1 km levels filled from the Copernicus 30 m DEM, through the <a href="https://github.com/mdsumner/rema-ovr">rema-ovr</a> overview VRT; where there is no ice, and the ground where REMA has none (round the South Pole), from BedMachine Antarctica v4.1; sea level from EGM2008; coastlines from Natural Earth`,
   teapot: "The Utah teapot (Martin Newell, 1975), as three.js's TeapotGeometry makes it",
   penguin: "The king penguin of the Penguin datum page"
 };
@@ -738,13 +869,23 @@ function showScene() {
   const k = state.scene, m = SCENES[k];
   shape();
   reliefGroup.visible = k === "relief";
-  headlight.intensity = k === "relief" ? 0 : k === "cavity" ? 0.8 : 1.1;
+  headlight.intensity = k === "relief" ? 0 : k === "station" ? 0.35 : k === "cavity" ? 0.8 : 1.1;
+  // (low over the station, so its ground's shapes show)
+  if (k === "station") sun.position.set(-1, 1.3, 0.9); else sun.position.set(-1, 1.3, 1.8);
   for (const [key, s] of Object.entries(shapes)) s.group.visible = key === k;
   for (const [key, e] of cavities) if (e.scene) e.scene.group.visible = k === "cavity" && key === state.shelf;
+  if (k === "station") stationEntry();
+  for (const [key, e] of stations) e.scene.group.visible = k === "station" && key === state.station;
   $("relief-controls").hidden = k !== "relief";
   $("cavity-controls").hidden = k !== "cavity";
+  $("station-controls").hidden = k !== "station";
   $("heights").hidden = k !== "relief" && k !== "cavity";
-  $("below").hidden = k === "globe";
+  $("below").hidden = k === "globe" || k === "station";
+  // (from space to the ground is a million times: the wheel goes faster,
+  // and the near and far planes are the station scene's own while it shows)
+  controls.zoomSpeed = k === "station" ? 4 : 1;
+  tb.zoomSpeed = k === "station" ? 6 : 1.2;
+  if (k !== "station" && (camera.near !== 0.002 || camera.far !== 100)) { camera.near = 0.002; camera.far = 100; camera.updateProjectionMatrix(); }
   const o = $("orbit").options;
   o[0].textContent = `A turntable about ${m.up}`;
   o[1].textContent = `An orbit about +y (three.js's own): ${m.yShort}`;
@@ -768,6 +909,7 @@ function syncControls() {
   $("scene").value = state.scene;
   $("draw").value = state.draw;
   $("shelf").value = state.shelf; $("ice").value = state.ice; $("slice").value = state.slice;
+  $("station").value = state.station; $("near").value = state.near;
   $("orbit").value = state.orbit;
   $("zc").checked = !!state.zc; $("sea").checked = !!state.sea; $("cut").checked = !!state.cut;
   $("sec").value = state.sec; $("sec").disabled = !state.cut;
@@ -807,6 +949,15 @@ $("ice").addEventListener("change", (e) => {
 });
 // (a section that was following the view is held where it is; one that
 // was off comes back where it was last held)
+$("station").addEventListener("change", (e) => {
+  state.station = e.target.value;
+  state.cam = null;
+  showScene();
+  level();
+  stage.setCamera(sceneCam());
+  writeHash();
+});
+$("near").addEventListener("change", (e) => { state.near = e.target.value; lastCam = ""; readout(); writeHash(); });
 $("slice").addEventListener("change", (e) => {
   const was = state.slice, cv = cav();
   state.slice = e.target.value;
@@ -896,6 +1047,7 @@ window.addEventListener("hashchange", () => {
   readHash(); syncControls(); setOrbit(); showScene(); applyDraw();
   stage.setCamera(state.cam || sceneCam());
   if (state.scene === "cavity") { applySlice(); drawCavityPick(); readout(); return; }
+  if (state.scene === "station") { readout(); return; }
   if (state.scene !== "relief" || !world) return;
   if (state.n !== n) build();
   else { reliefVx = state.vx; drawRelief(); drawLines(); drawCurtain(); drawDrop(); readout(); }
@@ -908,6 +1060,7 @@ Promise.all([
   coast = { world: c, south: [ring(s.grounding), ring(s.front)] };
   drawLines();
   if (shapes.globe) shapes.globe.setCoast(coast.world, coast.south);
+  for (const { scene: e } of stations.values()) e.setCoast(coast.world);
 }).catch(() => {});
 renderer.setAnimationLoop((now) => {
   pivot.step(now);
@@ -916,6 +1069,7 @@ renderer.setAnimationLoop((now) => {
   headlight.position.copy(camera.position);
   headlight.target.position.copy(controls.target);
   followSlice();
+  stationClip();
   follow(now);
   renderer.render(scene, camera);
 });

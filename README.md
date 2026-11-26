@@ -1357,6 +1357,30 @@ camera are: in the ice, in the cavity (how far under the ice and over the sea
 floor), in the open sea, on the bed or in the rock. Getting into the cavity
 and looking along it is the hardest place on the page to get to.
 
+Or the scene can come down from space to an Antarctic station (Davis, Mawson,
+Casey, McMurdo, Rothera, Concordia or the South Pole): the earth at its own
+size, in metres, about a million times from 22,000 km to the ground. The
+ground is REMA v2.0, read in the browser as GDAL reads the
+[rema-ovr](https://github.com/mdsumner/rema-ovr) overview VRT: its XML (3 MB,
+5,805 tiles of the 2 m mosaic), the 10 m and 32 m tile VRTs it names, and its
+100 m, 500 m and 1 km COGs with their own overviews (`src/core/rema.js`
+parses the VRTs, turns GDAL's `/vsicurl/` and `/vsis3/` names into URLs a page
+can fetch, and finds the tiles a window needs). GitHub's `/raw/` links redirect
+without a CORS header, so the page reads the LFS-held COGs from
+media.githubusercontent.com instead. REMA is drawn as six patches: the
+continent at 8 km, then 512 cells round the station at 500 m, 100 m, 32 m, 10 m
+and 2 m, each holed where the next one sits and that one's rim pinned onto the
+hole's edges, so they meet without cracks or overlaps. The scene stands in the
+station's own east, north and up, so the turntable turns about its plumb line;
+each patch's vertices are relative to its middle, so 32-bit floats hold
+centimetres there; and the near and far planes follow the camera (near a
+quarter of its height over the ground, far just past the horizon), or are held
+fixed to show what goes wrong: near things cut away, or far surfaces
+flickering through each other. Where REMA has nothing (the sea, and within
+some 50 km of the South Pole) the ground is BedMachine's surface, or the sea
+at EGM2008's geoid; rock is where the ground is steep or BedMachine's mask has
+no ice.
+
 The scene can also be a teapot on a pedestal (the Utah teapot, three.js's
 `TeapotGeometry`), three rings linked in a chain at right angles, a globe
 with its coastlines, or the king penguin of the Penguin datum page, each
@@ -1389,15 +1413,20 @@ most 4 arc minutes), its byte ranges held as the store page holds them. The
 turntable is a second set of OrbitControls that `src/scene/stage.js` hands the
 mouse to (`turnAbout`), and the double-click, ring and click are
 `src/scene/pivot.js`, both shared with the store page; the other scenes are
-`js/navigate-scenes.js` and `js/navigate-cavity.js`; the geometry (the
+`js/navigate-scenes.js`, `js/navigate-cavity.js` and `js/navigate-station.js`; the geometry (the
 relief's lattice and wire mesh, the rings, the globe, which way things point
 on the screen) is `src/core/navigate.js`, checked by
 `test/check-navigate.mjs`, and the ice shelf's (BedMachine's levels and
 windows, each column of ice, water and rock, the surfaces, the ice front, the
 section's bands, where a point is in its column) is `src/core/cavity.js`,
-checked by `test/check-cavity.mjs`.
+checked by `test/check-cavity.mjs`, and the station's (REMA's VRT, the
+station's frame, the nested patches, the ray test, the near and far planes) is
+`src/core/rema.js` and `src/core/station.js`, checked by
+`test/check-station.mjs`.
 
-Hash keys: `scene` (`relief`, `cavity`, `teapot`, `rings`, `globe`, `penguin`),
+Hash keys: `scene` (`relief`, `cavity`, `station`, `teapot`, `rings`, `globe`, `penguin`),
+`station` (`davis`, `mawson`, `casey`, `mcmurdo`, `rothera`, `concordia`,
+`pole`), `near` (`follow`, `globe`, `ground`),
 `draw` (`solid`, `wire`, `both`), `orbit` (`turntable`, `north`, `trackball`), `zc`
 (zoom to cursor), `sea`, `cut`, `sec` (the section's longitude), `vx` (the
 relief's exaggeration), `n` (cells across, 128 to 1024), `shelf` (`amery`,
@@ -1540,9 +1569,10 @@ cutaway.html (sondage)                 Cutaway: a section and block diagram thro
 voxels.html, js/voxels.js              Voxels: GEBCO topography as voxel columns, three cell systems, MagicaVoxel export
 voxels-gallery.html, js/voxels-gallery.js  Voxel gallery: preset blocks live in an embedded frame, with links and embeds
 story.html, js/story.js                Story: a block of storeys set down on draped terrain (2 m DEM or GEBCO, Esri imagery)
-navigate.html, js/navigate.js          Navigation: turntable, orbit and trackball on GEBCO round Antarctica, under an ice shelf and other scenes, pivots, looking through, wire mesh, a glossary
+navigate.html, js/navigate.js          Navigation: turntable, orbit and trackball on GEBCO round Antarctica, under an ice shelf, down to a station and other scenes, pivots, looking through, wire mesh, a glossary
 js/navigate-scenes.js                  the Navigation page's other scenes: teapot, linked rings, globe, penguin; solid or wire mesh
 js/navigate-cavity.js                  the Navigation page's ice-shelf cavity: BedMachine read with geotiff.js, the block, its section
+js/navigate-station.js                 the Navigation page's station scene: REMA's overview VRT read with geotiff.js, the globe, nested patches
 shallows.html                          Shallow water: the shallows solver live on generated, extracted or opened terrain and analytic benchmarks
 
 js/data.js          loads the coastlines in data/
@@ -1604,6 +1634,8 @@ src/core/voxels.js                voxel columns over lon/lat or equal-area cells
 src/core/story.js                 story scenes: a terrain grid on an equal-area plane, its heights and triangles, where a block stands
 src/core/navigate.js              the Navigation page: an EPSG:3031 lattice and its wire mesh, GEBCO windows sampled onto it, a meridian section, tilt and heading, linked rings, a globe, screen bearings
 src/core/cavity.js                the Navigation page's ice shelves: BedMachine's levels and windows, columns of ice, water and rock, surfaces, ice fronts, section bands, where a point is
+src/core/rema.js                  REMA through its overview VRT: the VRT's XML, GDAL names as URLs, windows, the sources a window needs, levels by cell size
+src/core/station.js               the Navigation page's station scene: stations, the station's frame, nested patches holed and pinned, colours, a tiled ray test, near and far
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
