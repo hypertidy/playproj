@@ -117,6 +117,7 @@ function buildSteps() {
   const tall = Math.abs(d.n - eq) * 1.25 + 600e3;
   const ppm = (k) => `${k >= 1 ? "+" : "-"}${Math.abs((k - 1) * 1e5).toFixed(0)} cm per km`;
   const band = M.bandRange(d.band);
+  const bi = M.BANDS.indexOf(d.band), bandBelow = M.BANDS[bi - 1] || "", bandAbove = M.BANDS[bi + 1] || "";
   const conv = d.conv;
 
   const S = [];
@@ -264,13 +265,16 @@ function buildSteps() {
     cam: { globe: [lon0, south ? -25 : 25], zoom: 0.92 }, L: { zones: 1, bandsLight: 0.5 }, rows: ["zone"], hi: ["d-gzd"]
   });
   S.push({
-    title: "Bands and exceptions",
-    body: `<p>MGRS cuts each zone into bands of 8 degrees of latitude, lettered C to X from 80${DEG}S (with no I or O;
-      X is 12 degrees, to 84${DEG}N). Bands N and later are north of the equator. ${nm} is in
-      <b>${d.gzd}</b>, ${fmtLat(band[0], 0)} to ${fmtLat(band[1], 0)}.</p>
-      <p>Two places break the pattern. Zone 32V is widened over south-west Norway, and around Svalbard zones 31X,
-      33X, 35X and 37X are widened so that 32X, 34X and 36X do not exist.</p>`,
-    cam: { globe: [18, 66], zoom: 1.7 }, L: { zones: 1, bands: 1 }, rows: ["zone"], hi: ["d-gzd"]
+    title: `Band ${d.band}`,
+    body: `<p>MGRS also cuts each zone into bands of 8 degrees of latitude, lettered C to X from 80${DEG}S (no I or O),
+      so the bands ${south ? "C to M are south of the equator and N to X north of it" : "N to X are north of the equator and C to M south of it"}.
+      A zone number and a band letter make a <b>grid zone</b>: ${nm} is in <b>${d.gzd}</b>, ${fmtLat(band[0], 0)} to
+      ${fmtLat(band[1], 0)}${bandBelow ? `, with ${zone}${bandBelow} south of it` : ""}${bandAbove ? ` and ${zone}${bandAbove} north of it` : ""}.
+      Its neighbours across the zone edges are ${(zone + 58) % 60 + 1}${d.band} and ${zone % 60 + 1}${d.band}.</p>
+      <p>The band adds no digits to the coordinates: it is there so a reference with only the 100 km letters (which repeat
+      every 2000 km of northing) can be placed, and so the hemisphere is never in doubt.${aus ? " Tasmania is almost all in 55G; Flinders Island reaches up into 55H, and King Island sits on the 144" + DEG + "E edge, mostly in 54H." : ""}</p>
+      <p class="hint">The only exceptions are far north: 32V widened over south-west Norway, and the X band rearranged around Svalbard.</p>`,
+    cam: { globe: [lon0, Math.max(-60, Math.min(60, P.lat * 0.8))], zoom: 2.1 }, L: { zones: 1, bands: 1 }, rows: ["zone"], hi: ["d-gzd"]
   });
   S.push({
     title: "Off the top and bottom: UPS",
@@ -982,7 +986,7 @@ function drawGlobe(ctx, cam, L, w, h) {
   const bw = Math.max(2, Math.round(w * sc)), bh = Math.max(2, Math.round(h * sc));
   if (!globeBuf || globeBuf.width !== bw || globeBuf.height !== bh) { globeBuf = document.createElement("canvas"); globeBuf.width = bw; globeBuf.height = bh; }
   const g = globeBuf.getContext("2d"), img = g.createImageData(bw, bh), px = img.data;
-  const zA = L("zones"), uA = L("ups"), eA = L("bands");
+  const zA = L("zones"), uA = L("ups");
   for (let j = 0; j < bh; j++) {
     const y = -((j + 0.5) / sc - cy) / R;
     for (let i = 0; i < bw; i++) {
@@ -995,8 +999,7 @@ function drawGlobe(ctx, cam, L, w, h) {
       const inUTM = lat >= -80 && lat < 84;
       if (inUTM) {
         const zn = M.zoneOf(lon, lat);
-        const odd = (lat >= 56 && lat < 64 && lon >= 0 && lon < 12) || (lat >= 72 && lon >= 0 && lon < 42);
-        const zc = odd && eA > 0 ? [40 + 60 * eA, 70 + 60 * eA, 60 + 20 * eA].map((c, k) => (zn % 2 ? c : c * 0.8)) : zn === zone ? (M.bandOf(lat) === D.band ? [190, 110, 30] : [120, 72, 26]) : zn % 2 ? [30, 56, 96] : [22, 44, 78];
+        const zc = zn === zone ? (M.bandOf(lat) === D.band ? [190, 110, 30] : [120, 72, 26]) : zn % 2 ? [30, 56, 96] : [22, 44, 78];
         col = col.map((c, k) => c + (zc[k] - c) * zA);
       } else {
         const pc2 = [92, 50, 120];
@@ -1047,11 +1050,13 @@ function drawGlobe(ctx, cam, L, w, h) {
     }
     if (L("bands") > 0.01) {
       ctx.globalAlpha = a0 * L("bands");
-      for (const z of [31, 32, 33, 34, 35, 36, 37, zone]) for (let b = 0; b < 20; b++) {
+      for (let dz = -3; dz <= 3; dz++) for (let b = 0; b < 20; b++) {
+        const z = ((zone - 1 + dz + 60) % 60) + 1;
         const band = M.BANDS[b], lr = M.gridZoneLon(z, band);
         if (!lr) continue;
         const [la, lb] = M.bandRange(band), [x, y, c] = proj((lr[0] + lr[1]) / 2, (la + lb) / 2);
-        if (c > 0.15 && z !== zone || (z === zone && c > 0.15)) label(ctx, `${z}${band}`, x, y, { size: 11, align: "center", color: z === zone ? "#ffe2a8" : "#e7eefc" });
+        const mine = z === zone && band === D.band;
+        if (c > 0.15) label(ctx, `${z}${band}`, x, y, { size: mine ? 14 : 11, bold: mine, align: "center", color: z === zone ? "#ffe2a8" : "#e7eefc" });
       }
     }
     ctx.globalAlpha = a0;
