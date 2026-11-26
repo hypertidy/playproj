@@ -64,6 +64,14 @@ async function openTiff(url) {
   return client ? GeoTIFF.fromCustomClient(client) : GeoTIFF.fromUrl(url);
 }
 
+// Any GeoTIFF opened as GEBCO is: geotiff.js loaded once, and the file
+// read through the held table where there is one (the Navigation page's
+// BedMachine grids, say).
+export async function openGeoTiff(url) {
+  if (typeof GeoTIFF === "undefined") await loadScript(GEOTIFF_JS);
+  return openTiff(url);
+}
+
 // The file's full grid and overviews, opened once.
 let gebcoImages = null;
 function gebcoLevels(src, status) {

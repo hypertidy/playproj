@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>playproj: Navigation</title>
-<meta name="description" content="Ways round a 3D scene, on GEBCO's relief round Antarctica, a teapot, linked rings, a globe and a penguin: turntable, orbit and trackball, turning about a double-clicked place, looking through a surface, wire mesh, and what each is called.">
+<meta name="description" content="Ways round a 3D scene, on GEBCO's relief round Antarctica, under an Antarctic ice shelf from BedMachine, a teapot, linked rings, a globe and a penguin: turntable, orbit and trackball, turning about a double-clicked place, looking through a surface, wire mesh, and what each is called.">
 <link rel="stylesheet" href="css/app.css">
 <script src="js/mobile.js" defer></script>
 <script type="importmap">
@@ -36,6 +36,7 @@
       <label class="row" for="scene"><span>Scene</span></label>
       <select id="scene" class="wide" aria-label="Scene">
         <option value="relief">Antarctic relief (GEBCO 2026)</option>
+        <option value="cavity">Under an ice shelf (BedMachine)</option>
         <option value="teapot">Teapot on a pedestal</option>
         <option value="rings">Three linked rings</option>
         <option value="globe">Globe</option>
@@ -79,10 +80,40 @@
       </div>
       <label class="row" for="sec"><span>Section along (degrees east)</span></label>
       <input id="sec" type="number" class="wide" min="-180" max="180" step="1" aria-label="Longitude of the section, degrees east">
-      <label class="row" for="vx"><span>Vertical exaggeration</span><output id="vx-out"></output></label>
-      <input id="vx" type="range" min="0" max="2.3" step="0.01" aria-label="Vertical exaggeration, as a power of ten">
       <label class="row" for="n"><span>Cells across</span><output id="n-out"></output></label>
       <input id="n" type="range" min="128" max="1024" step="64" aria-label="Mesh cells across the square">
+    </section>
+
+    <section id="cavity-controls" hidden>
+      <label class="row" for="shelf"><span>Ice shelf</span></label>
+      <select id="shelf" class="wide" aria-label="Ice shelf">
+        <option value="amery">Amery</option>
+        <option value="ross">Ross</option>
+        <option value="filchner-ronne">Filchner–Ronne</option>
+        <option value="larsen">Larsen C and D</option>
+        <option value="totten">Totten</option>
+        <option value="pine-island">Pine Island</option>
+      </select>
+      <label class="row" for="ice"><span>The ice's top</span></label>
+      <select id="ice" class="wide" aria-label="How the top of the ice is drawn">
+        <option value="solid">Solid</option>
+        <option value="see">See-through</option>
+        <option value="off">Not drawn (its base still is)</option>
+      </select>
+      <label class="row" for="slice"><span>Section</span></label>
+      <select id="slice" class="wide" aria-label="Section through the block">
+        <option value="held">Fixed in the block</option>
+        <option value="view">Through the pivot, turning with the view</option>
+        <option value="none">None</option>
+      </select>
+      <div class="buttons">
+        <button id="cut-here" type="button" title="Fix the section through the pivot, facing the way the camera looks">Cut here</button>
+      </div>
+    </section>
+
+    <section id="heights">
+      <label class="row" for="vx"><span>Vertical exaggeration</span><output id="vx-out"></output></label>
+      <input id="vx" type="range" min="0" max="2.3" step="0.01" aria-label="Vertical exaggeration, as a power of ten">
     </section>
 
     <section class="about">
@@ -95,6 +126,23 @@
           down a meridian hangs a section of the water column (140&deg; E runs from the Antarctic coast to
           south of Australia), and a click drops a line from the surface to the floor. So there is a surface,
           and things under it to get to and look at from below, as on the store page's maps.</p>
+        <p><b>Under an ice shelf</b> is a block of BedMachine Antarctica v4.1 round one of six ice shelves, read
+          at the finest of its levels (500 m, 1 km or 2 km cells) that keeps the box under 770 cells across, and
+          drawn higher than it is by an exaggeration of its own, set apart from the relief's: each shelf opens
+          with a kilometre of depth drawn as about 7% of its box (Amery's 50 times, Ross's 90, Pine Island's 10). On
+          top is the ice, white where it rests on the bed and blue-white where it floats, with its front standing
+          over the sea; under the floating ice is its base, the roof of the cavity, darker the deeper it is; then
+          the bed, blue by depth under water and brown under the ice, and a see-through sea surface over the
+          open water. BedMachine's ice thickness includes its firn, so on grounded ice the surface less the
+          thickness is the bed, and where the ice floats it is the base: the water between that and the bed is
+          the cavity. Down the block's sides, and down the section, run bands of ice (white), water (blue) and
+          rock (brown). The section is an upright plane with everything on the camera's side of it cut away. It
+          stays fixed in the block as the view turns and pans: each shelf opens with it along the cavity, and
+          <i>Cut here</i> moves it to the pivot, facing the way the camera looks. It can instead follow the
+          view, through the pivot and turning with it, though then the cut face changes under the eye with
+          every drag. The cavity is
+          a few hundred metres of water under ice hundreds of kilometres across, so getting into it and looking
+          along it is the hardest place on the page to get to.</p>
         <p><b>The other scenes</b> are each for something one way of turning does well and another badly, and
           the readout's last row says what to try. All stand on z, as the map does, so each drag does the same
           thing in all of them.</p>
@@ -164,6 +212,10 @@
           <dt>Picking through</dt>
           <dd>Picking past a layer that is drawn but not wanted: Shift-double-click here leaves out the sea
             surface.</dd>
+          <dt>Section, cutaway, clipping plane</dt>
+          <dd>Cutting a model open along a plane to see inside: what is on one side of the plane is not drawn.
+            ParaView's <i>Clip</i> filter; three.js's <code>clippingPlanes</code>, which the ice shelf's section
+            uses (it draws the bands on the cut face itself, since a clipping plane leaves the cut open).</dd>
           <dt>Wire mesh, wireframe</dt>
           <dd>A surface drawn as the edges of its cells or triangles and nothing between, so what is behind
             shows through and the mesh's own size is plain. Blender's <i>Wireframe</i> shading; three.js's
@@ -177,16 +229,24 @@
           square. Land south of 60&deg; S is tinted as ice. The geometry is
           <code>src/core/navigate.js</code>, checked by <code>test/check-navigate.mjs</code>; the double-click,
           ring and click are <code>src/scene/pivot.js</code>, shared with the store page.</p>
-        <p>Hash keys: <code>scene</code> (<code>relief</code>, <code>teapot</code>, <code>rings</code>,
-          <code>globe</code>, <code>penguin</code>), <code>draw</code> (<code>solid</code>, <code>wire</code>,
+        <p>Hash keys: <code>scene</code> (<code>relief</code>, <code>cavity</code>, <code>teapot</code>, <code>rings</code>,
+          <code>globe</code>, <code>penguin</code>), <code>shelf</code> (<code>amery</code>, <code>ross</code>,
+          <code>filchner-ronne</code>, <code>larsen</code>, <code>totten</code>, <code>pine-island</code>),
+          <code>ice</code> (<code>solid</code>, <code>see</code>, <code>off</code>), <code>slice</code>
+          (<code>held</code>, <code>view</code>, <code>none</code>), <code>sl</code> (where the section is held, if
+          not the shelf's own: x, y in metres and the way it faces, degrees from grid north), <code>cvx</code> (the ice shelf's
+          vertical exaggeration, where it is not the shelf's own), <code>draw</code> (<code>solid</code>, <code>wire</code>,
           <code>both</code>), <code>orbit</code> (<code>turntable</code>, <code>north</code>, <code>trackball</code>),
           <code>zc</code> (zoom to cursor), <code>sea</code>, <code>cut</code>, <code>sec</code> (the section's
-          longitude), <code>vx</code>, <code>n</code> (cells across), <code>pick</code> (lon,lat of the dropped
+          longitude), <code>vx</code> (the relief's vertical exaggeration), <code>n</code> (cells across), <code>pick</code> (lon,lat of the dropped
           line), <code>cam</code>.</p>
         <ul class="credits">
           <li>Elevation from the GEBCO 2026 Grid (GEBCO Compilation Group), from
             <a href="https://source.coop/ausantarctic/gebco">Source Cooperative</a>, read with
             <a href="https://geotiffjs.github.io/">geotiff.js</a>.</li>
+          <li>Ice, bed and mask from MEaSUREs BedMachine Antarctica v4.1 (Morlighem; NSIDC-0756,
+            <a href="https://doi.org/10.5067/POJQI54A45HX">doi:10.5067/POJQI54A45HX</a>), as cloud-optimized
+            GeoTIFFs on <a href="https://source.coop/ausantarctic/bedmachine">Source Cooperative</a>.</li>
           <li>Drawn with <a href="https://threejs.org/">three.js</a>; coastlines, Antarctic grounding line and
             ice shelf fronts from <a href="https://www.naturalearthdata.com/">Natural Earth</a>.</li>
           <li>The Utah teapot, Martin Newell's (1975), as three.js's <code>TeapotGeometry</code> makes it; the

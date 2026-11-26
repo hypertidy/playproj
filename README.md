@@ -1333,6 +1333,30 @@ Antarctic coast to south of Australia), and a line dropped from the surface
 to the floor where a click picks. Seen from beneath, the relief is a dark
 veil, so what hangs in the water above it still shows.
 
+The scene can be the cavity under an Antarctic ice shelf instead (Amery,
+Ross, Filchner–Ronne, Larsen C and D, Totten or Pine Island), from
+[BedMachine Antarctica v4.1](https://doi.org/10.5067/POJQI54A45HX) as
+cloud-optimized GeoTIFFs on
+[Source Cooperative](https://source.coop/ausantarctic/bedmachine): its mask,
+bed, surface and thickness read with geotiff.js over a box round the shelf, at
+the finest level (500 m, 1 km or 2 km) that keeps the box under 770 cells
+across. BedMachine's thickness includes the firn, so surface less thickness is
+the bed on grounded ice and the ice's base where it floats; between that base
+and the bed is the cavity. The block shows the ice (its front standing over
+the sea), the base as the cavity's roof, the bed (sand under water, rock under
+ice), a see-through sea surface, and bands of ice, water and rock down its
+sides. An upright section cuts away the side of the block nearer the camera (a
+three.js clipping plane) and stays fixed in the block as the view turns and
+pans; "Cut here" moves it through the pivot, facing the view, and it can
+instead follow the view, turning with it. Each shelf opens side-on, with the
+section running from the sea through the ice front and along the cavity, at an exaggeration of its own (a kilometre of
+depth about 7% of the box: Amery 50 times, Ross 90, Pine Island 10).
+Shift-double-click turns about the middle of the water under the place, a click
+drops a line down its column, and the readout says where the pivot and the
+camera are: in the ice, in the cavity (how far under the ice and over the sea
+floor), in the open sea, on the bed or in the rock. Getting into the cavity
+and looking along it is the hardest place on the page to get to.
+
 The scene can also be a teapot on a pedestal (the Utah teapot, three.js's
 `TeapotGeometry`), three rings linked in a chain at right angles, a globe
 with its coastlines, or the king penguin of the Penguin datum page, each
@@ -1365,14 +1389,23 @@ most 4 arc minutes), its byte ranges held as the store page holds them. The
 turntable is a second set of OrbitControls that `src/scene/stage.js` hands the
 mouse to (`turnAbout`), and the double-click, ring and click are
 `src/scene/pivot.js`, both shared with the store page; the other scenes are
-`js/navigate-scenes.js`; the geometry (the relief's lattice and wire mesh,
-the rings, the globe, which way things point on the screen) is
-`src/core/navigate.js`, checked by `test/check-navigate.mjs`.
+`js/navigate-scenes.js` and `js/navigate-cavity.js`; the geometry (the
+relief's lattice and wire mesh, the rings, the globe, which way things point
+on the screen) is `src/core/navigate.js`, checked by
+`test/check-navigate.mjs`, and the ice shelf's (BedMachine's levels and
+windows, each column of ice, water and rock, the surfaces, the ice front, the
+section's bands, where a point is in its column) is `src/core/cavity.js`,
+checked by `test/check-cavity.mjs`.
 
-Hash keys: `scene` (`relief`, `teapot`, `rings`, `globe`, `penguin`), `draw`
-(`solid`, `wire`, `both`), `orbit` (`turntable`, `north`, `trackball`), `zc` (zoom to
-cursor), `sea`, `cut`, `sec` (the section's longitude), `vx`, `n` (cells
-across, 128 to 1024), `pick` (lon,lat), `cam`.
+Hash keys: `scene` (`relief`, `cavity`, `teapot`, `rings`, `globe`, `penguin`),
+`draw` (`solid`, `wire`, `both`), `orbit` (`turntable`, `north`, `trackball`), `zc`
+(zoom to cursor), `sea`, `cut`, `sec` (the section's longitude), `vx` (the
+relief's exaggeration), `n` (cells across, 128 to 1024), `shelf` (`amery`,
+`ross`, `filchner-ronne`, `larsen`, `totten`, `pine-island`), `cvx` (the ice
+shelf's exaggeration, where it is not the shelf's own), `ice` (`solid`, `see`,
+`off`), `slice` (`held`, `view`, `none`), `sl` (where the section is held, if
+not the shelf's own: x, y in EPSG:3031 metres and the way it faces, degrees
+from grid north), `pick` (lon,lat), `cam`.
 
 ## Shallow water
 
@@ -1507,8 +1540,9 @@ cutaway.html (sondage)                 Cutaway: a section and block diagram thro
 voxels.html, js/voxels.js              Voxels: GEBCO topography as voxel columns, three cell systems, MagicaVoxel export
 voxels-gallery.html, js/voxels-gallery.js  Voxel gallery: preset blocks live in an embedded frame, with links and embeds
 story.html, js/story.js                Story: a block of storeys set down on draped terrain (2 m DEM or GEBCO, Esri imagery)
-navigate.html, js/navigate.js          Navigation: turntable, orbit and trackball on GEBCO round Antarctica and other scenes, pivots, looking through, wire mesh, a glossary
+navigate.html, js/navigate.js          Navigation: turntable, orbit and trackball on GEBCO round Antarctica, under an ice shelf and other scenes, pivots, looking through, wire mesh, a glossary
 js/navigate-scenes.js                  the Navigation page's other scenes: teapot, linked rings, globe, penguin; solid or wire mesh
+js/navigate-cavity.js                  the Navigation page's ice-shelf cavity: BedMachine read with geotiff.js, the block, its section
 shallows.html                          Shallow water: the shallows solver live on generated, extracted or opened terrain and analytic benchmarks
 
 js/data.js          loads the coastlines in data/
@@ -1569,6 +1603,7 @@ src/core/rhumb.js                 rhumb lines, geodesics and great circles, the 
 src/core/voxels.js                voxel columns over lon/lat or equal-area cells, any-CRS windows and sampling, column means, quantising, .vox files
 src/core/story.js                 story scenes: a terrain grid on an equal-area plane, its heights and triangles, where a block stands
 src/core/navigate.js              the Navigation page: an EPSG:3031 lattice and its wire mesh, GEBCO windows sampled onto it, a meridian section, tilt and heading, linked rings, a globe, screen bearings
+src/core/cavity.js                the Navigation page's ice shelves: BedMachine's levels and windows, columns of ice, water and rock, surfaces, ice fronts, section bands, where a point is
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
