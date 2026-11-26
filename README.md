@@ -1379,7 +1379,19 @@ fixed to show what goes wrong: near things cut away, or far surfaces
 flickering through each other. Where REMA has nothing (the sea, and within
 some 50 km of the South Pole) the ground is BedMachine's surface, or the sea
 at EGM2008's geoid; rock is where the ground is steep or BedMachine's mask has
-no ice.
+no ice. Over those tints, on every patch but the continent's, is Sentinel-2's
+true colour (Level-2A, Collection 1) from one clear summer pass a station,
+chosen by eye (`S2_SCENES` in `src/core/drape.js`; none for the South Pole,
+which Sentinel-2 never passes over): the page finds the pass's tiles round the
+station in Element 84's Earth Search, reads each tile's `TCI.tif` on AWS at the
+overview nearest the patch's texels (10 m on the two finest patches, 20 m to
+160 m on the others), warps it from UTM onto the patch's own grid in a texture
+of up to 1024 texels a side (`src/core/drape.js`: UTM by Krüger's series, a
+lattice of projected points, bilinear between pixels), and fades it into the
+tints where the pass has nothing and round the 500 m patch's edge. The
+true-colour image has no nodata value and is 0, 0, 0 both outside the swath
+and in the darkest water, so a black pixel counts only inside the tile's
+outline (its STAC geometry). About 16 MB at Davis, read beside REMA's 11.
 
 The scene can also be a teapot on a pedestal (the Utah teapot, three.js's
 `TeapotGeometry`), three rings linked in a chain at right angles, a globe
@@ -1422,11 +1434,12 @@ section's bands, where a point is in its column) is `src/core/cavity.js`,
 checked by `test/check-cavity.mjs`, and the station's (REMA's VRT, the
 station's frame, the nested patches, the ray test, the near and far planes) is
 `src/core/rema.js` and `src/core/station.js`, checked by
-`test/check-station.mjs`.
+`test/check-station.mjs`, and the imagery's warp is `src/core/drape.js`,
+checked by `test/check-drape.mjs`.
 
 Hash keys: `scene` (`relief`, `cavity`, `station`, `teapot`, `rings`, `globe`, `penguin`),
 `station` (`davis`, `mawson`, `casey`, `mcmurdo`, `rothera`, `concordia`,
-`pole`), `near` (`follow`, `globe`, `ground`),
+`pole`), `near` (`follow`, `globe`, `ground`), `img` (`s2`, `none`),
 `draw` (`solid`, `wire`, `both`), `orbit` (`turntable`, `north`, `trackball`), `zc`
 (zoom to cursor), `sea`, `cut`, `sec` (the section's longitude), `vx` (the
 relief's exaggeration), `n` (cells across, 128 to 1024), `shelf` (`amery`,
@@ -1572,7 +1585,7 @@ story.html, js/story.js                Story: a block of storeys set down on dra
 navigate.html, js/navigate.js          Navigation: turntable, orbit and trackball on GEBCO round Antarctica, under an ice shelf, down to a station and other scenes, pivots, looking through, wire mesh, a glossary
 js/navigate-scenes.js                  the Navigation page's other scenes: teapot, linked rings, globe, penguin; solid or wire mesh
 js/navigate-cavity.js                  the Navigation page's ice-shelf cavity: BedMachine read with geotiff.js, the block, its section
-js/navigate-station.js                 the Navigation page's station scene: REMA's overview VRT read with geotiff.js, the globe, nested patches
+js/navigate-station.js                 the Navigation page's station scene: REMA's overview VRT read with geotiff.js, the globe, nested patches, Sentinel-2 draped over them
 shallows.html                          Shallow water: the shallows solver live on generated, extracted or opened terrain and analytic benchmarks
 
 js/data.js          loads the coastlines in data/
@@ -1636,6 +1649,7 @@ src/core/navigate.js              the Navigation page: an EPSG:3031 lattice and 
 src/core/cavity.js                the Navigation page's ice shelves: BedMachine's levels and windows, columns of ice, water and rock, surfaces, ice fronts, section bands, where a point is
 src/core/rema.js                  REMA through its overview VRT: the VRT's XML, GDAL names as URLs, windows, the sources a window needs, levels by cell size
 src/core/station.js               the Navigation page's station scene: stations, the station's frame, nested patches holed and pinned, colours, a tiled ray test, near and far
+src/core/drape.js                 imagery draped on the station scene: a Sentinel-2 pass a station, UTM, warping onto a patch's grid, fading in from where there is none, texture coordinates
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification

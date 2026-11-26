@@ -69,5 +69,6 @@ export * as navigate from "./navigate.js";
 export * as cavity from "./cavity.js";
 export * as rema from "./rema.js";
 export * as station from "./station.js";
+export * as drape from "./drape.js";
 export * as shallows from "./shallows.js";
 export * as terrain from "./terrain.js";
