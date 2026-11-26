@@ -560,7 +560,9 @@ function renderRefbar() {
     zone: `<span class="k">Zone</span><span class="v"><i class="d-gzd">${zone}${d.band}</i> ${lonName(lon0 - 3)}-${lonName(lon0 + 3)}, CM ${lonName(lon0)}</span>`,
     scale: `<span class="k">Scale</span><span class="v"><i class="kk">k ${d.k.toFixed(6)}</i></span>`
   };
-  $("refbar").innerHTML = Object.entries(rows).map(([k, v]) => `<div class="row r-${k}">${v}</div>`).join("");
+  $("refbar").innerHTML = `<button type="button" class="rb-toggle" aria-label="Show or hide the grid reference card"></button>` +
+    Object.entries(rows).map(([k, v]) => `<div class="row r-${k}">${v}</div>`).join("");
+  lastBar = -1;
 }
 
 let lastBar = -1;
@@ -568,7 +570,13 @@ function updateRefbar(i) {
   if (i === lastBar) return;
   lastBar = i;
   const s = STEPS[i], bar = $("refbar");
-  for (const el of bar.querySelectorAll(".row")) el.hidden = !s.rows.includes(el.className.split(" ")[1].slice(2));
+  let first = true;
+  for (const el of bar.querySelectorAll(".row")) {
+    el.hidden = !s.rows.includes(el.className.split(" ")[1].slice(2));
+    el.classList.toggle("first", !el.hidden && first);
+    if (!el.hidden) first = false;
+  }
+  bar.classList.toggle("multi", s.rows.length > 1);
   bar.classList.toggle("focus", !s.hi.includes("all") && s.hi.length > 0);
   for (const el of bar.querySelectorAll("i, .d-e, .d-n")) {
     const on = s.hi.some((c) => el.classList.contains(c) || (el.parentElement && el.parentElement.classList.contains(c)));
@@ -671,6 +679,8 @@ function globeCam(a, b, u) {
 // ---------------------------------------------------------------- drawing
 
 const map = $("map");
+// the reader's own pan and zoom, on top of the step's camera, until the step changes
+let user = { dE: 0, dN: 0, z: 1 }, userStep = -1;
 let pending = false, coast50 = null, coast110 = null, coastZone = null, view = null;
 function schedule() { if (!pending) { pending = true; requestAnimationFrame(draw); } }
 
@@ -686,6 +696,9 @@ function draw() {
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, w, h);
   const f = frameAt(t);
   updateRefbar(f.i);
+  if (f.i !== userStep) { user = { dE: 0, dN: 0, z: 1 }; userStep = f.i; }
+  if (f.plane) f.plane = { E: f.plane.E + user.dE, N: f.plane.N + user.dN, span: f.plane.span * user.z };
+  $("recentre").hidden = !(user.dE || user.dN || user.z !== 1) || !f.plane || f.globeAlpha > 0.5;
   view = null;
   if (f.plane && f.globeAlpha < 0.999) {
     ctx.globalAlpha = 1 - f.globeAlpha;
@@ -1415,6 +1428,7 @@ function syncPlaceSel() {
 placeSel.addEventListener("change", () => {
   if (placeSel.value === "custom") return;
   state.at = placeSel.value === `${PLACES[0][1]},${PLACES[0][2]}` ? "" : placeSel.value;
+  user = { dE: 0, dN: 0, z: 1 };
   writeHash(); setPlace(); syncPlaceSel(); schedule();
 });
 
@@ -1422,11 +1436,54 @@ $("prev").addEventListener("click", () => goTo(Math.round(t) - 1));
 $("next").addEventListener("click", () => goTo(Math.round(t) + 1));
 $("jump").addEventListener("change", (e) => goTo(+e.target.value));
 
-// click the map in the local steps to move the pin
-let down = null;
-map.addEventListener("pointerdown", (e) => { down = [e.clientX, e.clientY]; });
+// drag to pan and pinch or wheel to zoom the plane (the step's camera comes
+// back at the next step, or with Recentre); a click in the local steps
+// moves the pin
+let down = null, moved = false;
+const ptrs = new Map();
+const zoomAt = (k, x, y) => {
+  if (!view) return;
+  const r = map.getBoundingClientRect(), [E, N] = view.en(x - r.left, y - r.top);
+  const z = Math.max(0.05, Math.min(20, user.z * k)), f = z / user.z;
+  // keep E, N under the cursor
+  user.dE += (E - view.cam.E) * (1 - f); user.dN += (N - view.cam.N) * (1 - f); user.z = z;
+  schedule();
+};
+map.addEventListener("pointerdown", (e) => {
+  ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+  if (ptrs.size === 1) { down = [e.clientX, e.clientY]; moved = false; }
+  map.setPointerCapture(e.pointerId);
+});
+map.addEventListener("pointermove", (e) => {
+  const prev = ptrs.get(e.pointerId);
+  if (!prev || !view) return;
+  if (ptrs.size === 1) {
+    if (!moved && Math.hypot(e.clientX - down[0], e.clientY - down[1]) <= 4) return;
+    moved = true;
+    user.dE -= (e.clientX - prev[0]) / view.s; user.dN += (e.clientY - prev[1]) / view.s;
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    schedule();
+  } else if (ptrs.size === 2) {
+    moved = true;
+    const other = [...ptrs.entries()].find(([id]) => id !== e.pointerId)[1];
+    const d0 = Math.hypot(prev[0] - other[0], prev[1] - other[1]), d1 = Math.hypot(e.clientX - other[0], e.clientY - other[1]);
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    user.dE -= (e.clientX - prev[0]) / 2 / view.s; user.dN += (e.clientY - prev[1]) / 2 / view.s;
+    if (d0 > 0 && d1 > 0) zoomAt(d0 / d1, (e.clientX + other[0]) / 2, (e.clientY + other[1]) / 2);
+    schedule();
+  }
+});
+const lift = (e) => { ptrs.delete(e.pointerId); };
+map.addEventListener("pointercancel", lift);
+map.addEventListener("wheel", (e) => {
+  if (!view) return;
+  e.preventDefault();
+  zoomAt(Math.exp(e.deltaY * 0.0015), e.clientX, e.clientY);
+}, { passive: false });
+$("recentre").addEventListener("click", () => { user = { dE: 0, dN: 0, z: 1 }; schedule(); });
 map.addEventListener("pointerup", (e) => {
-  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4 || !view) { down = null; return; }
+  lift(e);
+  if (!down || moved || ptrs.size || !view) { if (!ptrs.size) down = null; return; }
   down = null;
   if (!(STEPS[Math.round(t)] || {}).click) return;
   const r = map.getBoundingClientRect(), [lon, lat] = inv(...view.en(e.clientX - r.left, e.clientY - r.top));
@@ -1434,6 +1491,11 @@ map.addEventListener("pointerup", (e) => {
   state.at = `${lon.toFixed(5)},${lat.toFixed(5)}`;
   writeHash(); setPlace(); syncPlaceSel(); schedule();
 });
+
+// the reference card folds to its first row (always so on a phone to start)
+const bar = $("refbar");
+if (window.matchMedia("(max-width: 820px)").matches) bar.classList.add("min");
+bar.addEventListener("click", () => bar.classList.toggle("min"));
 
 $("panel").addEventListener("scroll", onScroll, { passive: true });
 window.addEventListener("scroll", onScroll, { passive: true });
