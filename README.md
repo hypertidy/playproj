@@ -413,6 +413,49 @@ keys: `mode` (`utm`, `upsn` or `upss`), `zone` (1 to 60), `t` (0 globe, 0.5 cyli
 `tile`, `s2`, `nb` (next zones' tiles), `sq` (100 km squares), `coast`,
 `cyl`, `cam`.
 
+## Grid references
+
+`gridref.html` is a scrolling explainer of what the numbers in a grid
+reference are. It starts on a street directory page at Fern Tree, Tasmania
+(Map 256, square C5), and each step asks what one more number means: the
+kilometre grid and four-figure reference, six figures (100 m) and eight (10 m),
+the 100 km square and its MGRS letters, the central meridian as E 500 000 and
+the false easting that keeps eastings positive across a zone 668 km wide at
+the equator, the equator as N 10 000 000 in the south, where a zone's 0,0
+really is (for a southern zone, on the East Antarctic ice sheet about 500 km
+past the South Pole, which itself sits at N 2 035), why eastings have six
+digits and northings seven (the false northing is, nearly, the meridian
+quadrant that defined the metre), the 0.9996 scale and its lines of true scale
+about 180 km either side of the central meridian, the sixty zones and their
+bands (around the pin's own grid zone), and UPS at the poles. A bar
+over the map keeps the place's references in view, each digit coloured by what
+it counts, and the grid lines on the map carry the same colours.
+
+Scrolling the panel moves continuously between steps: the camera zooms in log
+scale and the layers fade. The map is drawn in the pin's own UTM zone with
+OpenStreetMap tiles warped into the grid, until a globe takes over for the
+zones. Click the map in the first steps (or pick a place) to tell the story
+somewhere else. The street directory is made up: 4 by 5 km sheets cut from
+the kilometre grid in each 100 km square, with 500 m squares.
+`src/core/gridref.js` has the point scale, grid convergence, true-scale
+offsets, false origins, short references and directory pages, checked against
+PROJ by `test/check-gridref.mjs` (`test/fixtures/gridref-proj.json`, from
+`test/make-gridref-fixture.py`). Hash keys: `s` (step), `at` (lon,lat).
+
+In Tasmania the story starts on the real books instead of the made-up
+directory: the street atlas and map book that emergency callouts use, whose
+pages and squares theLIST (Land Tasmania) publishes. Fern Tree is SA-192-A1
+and MB356 C5. A second part follows the grid reference story: the two books
+over the state, the map book's 12 x 18 km lattice and its arithmetic squares
+(A-X, 1-36), the street atlas pages placed by hand over the towns, their
+6 x 7 squares of 500 m on the MGA 500 m lattice inside a 75 m margin, the
+150 m overlaps between frames, the inset (T) and half (N, S, E, W) pages, a
+point's place on its page (dx, dy, u, v), and why the books are on GDA94.
+`data/tas-mapref.json` holds the page frames and street atlas squares in
+GDA94 / MGA zone 55 (theLIST (c) State of Tasmania, CC BY 3.0 AU; made by
+`test/make-mapref-data.py` from tables dumped by mdsumner/lunamap), and
+`src/core/mapref.js` looks a point up; `test/check-mapref.mjs` checks it.
+
 ## AAT grid
 
 `aatgrid.html` is a mini version of [aatgrid](https://github.com/mdsumner/aatgrid),
@@ -1482,6 +1525,7 @@ example.html, js/example.js            For example storyboard
 homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977, Eratosthenes
 vicgrid.html, js/vicgrid.js            VicGrid: Victoria's one-zone grid against MGA, NSW/SA Lambert, Albers
 sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
+gridref.html, js/gridref.js            Grid references: a scrolling explainer from a street directory page out to UTM and UPS
 aatgrid.html, js/aatgrid.js            AAT grid: a mini aatgrid, one tile lattice in every UTM south zone
 bins.html, js/bins.js                  L3 bins page
 tissot.html, js/tissot-page.js         Distortion page (Tissot's indicatrix and factor fields)
@@ -1563,6 +1607,8 @@ src/core/cavity.js                the Navigation page's ice shelves: BedMachine'
 src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N, meridian length, exaggeration
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
+src/core/mapref.js                Tasmanian street atlas and map book: pages, squares, frames, a point's place on its pages
+src/core/gridref.js               grid references: point scale, convergence, true-scale offsets, false origins, short refs, directory pages
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
 src/core/sight.js                 terrain visibility: gnomonic wedges or the sun, a horizon kept front to back
 src/core/peel.js                  gores (sinu, cass, tmerc), the peel from orange to flower, the spiral peel and its Euler spiral
