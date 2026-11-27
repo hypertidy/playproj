@@ -411,7 +411,7 @@ canvas.strip { display: block; width: 100%; height: 46px; margin: 4px 0 2px; bor
 /* Grid references (gridref.html): a wider panel of steps beside the map,
    and a bar of the place's numbers over it, coloured by what each digit counts */
 body.gridref #app { grid-template-columns: 1fr 420px; }
-body.gridref #map { width: 100%; height: 100%; display: block; cursor: crosshair; }
+body.gridref #map { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
 body.gridref #steps .step { min-height: 72vh; padding: 14px 0 18px; border-top: 1px solid var(--line); }
 body.gridref #steps .step:last-child { min-height: 90vh; }
 body.gridref #steps h2 { font-size: 17px; margin: 0 0 8px; }
@@ -435,6 +435,21 @@ body.gridref .step-nav select { flex: 1; min-width: 0; }
   font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; pointer-events: none;
 }
 .refbar .row { display: flex; gap: 10px; white-space: nowrap; }
+.refbar { pointer-events: auto; cursor: pointer; user-select: none; -webkit-user-select: none; }
+.refbar .rb-toggle {
+  position: absolute; right: 4px; top: 3px; width: 18px; height: 18px; padding: 0; border: 0;
+  background: none; color: var(--muted); font: 12px/18px system-ui, sans-serif; cursor: pointer;
+}
+.refbar .rb-toggle::before { content: "-"; }
+.refbar.min .rb-toggle::before { content: "+"; }
+.refbar.multi { padding-right: 26px; }
+.refbar:not(.multi) .rb-toggle { display: none; }
+.refbar.min .row:not(.first) { display: none; }
+.recentre {
+  position: absolute; right: 10px; top: 10px; padding: 5px 10px; font-size: 12px;
+  background: rgba(9, 14, 26, 0.86); color: var(--text); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+}
+.recentre[hidden] { display: none; }
 .refbar .row[hidden] { display: none; }
 .refbar span.k { color: var(--muted); min-width: 74px; font: 12px/1.6 system-ui, sans-serif; }
 .refbar i { font-style: normal; transition: opacity 0.25s, text-shadow 0.25s; }
