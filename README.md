@@ -456,6 +456,18 @@ GDA94 / MGA zone 55 (theLIST (c) State of Tasmania, CC BY 3.0 AU; made by
 `test/make-mapref-data.py` from tables dumped by mdsumner/lunamap), and
 `src/core/mapref.js` looks a point up; `test/check-mapref.mjs` checks it.
 
+For a pin in Great Britain, Part 2 is the Ordnance Survey National Grid
+(OSGB36, EPSG:27700) instead: a London street atlas made up for the page
+(3 by 4 km pages on whole kilometre lines, 500 m squares, the grid printed
+over them), the six-figure reference and its letters, the 500 km and 100 km
+letter squares, one transverse Mercator zone on 2W at scale 0.9996012717,
+the true origin at 49N 2W and the 0,0 off the Scilly Isles, and the OSGB36
+datum. `src/core/osgb.js` has the projection (Krueger's series on Airy
+1830), the letters and references, and Ordnance Survey's Helmert shift from
+WGS84 (a few metres from the OSTN15 grid, which it does not use);
+`test/check-osgb.mjs` checks it against PROJ, with `test/make-osgb-fixture.py`
+(OSTN15 from PROJ-data's `uk_os/` for the comparison).
+
 ## AAT grid
 
 `aatgrid.html` is a mini version of [aatgrid](https://github.com/mdsumner/aatgrid),
@@ -1654,6 +1666,7 @@ src/core/ellipsoid.js             ellipsoid radii, the three latitudes, M and N,
 src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric positions, deflection, profiles
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
 src/core/mapref.js                Tasmanian street atlas and map book: pages, squares, frames, a point's place on its pages
+src/core/osgb.js                  British National Grid: OSGB36 transverse Mercator, letter squares, grid references, Helmert from WGS84, made-up London atlas
 src/core/gridref.js               grid references: point scale, convergence, true-scale offsets, false origins, short refs, directory pages
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
 src/core/sight.js                 terrain visibility: gnomonic wedges or the sun, a horizon kept front to back
