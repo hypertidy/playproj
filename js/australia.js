@@ -5,10 +5,12 @@
 // holds the true geography and the footprint of every other panel, and
 // well sized panels each in its own CRS: the alternative to insets. Panels
 // can be grouped (the Tasman Sea, the Indian Ocean Territories, ...) or one
-// per territory, fitted to their land or all at one scale. Core in
-// src/core/facets.js.
+// per territory, fitted to their land or all at one scale. Mawson, Davis and
+// Casey get panels of their own, and Heard and the stations can carry the
+// aatgrid tile lattice. Core in src/core/facets.js.
 
 import * as F from "../src/core/facets.js";
+import * as AG from "../src/core/aatgrid.js";
 import { centreOf } from "../src/core/inset.js";
 import { readParams, hashWriter } from "../src/scene/hash.js";
 import { shareLinks } from "../src/scene/share.js";
@@ -16,10 +18,12 @@ import { shareLinks } from "../src/scene/share.js";
 const $ = (id) => document.getElementById(id);
 const COL = {
   bg: "#05070d", sea: "#081120", land: "#101a2c", piece: "#1c3152", edge: "#ffd34d", ctxEdge: "rgba(215,236,255,0.35)",
-  frame: "rgba(127,224,255,0.9)", foot: "#ff7ab8", ink: "#dfe7f2", muted: "#8a97ab", grat: "rgba(140,196,255,0.16)"
+  frame: "rgba(127,224,255,0.9)", foot: "#ff7ab8", ink: "#dfe7f2", muted: "#8a97ab", grat: "rgba(140,196,255,0.16)",
+  tile: "rgba(120,255,170,0.85)", tileFine: "rgba(120,255,170,0.22)", station: "#ff9d3d"
 };
 const ALL = Object.keys(F.PIECES);
-const NOT = (...xs) => ALL.filter((k) => !xs.includes(k));
+const NOT = (...xs) => F.OWN.filter((k) => !xs.includes(k));
+const STATIONS = Object.keys(F.STATIONS);
 
 const STEPS = [
   {
@@ -39,18 +43,28 @@ const STEPS = [
   },
   {
     title: "One panel each",
-    text: "Split the groups and each territory gets a panel in its own GDA2020 MGA zone, fitted to its land. Now every island is legible and the overview's footprints say where each panel is and how much of the world it covers. The specks of the Coral Sea Islands and Ashmore Reef are the size Natural Earth draws them.",
+    text: "Split the groups and each territory gets a panel in its own GDA2020 MGA zone, fitted to its land. Now every island is legible and the overview's footprints say where each panel is and how much of the world it covers. The coastlines of Tasmania and the islands are GSHHG at full resolution; the Coral Sea Islands and Ashmore Reef are still specks, a few cays on a great deal of reef.",
     set: { on: NOT("heard", "aat"), split: 1, shared: 0, single: 0 }
   },
   {
     title: "With Heard and McDonald Islands",
-    text: "Heard Island and the McDonald Islands are 4 100 km south-west of Perth, closer to Antarctica and Africa than to Australia. In one frame they make it 280 km taller and 180 km wider for under 400 square kilometres of land. As a panel they cost nothing but a cell in the grid.",
+    text: "Heard Island and the McDonald Islands are 4 100 km south-west of Perth, closer to Antarctica and Africa than to Australia. In one frame they make it 290 km taller and 220 km wider for under 400 square kilometres of land. As a panel they cost nothing but a cell in the grid.",
     set: { on: NOT("aat"), split: 0, shared: 0, single: 0 }
   },
   {
     title: "With the Australian Antarctic Territory",
     text: "The AAT is Antarctica from 45 E to 160 E less Adelie Land, 5.9 million square kilometres: three quarters the size of the mainland. Adding it barely changes a single frame's share of land, because it is so big; it is the specks that are expensive. It gets its own panel on the Antarctic polar stereographic (EPSG:3031).",
+    set: { on: F.OWN, split: 0, shared: 0, single: 0 }
+  },
+  {
+    title: "Mawson, Davis and Casey",
+    text: "At the scale of the AAT panel, the coast where Australia's three Antarctic stations stand is a line. Each gets a panel of its own, about 110 km across, on the UTM zone it sits in (WGS 84, zones 41, 43 and 49 south): Mawson under the Framnes Mountains, Davis in the Vestfold Hills, Casey on the Windmill Islands coast. They are views into the AAT, not more land, so they change nothing in one frame. The coast here is OpenStreetMap's, inside each region's box; outside it, the AAT's coarser coast in grey.",
     set: { on: ALL, split: 0, shared: 0, single: 0 }
+  },
+  {
+    title: "AAT grid tiles",
+    text: "The aatgrid tile lattice on Heard and the stations: one origin (140 000 E, 20 000 N) in every UTM south zone and tiles 720 pixels on a side, 43.2 km at 60 m (bright) and 7.2 km at 10 m (faint). Each panel is in its own zone, so the tiles are square to it. Heard and Davis are both in zone 43, so their tiles are one lattice, 1 700 km apart. The id names the 60 m tile each station (or Heard's middle) is in.",
+    set: { on: ["heard", ...STATIONS], split: 1, shared: 0, single: 0, tiles: 1 }
   },
   {
     title: "Every panel at one scale",
@@ -70,14 +84,14 @@ const STEPS = [
   }
 ];
 
-const defaults = { s: 0, on: "", split: 0, shared: 0, single: 0, grat: 0, ctx: 1 };
+const defaults = { s: 0, on: "", split: 0, shared: 0, single: 0, grat: 0, ctx: 1, tiles: 0 };
 const state = { ...defaults };
 const parseOn = () => state.on.split(",").filter((k) => F.PIECES[k]);
 function readHash() {
   const h = readParams(state, defaults, { on: String, s: (r) => Math.max(0, Math.min(STEPS.length - 1, Math.round(+r) || 0)) });
   if (!h.has("on")) applyStep(STEPS[state.s].set);
 }
-function applyStep(st) { Object.assign(state, { on: st.on.join(","), split: st.split, shared: st.shared, single: st.single }); }
+function applyStep(st) { Object.assign(state, { on: st.on.join(","), split: st.split, shared: st.shared, single: st.single, tiles: st.tiles || 0 }); }
 readHash();
 const writeHash = hashWriter(state, defaults, {});
 
@@ -110,8 +124,11 @@ function bar(ctx, x, y, pxPerKm, max) {
   halo(ctx, `${km.toLocaleString("en")} km`, x, y - 4);
 }
 
-// draw land in a cell: `proj` (lon, lat) -> metres, a centre and pixels per metre
-function drawCell(ctx, cell, proj, cx, cy, s, pieceKeys, grat) {
+// draw land in a cell: `proj` (lon, lat) -> metres, a centre and pixels per
+// metre. A view piece (a station region) is filled without its box's edges
+// stroked, and in its own panel the coarser land of its parent shows
+// around the box.
+function drawCell(ctx, cell, proj, cx, cy, s, pieceKeys, grat, panel = false) {
   const [X, Y, W, H] = cell;
   const P = (lon, lat) => { const [x, y] = proj(lon, lat); return [X + W / 2 + (x - cx) * s, Y + H / 2 + 8 - (y - cy) * s]; };
   ctx.save();
@@ -125,10 +142,74 @@ function drawCell(ctx, cell, proj, cx, cy, s, pieceKeys, grat) {
     ctx.fillStyle = COL.land; ctx.strokeStyle = COL.ctxEdge; ctx.lineWidth = 0.8;
     for (const u of data.context) for (const r of u.rings) { ringPath(ctx, r, P); ctx.fill(); ctx.stroke(); }
   }
+  const views = pieceKeys.filter((k) => F.PIECES[k].within && data.regions[k]);
+  if (panel) for (const k of views) {
+    const up = F.PIECES[k].within;
+    if (pieceKeys.includes(up)) continue;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(X, Y, W, H);
+    const [x0, y0, x1, y1] = data.regions[k], edge = [];
+    for (let i = 0; i <= 16; i++) edge.push(x0 + ((x1 - x0) * i) / 16, y0);
+    for (let i = 0; i <= 16; i++) edge.push(x1, y0 + ((y1 - y0) * i) / 16);
+    for (let i = 0; i <= 16; i++) edge.push(x1 - ((x1 - x0) * i) / 16, y1);
+    for (let i = 0; i <= 16; i++) edge.push(x0, y1 - ((y1 - y0) * i) / 16);
+    for (let i = 0; i < edge.length; i += 2) { const [x, y] = P(edge[i], edge[i + 1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.closePath(); ctx.clip("evenodd");
+    ctx.fillStyle = COL.piece; ctx.strokeStyle = COL.ctxEdge; ctx.lineWidth = 0.8;
+    for (const r of data.pieces[up]) { ringPath(ctx, r, P); ctx.fill("evenodd"); ctx.stroke(); }
+    ctx.restore();
+  }
   ctx.fillStyle = COL.piece; ctx.strokeStyle = COL.edge; ctx.lineWidth = 1;
-  for (const k of pieceKeys) for (const r of data.pieces[k]) { ringPath(ctx, r, P); ctx.fill("evenodd"); ctx.stroke(); }
+  for (const k of pieceKeys) {
+    const view = views.includes(k);
+    for (const r of data.pieces[k]) { ringPath(ctx, r, P); ctx.fill("evenodd"); if (!view) ctx.stroke(); }
+    if (view) for (const l of data.coast[k] || []) open(ctx, l, P);
+  }
+  if (panel) drawStations(ctx, P, pieceKeys);
+  if (panel && state.tiles) drawTiles(ctx, P, pieceKeys, s);
   ctx.restore();
   return P;
+}
+
+// station markers, in panels that hold a station's region or the AAT
+function drawStations(ctx, P, pieceKeys) {
+  ctx.font = "bold 11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  for (const [k, S] of Object.entries(F.STATIONS)) {
+    if (!pieceKeys.includes(k) && !pieceKeys.includes(F.PIECES[k].within)) continue;
+    const [x, y] = P(S.lon, S.lat);
+    if (!isFinite(x) || !isFinite(y)) continue;
+    ctx.fillStyle = COL.station; ctx.strokeStyle = COL.bg; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    halo(ctx, S.name, x + 7, y, COL.station);
+  }
+}
+
+// the aatgrid lattice of each tiled piece in a panel: 60 m tiles bright,
+// 10 m tiles faint when they are big enough to see, and the id of the 60 m
+// tile that holds the station (or the middle of the land)
+const latticeCache = new Map();
+function lattice(k, res) {
+  const key = k + res;
+  if (!latticeCache.has(key)) latticeCache.set(key, F.tileLattice(F.TILED[k], res, F.bounds(data.pieces[k]), res === 60 ? 1 : 6));
+  return latticeCache.get(key);
+}
+function drawTiles(ctx, P, pieceKeys, s) {
+  for (const k of pieceKeys) {
+    if (!F.TILED[k]) continue;
+    if (AG.tileSize(10) * s >= 6) {
+      ctx.strokeStyle = COL.tileFine; ctx.lineWidth = 0.7;
+      for (const l of lattice(k, 10).lines) open(ctx, l.flat(), P);
+    }
+    ctx.strokeStyle = COL.tile; ctx.lineWidth = 1.2;
+    for (const l of lattice(k, 60).lines) open(ctx, l.flat(), P);
+    const S = F.STATIONS[k], at = S ? [S.lon, S.lat] : centreOf(data.pieces[k]);
+    const t = AG.tileAt(at[0], at[1], 60, F.TILED[k]);
+    const [lx, ly] = P(...AG.fromZone(t.zone, t.xmin, t.ymin));
+    if (AG.tileSize(60) * s > 40 && isFinite(lx)) {
+      ctx.font = "10px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+      halo(ctx, t.id, lx + 3, ly - 3, COL.tile);
+    }
+  }
 }
 function open(ctx, xy, P) {
   ctx.beginPath();
@@ -156,7 +237,8 @@ function build(w, h) {
   const scales = geo.map((g, i) => F.fitScale(g.box, L.cells[i]));
   const shared = Math.min(...scales);
   const one = on.length ? F.oneFrame(data, on) : null;
-  return { on, ps, geo, L, scales: state.shared ? scales.map(() => shared) : scales, one };
+  const ovf = on.length ? F.oneFrame(data, on, null, true) : null;
+  return { on, ps, geo, L, scales: state.shared ? scales.map(() => shared) : scales, one, ovf };
 }
 
 function draw() {
@@ -168,7 +250,7 @@ function draw() {
   ctx.fillStyle = COL.bg; ctx.fillRect(0, 0, w, h);
   if (!data) return;
   model = build(w, h);
-  const { ps, geo, L, scales, one, on } = model;
+  const { ps, geo, L, scales, one, ovf, on } = model;
   if (!one) return;
 
   // panels first, so their rectangles are known to the overview
@@ -176,7 +258,7 @@ function draw() {
   ps.forEach((p, i) => {
     const cell = L.cells[i], g = geo[i], s = scales[i];
     const cx = (g.box[0] + g.box[2]) / 2, cy = (g.box[1] + g.box[3]) / 2;
-    drawCell(ctx, cell, p.crs.forward, cx, cy, s, p.pieces, state.grat);
+    drawCell(ctx, cell, p.crs.forward, cx, cy, s, p.pieces, state.grat, true);
     // what the panel shows, in its own metres
     const hw = cell[2] / 2 / s, hh = cell[3] / 2 / s;
     rects.push([cx - hw, cy + 8 / s - hh, cx + hw, cy + 8 / s + hh]);
@@ -189,7 +271,7 @@ function draw() {
   });
 
   // the overview: true geography and the footprint of every panel
-  const ov = L.overview, og = one.crs, ob = one.box;
+  const ov = L.overview, og = ovf.crs, ob = ovf.box;
   const os = F.fitScale(ob, ov, 0.08, 24);
   const ocx = (ob[0] + ob[2]) / 2, ocy = (ob[1] + ob[3]) / 2;
   const P = drawCell(ctx, ov, og.forward, ocx, ocy, os, on, state.grat || state.single);
@@ -253,7 +335,7 @@ function buildPicker() {
     sync();
   });
 }
-for (const k of ["split", "shared", "single", "grat", "ctx"]) $(k).addEventListener("change", (e) => { state[k] = e.target.checked ? 1 : 0; sync(); });
+for (const k of ["split", "shared", "single", "grat", "ctx", "tiles"]) $(k).addEventListener("change", (e) => { state[k] = e.target.checked ? 1 : 0; sync(); });
 
 STEPS.forEach((st, k) => {
   const li = document.createElement("li");
@@ -277,7 +359,7 @@ function sync() {
   $("prev").disabled = state.s === 0;
   $("next").disabled = state.s === STEPS.length - 1;
   [...$("steps").children].forEach((li, k) => li.classList.toggle("active", k === state.s));
-  for (const k of ["split", "shared", "single", "grat", "ctx"]) $(k).checked = !!state[k];
+  for (const k of ["split", "shared", "single", "grat", "ctx", "tiles"]) $(k).checked = !!state[k];
   buildPicker();
   draw(); readouts(); writeHash();
 }

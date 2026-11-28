@@ -40,6 +40,7 @@
         <label><input id="single" type="checkbox"> One frame only</label>
         <label><input id="ctx" type="checkbox"> Other land</label>
         <label><input id="grat" type="checkbox"> Graticule</label>
+        <label><input id="tiles" type="checkbox"> AAT grid tiles</label>
       </div>
     </section>
 
@@ -62,7 +63,9 @@
           fitted to its land. One overview panel holds the true geography and the footprint of every other
           panel, numbered. The locator becomes the main thing, and no panel is a guest on another.</p>
         <p>Panels use GDA2020 where it has a grid: the Australian Albers (EPSG:9473) for the mainland and
-          the MGA zone of each territory. The AAT uses the Antarctic polar stereographic (EPSG:3031).
+          the MGA zone of each territory. The AAT uses the Antarctic polar stereographic (EPSG:3031), and
+          the station panels for Mawson, Davis and Casey the WGS 84 UTM south zone each station is in. The
+          station panels are views into the AAT, so they add no land to one frame.
           Grouped panels use a Lambert azimuthal on the middle of their group. The overview, and the one
           frame for everything, use a Lambert azimuthal on the middle of the land shown. The table gives
           what one frame for the same land would be, its size and the share of it that is land. For each
@@ -74,12 +77,25 @@
           <code>src/core/facets.js</code> has the pieces, groups, panels, layout and footprints, checked in
           <code>test/check-facets.mjs</code>. Projections are those of <code>src/core/inset.js</code> and
           <code>src/core/polarstere.js</code>.</p>
+        <p>The AAT grid tiles are the lattice of <a href="./aatgrid.html">the AAT grid page</a> and the
+          <a href="https://github.com/mdsumner/aatgrid">aatgrid</a> package: one origin (140 000 E,
+          20 000 N) shared by every UTM south zone, tiles 720 pixels on a side, so 43.2 km at 60 m and 7.2 km
+          at 10 m. Heard Island's panel is on MGA zone 43, which is UTM zone 43S on GDA2020, so the lattice
+          is drawn there too; the two datums differ by less than a couple of metres.</p>
         <p>Hash keys: <code>s</code> (step), <code>on</code> (pieces shown), <code>split</code>,
-          <code>shared</code>, <code>single</code>, <code>ctx</code>, <code>grat</code>.</p>
+          <code>shared</code>, <code>single</code>, <code>ctx</code>, <code>grat</code>,
+          <code>tiles</code>.</p>
         <ul class="credits">
-          <li>Land from <a href="https://www.naturalearthdata.com/">Natural Earth</a> 1:10m admin-0 map units
-            (public domain), made by <code>test/make-australia-data.py</code>. The Coral Sea Islands and
-            Ashmore and Cartier are each one or two tiny polygons at this scale.</li>
+          <li>The mainland, the AAT and other land from <a href="https://www.naturalearthdata.com/">Natural
+            Earth</a> 1:10m admin-0 map units (public domain). Tasmania, the islands and the station regions
+            from <a href="https://www.soest.hawaii.edu/pwessel/gshhg/">GSHHG</a> 2.3.7 at full resolution
+            (Paul Wessel and Walter H. F. Smith, LGPL; derived from World Vector Shoreline, CIA WDB-II and
+            the Atlas of the Cryosphere). The station regions from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>
+            land polygons (OpenStreetMap contributors, ODbL) as built by
+            <a href="https://github.com/simonepri/geo-maps">geo-maps</a>: GSHHG's Antarctic ice front puts
+            Davis 10 km and Casey 3 km out to sea. All made by <code>test/make-australia-data.py</code>.</li>
+          <li>Station positions from the <a href="https://www.antarctica.gov.au/antarctic-operations/stations/">Australian
+            Antarctic Division</a>.</li>
           <li>Definitions from the <a href="https://epsg.org/">EPSG Geodetic Parameter Dataset</a>;
             <a href="https://www.icsm.gov.au/gda2020">GDA2020</a> (ICSM).</li>
           <li><a href="https://www.legislation.gov.au/C1954A00052/latest/text">Australian Antarctic Territory
