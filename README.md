@@ -468,6 +468,19 @@ WGS84 (a few metres from the OSTN15 grid, which it does not use);
 `test/check-osgb.mjs` checks it against PROJ, with `test/make-osgb-fixture.py`
 (OSTN15 from PROJ-data's `uk_os/` for the comparison).
 
+For a pin in New Zealand, Part 2 is NZTM2000 (EPSG:2193) and the NZTopo50
+map sheets: the pin's sheet with its printed kilometre grid, a Topo50
+reference (sheet code and six figures), the 24 by 36 km sheet lattice
+(west edge E 988 000 + 24 000 x column, north edge N 6 810 000 - 36 000 x
+row, rows AA, AB, ... without I and O), one zone on 173E at UTM's scale, and
+the grid's 0,0 in Antarctica (75.81S 82.93E). `src/core/nzgrid.js` has the
+projection and the lattice; `data/nz-topo50.json` is LINZ's sheet list (from
+linz/basemaps, MIT) with sheet names (from linz/nzmapconv, BSD-3), Crown
+copyright Toitu Te Whenua Land Information New Zealand.
+`test/check-nzgrid.mjs` checks NZTM against PROJ
+(`test/make-nzgrid-fixture.py`) and the lattice against every sheet corner in
+LINZ's list (`test/fixtures/topo50-linz.json`).
+
 ## AAT grid
 
 `aatgrid.html` is a mini version of [aatgrid](https://github.com/mdsumner/aatgrid),
@@ -1749,6 +1762,7 @@ src/core/geoid.js                 geoid grid (EGM2008), undulation, geocentric p
 src/core/ortho.js                 synthetic DEMs, frame and pushbroom sensor models, ray tracing, relief displacement, orthorectification
 src/core/mapref.js                Tasmanian street atlas and map book: pages, squares, frames, a point's place on its pages
 src/core/osgb.js                  British National Grid: OSGB36 transverse Mercator, letter squares, grid references, Helmert from WGS84, made-up London atlas
+src/core/nzgrid.js                NZTM2000 and the NZTopo50 sheet lattice: sheet codes, frames, grid references
 src/core/gridref.js               grid references: point scale, convergence, true-scale offsets, false origins, short refs, directory pages
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
 src/core/chile.js                 grids for mainland Chile (UTM, TM, Faja 1, Albers, LAEA, LCC, eqc), factors, land sample and summary
