@@ -927,6 +927,37 @@ azimuthal) and the land summary, checked against PROJ by
 `crs`, `lon0`, `lat0`, `lat1`, `lat2`, `kppm`, `shade`, `cell`, `tissot`,
 `zones`, `grat`, `towns`, `v`, `pt`.
 
+## Insets
+
+`insets.html` asks why Alaska is in a box. An inset is a second frame on the
+same sheet with its own projection, scale and place, and it trades true
+position, relative size and one continuous surface against using the page,
+as a projection trades shape against area. Every piece of a map here is a
+projection followed by an affine on the page, `page = at + s R(rot)
+(F(lon, lat) - F(anchor))`: in its true place (the main projection, s = 1),
+in an inset (its own projection, with a box, a scale bar and a locator) or
+moved with no frame at all, as R's `sp::elide` and the SESYNC sf recipe do.
+Eighteen steps: d3's geoAlbersUsa rebuilt as three pieces (Alaska at 0.35, 12
+percent of its area), the 50 states in their true place on the USGS Albers,
+in Snyder's GS50 (a tenth-order complex polynomial on a stereographic, scale
+within 2 percent over the 50, but Puerto Rico 24 to 46 percent large) and in
+a Lambert azimuthal centred on them, Alaska's scale as a slider, the moved
+land and the wrong distance it gives, the territories, then France's equal
+boxes for the five overseas regions, Shetland and the Islands (Scotland) Act
+2018, Chile's tricontinental map, Spain's Canaries, Portugal, Norway (Svalbard
+to Bouvet), Ecuador, New Zealand, Denmark with Greenland, Tasmania with
+Macquarie Island, and a layout of your own (drag pieces, copy PROJ strings
+and affines). A table gives the sheet, the share of it that is map, the main
+piece's share of its width, and each piece's scale, area as drawn and largest
+angular distortion. `src/core/inset.js` has the projections (GS50 and alsk
+ported from PROJ's `mod_ster.cpp`, d3-geo's spherical conic equal-area), the
+placement, ground area and frame statistics and the scenes, checked against
+PROJ and d3-geo by `test/check-inset.mjs` (`test/fixtures/inset-proj.json`,
+from `test/make-inset-fixture.py`). Land is Natural Earth 1:10m admin-0 map
+units (`data/insets-10m.json`, from `test/make-insets-data.py`). Hash keys:
+`s`, `scene`, `main`, `aks`, `L`, `tp`, `outline`, `leader`, `ctx`, `grat`,
+`names`, `edit`, `v`.
+
 ## Nuyina
 
 `nuyina.html` follows RSV Nuyina, Australia's icebreaker, along a voyage. The
@@ -1602,6 +1633,7 @@ example.html, js/example.js            For example storyboard
 homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977, Eratosthenes
 vicgrid.html, js/vicgrid.js            VicGrid: Victoria's one-zone grid against MGA, NSW/SA Lambert, Albers
 chile.html, js/chile.js                Which grid for Chile? UTM 19S/18S, one TM, Faja 1, Albers, LAEA, LCC over the land
+insets.html, js/insets.js              Insets: why Alaska is in a box; true place, GS50, moved land, ten other countries, your own layout
 sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
 gridref.html, js/gridref.js            Grid references: a scrolling explainer from a street directory page out to UTM and UPS
 aatgrid.html, js/aatgrid.js            AAT grid: a mini aatgrid, one tile lattice in every UTM south zone
@@ -1694,6 +1726,7 @@ src/core/osgb.js                  British National Grid: OSGB36 transverse Merca
 src/core/gridref.js               grid references: point scale, convergence, true-scale offsets, false origins, short refs, directory pages
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
 src/core/chile.js                 grids for mainland Chile (UTM, TM, Faja 1, Albers, LAEA, LCC, eqc), factors, land sample and summary
+src/core/inset.js                 composite maps: GS50 and alsk, d3 geoAlbersUsa pieces, affine placement, ground area, frame statistics, scenes
 src/core/sight.js                 terrain visibility: gnomonic wedges or the sun, a horizon kept front to back
 src/core/peel.js                  gores (sinu, cass, tmerc), the peel from orange to flower, the spiral peel and its Euler spiral
 src/core/affine.js                geotransform: apply, invert, parts, extent, world file, fit to control points

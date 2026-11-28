@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Insets</title>
+<meta name="description" content="Why is Alaska in a box? Inset maps as a compromise, like projections: the USA in d3's geoAlbersUsa, Snyder's GS50 and in true place, land moved like sp::elide, and insets in France, Scotland, Chile, Spain, Portugal, Norway, Ecuador, New Zealand, Denmark and Tasmania, with a layout of your own.">
+<link rel="stylesheet" href="css/app.css">
+<script src="js/mobile.js" defer></script>
+<script type="module" src="js/insets.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <canvas id="map" aria-label="A composite map: the main frame with each piece in its true place, in an inset or moved"></canvas>
+    <span class="half-label" id="map-label"></span>
+    <a id="open-full" class="open-full" href="./insets.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html">Peeling the orange</a><a href="./tissot.html">Distortion</a><a href="./chile.html">Which grid for Chile?</a><a href="./insets.html" aria-current="page">Insets</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./gridref.html">Grid references</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./penguin.html">Penguin datum</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./coastlen.html">Coastline length</a><a href="./frame.html">Frame</a><a href="./fourd.html">Time and depth</a><a href="./cutaway.html">Cutaway</a><a href="./voxels.html">Voxels</a><a href="./story.html">Story</a><a href="./navigate.html">Navigation</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <p id="step-title" class="step-title"></p>
+      <p id="caption" class="describe"></p>
+      <div class="buttons">
+        <button id="prev" type="button">Back</button>
+        <button id="next" type="button">Next</button>
+        <span id="count" class="hint"></span>
+      </div>
+    </section>
+
+    <section class="embed-keep">
+      <label class="row" for="scene"><span>Example</span></label>
+      <select id="scene" class="wide" aria-label="Which country's map"></select>
+      <label class="row" for="main"><span>Main frame</span></label>
+      <select id="main" class="wide" aria-label="The projection of the main frame"></select>
+      <div id="aks-row">
+        <label class="row" for="aks"><span>Alaska's scale</span><output id="aks-out"></output></label>
+        <input id="aks" type="range" min="-2.3" max="0.3" step="0.01" aria-label="Alaska's scale against the lower 48">
+      </div>
+      <div class="toggles">
+        <label><input id="tp" type="checkbox"> Compare: all in true place</label>
+        <label><input id="outline" type="checkbox"> True place outlines</label>
+        <label><input id="leader" type="checkbox"> Locator lines</label>
+        <label><input id="ctx" type="checkbox"> Other land</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+        <label><input id="names" type="checkbox"> Names</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Fit the sheet</button>
+      </div>
+      <p class="hint">Drag to pan, scroll to zoom. In Build your own, drag a box or a moved piece to place it.</p>
+    </section>
+
+    <section id="build" hidden>
+      <div id="editor"></div>
+      <label class="row" for="export"><span>Layout: PROJ string and affine for each piece</span></label>
+      <textarea id="export" class="wide" rows="7" readonly spellcheck="false" style="width:100%;font-size:11px;font-family:ui-monospace,monospace;background:transparent;color:inherit;border:1px solid var(--line)"></textarea>
+      <div class="buttons"><button id="copy-export" type="button">Copy layout</button></div>
+    </section>
+
+    <section>
+      <table id="stats" class="readout"></table>
+      <table id="pieces" class="readout"></table>
+      <p id="pieces-note" class="hint"></p>
+    </section>
+
+    <section>
+      <ol id="steps" class="steps"></ol>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>An inset is a second map on the same sheet. It has its own extent, scale and position, and often
+          its own projection. A projection trades shape against area against distance. An inset trades
+          true position, relative size and a continuous surface against using the page well. On this page
+          every piece of a map is drawn the same way: project it, then place it with an affine,
+          <code>page = at + s R(rot) (F(lon, lat) - F(anchor))</code>. A piece in its true place uses the
+          main projection with s = 1. An inset uses its own projection and gets a box, a scale bar and a
+          locator line. A moved piece (sp::elide in R, or the move-scale-rotate recipes for Alaska and
+          Hawaii) is the same arithmetic with nothing on the page to admit it.</p>
+        <p>The table gives the sheet (the box around every piece and frame), the share of it that is land
+          or map, and how much of the sheet's width or height the main piece gets: a page of a fixed size
+          draws the main piece at that share of the size it would have on its own. For each piece it gives
+          the scale it is drawn at against the main frame, its area as drawn against its true area (at the
+          main frame's scale), and the largest angle the projection it is drawn in bends anywhere over it.
+          The distance readout measures two places on the page at the main frame's scale. Across a box
+          that number means nothing. On a moved piece it means something wrong.</p>
+        <p>GS50 is John P. Snyder's modified stereographic for the 50 states (USGS, 1982). It is a
+          tenth-order complex polynomial applied to an oblique stereographic on Clarke 1866. Its scale
+          varies by less than 2 percent over all 50 states, but it holds nowhere else. It is ported here
+          from PROJ's <code>mod_ster.cpp</code>, as is Snyder's modified stereographic for Alaska.
+          geoAlbersUsa is rebuilt from d3-geo's source: three spherical Albers, with Alaska at 0.35 and
+          Hawaii at 1, placed by translate offsets in units of the scale. Both are checked to a
+          nanometre and a picometre against PROJ and d3-geo in <code>test/check-inset.mjs</code>.</p>
+        <p>Hash keys: <code>s</code> (step), <code>scene</code>, <code>main</code>, <code>aks</code> (Alaska's
+          scale in the composite), <code>tp</code> (all in true place), <code>L</code> (layout: <code>key:mode,s,rot,x km,y km</code> joined by
+          <code>;</code>, with mode t true, i inset, m moved, o off), <code>outline</code>, <code>leader</code>,
+          <code>ctx</code>, <code>grat</code>, <code>names</code>, <code>edit</code>, <code>v</code> (view centre and width in km).</p>
+        <ul class="credits">
+          <li>Snyder, J. P. (1985) <a href="https://pubs.usgs.gov/bul/1629/report.pdf">Computer-assisted map
+            projection research</a>, USGS Bulletin 1629; Snyder (1987) <i>Map Projections: A Working Manual</i>,
+            USGS Professional Paper 1395; <a href="https://proj.org/en/stable/operations/projections/gs50.html">PROJ gs50</a>;
+            Clarke, K. C., <a href="https://people.geog.ucsb.edu/~kclarke/Public/GS50Clarke.pdf">GS50</a> (UCSB);
+            Jason Davies, <a href="https://jasondavies.com/maps/modified-stereographic/gs50">modified stereographic projections</a>.</li>
+          <li>Mike Bostock, <a href="https://github.com/d3/d3-geo/blob/main/src/projection/albersUsa.js">geoAlbersUsa</a>
+            in d3-geo; Roger Veciana, <a href="https://github.com/rveciana/d3-composite-projections">d3-composite-projections</a>
+            (geoAlbersUsaTerritories and composites for other countries).</li>
+          <li><code>elide()</code> in the R package <a href="https://cran.r-project.org/package=sp">sp</a> (Pebesma and Bivand);
+            Quentin D. Read, <a href="https://www.sesync.org/resources/making-50-state-usa-map-2021-edition">Making a 50-state
+            USA map, 2021 edition</a> (SESYNC, 2022), whose offsets, scale and turns step 6 follows.</li>
+          <li>Andy Skinner, <a href="https://www.esri.com/arcgis-blog/products/product/mapping/location-of-alaska-on-usa-maps">Location
+            of Alaska on USA maps</a> (Esri, 2009); Aileen Buckley,
+            <a href="https://www.esri.com/arcgis-blog/products/product/mapping/cartographic-design-inset-maps">Cartographic
+            design: inset maps</a> (Esri, 2008).</li>
+          <li><a href="https://www.legislation.gov.uk/asp/2018/12/part/3/crossheading/shetland-mapping-requirement">Islands
+            (Scotland) Act 2018, section 17</a>; Instituto Geografico Militar,
+            <a href="https://mapasmilhaud.com/en/political-maps/2018-tricontinental-map-of-chile/">tricontinental map of Chile</a> (2018);
+            Insee, <a href="https://www.insee.fr/fr/statistiques/fichier/1302192/insee_plaquette_drom_com.pdf">DROM-COM</a>;
+            <a href="https://en.wikipedia.org/wiki/Omission_of_Tasmania_from_maps_of_Australia">omission of Tasmania from maps of Australia</a>.</li>
+          <li>Land from <a href="https://www.naturalearthdata.com/">Natural Earth</a> 1:10m admin-0 map units
+            (public domain), made by <code>test/make-insets-data.py</code>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>
