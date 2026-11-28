@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Which grid for Chile?</title>
+<meta name="description" content="One country, which grid? Mainland Chile in UTM 19S and 18S, one transverse Mercator, Argentina's Faja 1, Albers, Lambert azimuthal and conformal conic, and longitude and latitude, with area, scale and shape error over the land.">
+<link rel="stylesheet" href="css/app.css">
+<script src="js/mobile.js" defer></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/chile.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <canvas id="map" aria-label="Mainland Chile in the chosen grid, shaded by area, scale or shape error"></canvas>
+    <span class="half-label" id="map-label"></span>
+    <a id="open-full" class="open-full" href="./chile.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html">Peeling the orange</a><a href="./tissot.html">Distortion</a><a href="./chile.html" aria-current="page">Which grid for Chile?</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./gridref.html">Grid references</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./penguin.html">Penguin datum</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./coastlen.html">Coastline length</a><a href="./frame.html">Frame</a><a href="./fourd.html">Time and depth</a><a href="./cutaway.html">Cutaway</a><a href="./voxels.html">Voxels</a><a href="./story.html">Story</a><a href="./navigate.html">Navigation</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <p id="step-title" class="step-title"></p>
+      <p id="caption" class="describe"></p>
+      <div class="buttons">
+        <button id="prev" type="button">Back</button>
+        <button id="next" type="button">Next</button>
+        <span id="count" class="hint"></span>
+      </div>
+    </section>
+
+    <section class="embed-keep">
+      <label class="row" for="crs"><span>Grid</span></label>
+      <select id="crs" class="wide" aria-label="The grid the map is drawn in"></select>
+      <div id="params"></div>
+      <label class="row" for="shade"><span>Shade by</span></label>
+      <select id="shade" class="wide" aria-label="What to shade the map by">
+        <option value="area">Area: map area against ground area</option>
+        <option value="scale">Distance: the worst linear scale</option>
+        <option value="shape">Shape: angular distortion</option>
+        <option value="none">Nothing</option>
+      </select>
+      <label class="row" for="cell"><span>Cell size for the area readout</span></label>
+      <select id="cell" class="wide" aria-label="Map cell size in metres">
+        <option value="250">250 m</option>
+        <option value="1000">1 km</option>
+        <option value="1266">1266 m</option>
+        <option value="5000">5 km</option>
+        <option value="25000">25 km</option>
+      </select>
+      <div class="toggles">
+        <label><input id="tissot" type="checkbox"> Indicatrices</label>
+        <label><input id="zones" type="checkbox"> UTM zone edges</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+        <label><input id="towns" type="checkbox"> Towns</label>
+      </div>
+      <div class="buttons">
+        <button id="reset-view" type="button">Fit Chile</button>
+      </div>
+      <p class="hint">Drag to pan, scroll to zoom, click to pin a point.</p>
+    </section>
+
+    <section>
+      <table id="stats" class="readout"></table>
+      <table id="out" class="readout"></table>
+    </section>
+
+    <section>
+      <ol id="steps" class="steps"></ol>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>Chile is about 4 300 km from Arica to Cape Horn and seldom more than 350 km across, but the
+          mainland runs from 66.4 W to 75.7 W, across the meridian 72 W where UTM zone 19S meets 18S. The
+          official grid is UTM on SIRGAS-Chile: <b>SIRGAS-Chile 2021 / UTM zone 19S</b> (EPSG:20049),
+          <b>18S</b> (EPSG:20048) and <b>12S</b> for Easter Island (EPSG:20042). The Ministerio de Bienes
+          Nacionales survey manual (2025) sets UTM for the whole country except the Chilean Antarctic
+          Territory, which is left to the projection the national cartographic authority decides.
+          SIRGAS-Chile has been realised again after the great earthquakes (2002, 2010, 2013, 2016, 2021 in
+          EPSG, with a 2025.0 epoch now in use), so the same point has a slightly different coordinate in
+          each one. Every grid on this page is on GRS80, which is what those realisations use.</p>
+        <p>The shading is <b>PROJ's proj_factors()</b> for the chosen grid at each pixel. <b>Area</b> is the
+          areal scale s: a cell that is c by c metres on the map covers c<sup>2</sup>/s on the ground, so
+          the readout gives the error in square metres for the chosen cell size. <b>Distance</b> is the
+          linear scale in the direction where it is worst (a or b, in parts per million). <b>Shape</b> is the
+          angular distortion, the most any angle is bent. The table at the top sums them over the land:
+          7 700 points 0.1 degrees apart inside mainland Chile.</p>
+        <p>No grid wins all three. A conformal grid (UTM, any transverse Mercator, the Lambert conic) has no
+          shape error, and its area error is the square of its scale error. An equal-area grid (Albers,
+          Lambert azimuthal) has no area error at all, whatever its parameters, and its parameters only
+          move the shape error around. For a country this long and narrow, a cone (Albers, Lambert
+          conformal conic) is the wrong surface: it is true along parallels and Chile runs along
+          meridians. A transverse Mercator on the middle of the country keeps scale within 0.2 percent
+          from end to end, and the Lambert azimuthal centred on it bends shapes by at most 1.6 degrees.</p>
+        <p>Other long countries made the same choice in different ways. Argentina divides its land into
+          seven Gauss-Kruger strips with k = 1 (POSGAR 2007, Faja 1 on 72 W is EPSG:5343). New Zealand
+          has one national transverse Mercator, NZTM2000, and keeps local meridional circuits for survey.
+          Norway maps in UTM and builds in NTM, 1 degree transverse Mercator zones. Brazil has an official
+          equal-area grid for statistics, SIRGAS 2000 / Brazil Albers (EPSG:10857). In Chile a 2015
+          proposal from the roads directorate suggested 1 degree local transverse Mercator zones for
+          engineering, but it has not been adopted.</p>
+        <p><code>src/core/chile.js</code> has the grids and the land summary; the projections are Snyder
+          (1987) and Karney (2011), checked against PROJ in <code>test/check-chile.mjs</code>. The page
+          grew out of an area comparison for Chile in this
+          <a href="https://gist.github.com/mdsumner/49239cd2a4844090b85330758b998a7c">gist</a>.</p>
+        <p>Hash keys: <code>s</code> (step), <code>crs</code>, <code>lon0</code>, <code>lat0</code>,
+          <code>lat1</code>, <code>lat2</code>, <code>kppm</code> (k0 - 1 in parts per million),
+          <code>shade</code>, <code>cell</code>, <code>tissot</code>, <code>zones</code>, <code>grat</code>,
+          <code>towns</code>, <code>v</code> (centre lon, lat and width in km), <code>pt</code>.</p>
+        <ul class="credits">
+          <li>Definitions from the <a href="https://epsg.org/">EPSG Geodetic Parameter Dataset</a> as
+            <a href="https://proj.org/">PROJ</a> carries it, and scale factors as PROJ's proj_factors()
+            computes them.</li>
+          <li>Instituto Geografico Militar, <a href="https://fig.net/resources/proceedings/2022/RFIP_chile/09_CS_IGM_Chile.pdf">Marco
+            geodesico de referencia nacional</a> (FIG, 2022); Ministerio de Bienes Nacionales,
+            <a href="https://www.bienesnacionales.cl/wp-content/uploads/2026/01/Manual-de-Normas-Tecnicas-de-Mensura-2025-1.pdf">Manual
+            de Normas Tecnicas de Mensura</a> (2025); Castillo Becerra (2015),
+            <a href="https://www.sirgas.org/fileadmin/docs/Boletines/Bol20/44_Castillo_2015_Cartografia_basada_SIRGAS.pdf">zones
+            of horizontal deformation in Chile</a>, SIRGAS bulletin 20.</li>
+          <li>LINZ, <a href="https://www.linz.govt.nz/data/geodetic-system/datums-projections-and-heights/projections/new-zealand-transverse-mercator-2000">NZTM2000</a>;
+            Geonorge, <a href="https://geonorge.no/en/references/references/coordiante-systems">coordinate systems</a> (NTM);
+            Brazil Data Cube, <a href="https://brazil-data-cube.github.io/specifications/bdc-projection.html">projection</a>.</li>
+          <li>Snyder, J. P. (1987) <i>Map Projections: A Working Manual</i>, USGS Professional Paper 1395;
+            Karney, C. F. F. (2011) Transverse Mercator with an accuracy of a few nanometers, J. Geodesy 85, 475.</li>
+          <li>Borders from <a href="https://www.naturalearthdata.com/">Natural Earth</a> 1:50m admin-0
+            (public domain), made by <code>test/make-chile-data.py</code>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

@@ -904,6 +904,29 @@ Victoria). `src/core/vicgrid.js` has the conics (Snyder 1987), MGA from
 (`data/aus-states-10m.json`, from `test/make-aus-states.py`). Hash keys: `crs`,
 `over`, `shade`, `zones`, `grat`, `towns`, `v`, `pt`.
 
+## Which grid for Chile?
+
+`chile.html` draws mainland Chile in one grid's own eastings and northings and
+shades it by area, distance or shape error from PROJ's proj_factors(): UTM
+zones 19S and 18S (SIRGAS-Chile 2021, EPSG:20049 and 20048, the official
+grid), a transverse Mercator on a chosen meridian and scale, Argentina's Faja 1
+(POSGAR 2007, EPSG:5343, TM 72 W with k = 1), an Albers or Lambert conformal
+conic with chosen parallels, a Lambert azimuthal equal-area with a chosen
+centre, and longitude and latitude as a grid (`+proj=eqc`). A table sums each
+grid's error over 7 700 land points: the range of areal scale, of the ground
+area of a map cell of a chosen size, of linear scale, and the largest angular
+distortion. Nine steps walk from the official zones to one TM on 71 W, show
+that an equal-area grid has no area error whatever its parameters (so they
+only move shape error), and end on cones as the wrong surface for a long
+north-south country. `src/core/chile.js` has the grids (conics from
+`vicgrid.js`, TM from `mgrs.js`, Snyder's ellipsoidal oblique Lambert
+azimuthal) and the land summary, checked against PROJ by
+`test/check-chile.mjs` (`test/fixtures/chile-proj.json`, from
+`test/make-chile-fixture.py`). Borders are Natural Earth 1:50m admin-0
+(`data/chile-50m.json`, from `test/make-chile-data.py`). Hash keys: `s`,
+`crs`, `lon0`, `lat0`, `lat1`, `lat2`, `kppm`, `shade`, `cell`, `tissot`,
+`zones`, `grat`, `towns`, `v`, `pt`.
+
 ## Nuyina
 
 `nuyina.html` follows RSV Nuyina, Australia's icebreaker, along a voyage. The
@@ -1578,6 +1601,7 @@ affine.html, js/affine.js              Affine: the geotransform, world file, reg
 example.html, js/example.js            For example storyboard
 homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters, Equal Earth, Dymaxion, xkcd 977, Eratosthenes
 vicgrid.html, js/vicgrid.js            VicGrid: Victoria's one-zone grid against MGA, NSW/SA Lambert, Albers
+chile.html, js/chile.js                Which grid for Chile? UTM 19S/18S, one TM, Faja 1, Albers, LAEA, LCC over the land
 sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
 gridref.html, js/gridref.js            Grid references: a scrolling explainer from a street directory page out to UTM and UPS
 aatgrid.html, js/aatgrid.js            AAT grid: a mini aatgrid, one tile lattice in every UTM south zone
@@ -1669,6 +1693,7 @@ src/core/mapref.js                Tasmanian street atlas and map book: pages, sq
 src/core/osgb.js                  British National Grid: OSGB36 transverse Mercator, letter squares, grid references, Helmert from WGS84, made-up London atlas
 src/core/gridref.js               grid references: point scale, convergence, true-scale offsets, false origins, short refs, directory pages
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
+src/core/chile.js                 grids for mainland Chile (UTM, TM, Faja 1, Albers, LAEA, LCC, eqc), factors, land sample and summary
 src/core/sight.js                 terrain visibility: gnomonic wedges or the sun, a horizon kept front to back
 src/core/peel.js                  gores (sinu, cass, tmerc), the peel from orange to flower, the spiral peel and its Euler spiral
 src/core/affine.js                geotransform: apply, invert, parts, extent, world file, fit to control points
