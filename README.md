@@ -968,14 +968,20 @@ Albers for the mainland, the MGA zone of each territory, EPSG:3031 for the
 AAT) fitted to its land. Pieces can be grouped (Australia, the Tasman Sea,
 the Indian Ocean Territories, the reefs, the sub-Antarctic islands, the AAT;
 grouped panels are a Lambert azimuthal on the group) or given a panel each,
-fitted or all at one scale, or drawn as one frame. Nine steps go from the
+fitted or all at one scale, or drawn as one frame. Eleven steps go from the
 mainland and Tasmania (a frame 51 percent land) through Macquarie (37), the
-external territories (21, 7 200 km wide), Heard and the AAT, and end on a
-grouping of your own. `src/core/facets.js` has the pieces, groups, panels,
-layout and footprints, checked by `test/check-facets.mjs`. Land is Natural
-Earth 1:10m admin-0 map units (`data/australia-10m.json`, from
-`test/make-australia-data.py`). Hash keys: `s`, `on`, `split`, `shared`,
-`single`, `ctx`, `grat`.
+external territories (21, 7 200 km wide), Heard and the AAT, panels for
+Mawson, Davis and Casey (views into the AAT on their UTM zones), the aatgrid
+tile lattice on Heard and the stations, and end on a grouping of your own.
+`src/core/facets.js` has the pieces, groups, panels, layout, footprints and
+tile lattice, checked by `test/check-facets.mjs`. Land
+(`data/australia-10m.json`, from `test/make-australia-data.py`) is Natural
+Earth 1:10m admin-0 map units for the mainland, the AAT and other land,
+GSHHG 2.3.7 full resolution for Tasmania and the islands (read from GMT's
+binned netCDF), and OpenStreetMap land polygons (via geo-maps) for the
+station regions, since GSHHG's Antarctic ice front puts Davis 10 km out to
+sea. Hash keys: `s`, `on`, `split`, `shared`, `single`, `ctx`, `grat`,
+`tiles`.
 
 ## Nuyina
 
