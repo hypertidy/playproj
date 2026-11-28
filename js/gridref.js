@@ -15,7 +15,8 @@
 //
 // Part 2 follows the pin into a local system where there is one: the
 // Tasmanian street atlas and map book (src/core/mapref.js), or Britain's
-// National Grid with a made-up London atlas (src/core/osgb.js).
+// National Grid with a made-up London atlas (src/core/osgb.js), or New
+// Zealand's NZTM and its Topo50 sheets (src/core/nzgrid.js, LINZ's sheet list).
 
 import * as M from "../src/core/mgrs.js";
 import * as G from "../src/core/gridref.js";
@@ -24,6 +25,7 @@ import { shareLinks, isEmbed } from "../src/scene/share.js";
 import * as R from "../src/core/mapref.js";
 import { shift } from "../src/core/vicgrid.js";
 import * as O from "../src/core/osgb.js";
+import * as Z from "../src/core/nzgrid.js";
 import { loadCoastline } from "./data.js";
 
 const $ = (id) => document.getElementById(id);
@@ -46,6 +48,7 @@ const PLACES = [
   ["Mawson station, Antarctica", 62.8738, -67.6027],
   ["Quito, Ecuador", -78.4678, -0.1807],
   ["Greenwich, England", -0.0015, 51.4779],
+  ["Wellington, New Zealand", 174.7762, -41.2865],
   ["Tromso, Norway", 18.9553, 69.6496]
 ];
 
@@ -72,6 +75,8 @@ let P = null, D = null, zone = 55, south = true, lon0 = 147, STEPS = [];
 let MR = null, T = null;
 // the pin on the British National Grid, and its page in the made-up London atlas
 let U = null;
+// the pin on NZTM2000 and its Topo50 sheet (the LINZ sheet list: NZD)
+let NZ = null, NZD = null;
 let fwd = null, inv = null;
 
 function setPlace() {
@@ -94,6 +99,11 @@ function setPlace() {
   if (!T && O.inGB(P.lon, P.lat)) {
     const os = O.describe(P.lon, P.lat);
     if (os) U = { os, page: O.countyPage(os.e, os.n) };
+  }
+  NZ = null;
+  if (!T && !U && NZD && Z.inNZ(P.lon, P.lat)) {
+    const nz = Z.describe(P.lon, P.lat), sh = nz.sheet && NZD.has.has(nz.sheet.code) ? nz.sheet : null;
+    NZ = { nz, sheet: sh, name: sh ? NZD.names[sh.code] || "" : "" };
   }
   STEPS = buildSteps();
   renderSteps();
@@ -138,7 +148,7 @@ function buildSteps() {
   const poleN = G.poleNorthing(south), [oLon, oLat] = d.origin;
   const aus = south && P.lon > 110 && P.lon < 156 && P.lat > -45;
   const gdaName = aus ? `MGA zone ${zone} (the Map Grid of Australia on GDA2020, EPSG:${7800 + zone})`
-    : U ? `UTM zone ${zone}${south ? "S" : "N"} (EPSG:${d.epsg}), the grid of GPS and military maps; Britain's own National Grid comes in Part 2`
+    : U || NZ ? `UTM zone ${zone}${south ? "S" : "N"} (EPSG:${d.epsg}), the grid of GPS and military maps; ${U ? "Britain's own National Grid" : "New Zealand's own grid, NZTM,"} comes in Part 2`
     : `UTM zone ${zone}${south ? "S" : "N"} (EPSG:${d.epsg})`;
   const midN = (d.n + eq) / 2;
   const tall = Math.abs(d.n - eq) * 1.25 + 600e3;
@@ -346,6 +356,7 @@ function buildSteps() {
   if (T) for (const i of [0, 1, 2, 3, S.length - 1]) { const L = S[i].L; if (L.tiles) { L.topo = L.tiles; delete L.tiles; } }
   if (T) S.push(...bookSteps());
   if (U) S.push(...ukSteps());
+  if (NZ) S.push(...nzSteps());
   return S;
 }
 
@@ -651,27 +662,28 @@ function ukSteps() {
 }
 
 // a National Grid polyline, sampled, through to the plane
-function strokeOS(ctx, v, e0, n0, e1, n1, steps = 12) {
+function strokeOS(ctx, v, e0, n0, e1, n1, steps = 12, to = os2plane) {
   ctx.beginPath();
   for (let i = 0; i <= steps; i++) {
-    const [x, y] = v.px(...os2plane(e0 + ((e1 - e0) * i) / steps, n0 + ((n1 - n0) * i) / steps));
+    const [x, y] = v.px(...to(e0 + ((e1 - e0) * i) / steps, n0 + ((n1 - n0) * i) / steps));
     if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
   }
   ctx.stroke();
 }
 // the view's extent in National Grid metres, from its corners and edges
-function osExtent(v) {
+const osFromLL = (lon, lat) => O.toGrid(...O.fromWGS84(lon, lat));
+function osExtent(v, from = osFromLL) {
   let e0 = Infinity, n0 = Infinity, e1 = -Infinity, n1 = -Infinity;
   for (let i = 0; i <= 4; i++) for (const [x, y] of [[(v.w * i) / 4, 0], [(v.w * i) / 4, v.h], [0, (v.h * i) / 4], [v.w, (v.h * i) / 4]]) {
-    const [lon, lat] = inv(...v.en(x, y)), [l, p] = O.fromWGS84(lon, lat), [e, n] = O.toGrid(l, p);
+    const [e, n] = from(...inv(...v.en(x, y)));
     e0 = Math.min(e0, e); e1 = Math.max(e1, e); n0 = Math.min(n0, n); n1 = Math.max(n1, n);
   }
   return [e0, n0, e1, n1];
 }
 const OS_GREEN = "#7bed9f", OS_GRID = "#3ddc84";
 
-function osPoly(ctx, v, e0, n0, e1, n1) {
-  const pts = [[e0, n1], [e1, n1], [e1, n0], [e0, n0]].map(([e, n]) => v.px(...os2plane(e, n)));
+function osPoly(ctx, v, e0, n0, e1, n1, to = os2plane) {
+  const pts = [[e0, n1], [e1, n1], [e1, n0], [e0, n0]].map(([e, n]) => v.px(...to(e, n)));
   ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
   return pts;
 }
@@ -748,20 +760,20 @@ function drawUKPage(ctx, v) {
   label(ctx, tab, tx - tw / 2, ty - 14, { size: 15, bold: true, align: "center", color: "#ffffff", halo: false });
 }
 
-function drawOSGrid(ctx, v) {
-  const [e0, n0, e1, n1] = osExtent(v);
+function drawOSGrid(ctx, v, to = os2plane, from = osFromLL) {
+  const [e0, n0, e1, n1] = osExtent(v, from);
   const sp = [1e3, 1e4, 1e5].find((s) => s * v.s >= 60) || 1e5;
   ctx.strokeStyle = OS_GRID; ctx.lineWidth = 1.2;
   const eA = Math.floor(e0 / sp) * sp, nA = Math.floor(n0 / sp) * sp;
-  for (let e = eA; e <= e1; e += sp) strokeOS(ctx, v, e, n0, e, n1, 6);
-  for (let n = nA; n <= n1; n += sp) strokeOS(ctx, v, e0, n, e1, n, 6);
+  for (let e = eA; e <= e1; e += sp) strokeOS(ctx, v, e, n0, e, n1, 6, to);
+  for (let n = nA; n <= n1; n += sp) strokeOS(ctx, v, e0, n, e1, n, 6, to);
   const txt = (val) => (sp === 1e3 ? String(Math.floor(val / 1000) % 100).padStart(2, "0") : sp === 1e4 ? String(Math.floor(val / 1e4) % 10) + "0" : grp(val));
   for (let e = eA + sp; e <= e1; e += sp) {
-    const [x, y] = v.px(...os2plane(e, n1));
+    const [x, y] = v.px(...to(e, n1));
     if (x > 20 && x < v.w - 20) label(ctx, txt(e), x + 3, Math.max(y, 0) + 30, { size: 13, bold: true, color: OS_GREEN });
   }
   for (let n = nA + sp; n <= n1; n += sp) {
-    const [x, y] = v.px(...os2plane(e1, n));
+    const [x, y] = v.px(...to(e1, n));
     if (y > 50 && y < v.h - 40) label(ctx, txt(n), Math.min(x, v.w) - 6, y - 9, { size: 13, bold: true, color: OS_GREEN, align: "right" });
   }
 }
@@ -831,6 +843,159 @@ function drawOSShift(ctx, v) {
   label(ctx, "OSGB36 lat/lon read as GPS", xs + 10, ys + 16, { size: 13, bold: true, color: C.tm });
 }
 
+// ---------------------------------------------------------------- New Zealand: NZTM and the Topo50 sheets
+
+// NZTM easting, northing onto this (WGS84 UTM) plane: NZGD2000 is taken as WGS84
+const nz2plane = (e, n) => fwd(...Z.fromGrid(e, n));
+const nzFromLL = (lon, lat) => Z.toGrid(lon, lat);
+function nzCam(e, n, span) { const [E, N] = nz2plane(e, n); return { E, N, span }; }
+
+function nzSteps() {
+  const S = [], z = NZ.nz, sh = NZ.sheet, nm = P.name, SH = Z.SHEET;
+  const part = { title: "Part 2: New Zealand's Topo50 sheets and NZTM", hint: "One grid for the whole country, and the national map series cut from it (sheet layout from LINZ)." };
+  const kmE = Math.floor(z.e / 1000), kmN = Math.floor(z.n / 1000), k2 = (v) => String(v % 100).padStart(2, "0");
+  const sheetCam = sh ? nzCam((sh.west + sh.east) / 2, (sh.north + sh.south) / 2 + 1500, SH.h * 1.24) : null;
+  const [oLon, oLat] = Z.fromGrid(0, 0);
+  const ppm = (k) => `${k >= 1 ? "+" : "-"}${Math.abs((k - 1) * 1e5).toFixed(0)} cm per km`;
+  const kW = Z.scaleAndConvergence(166.45, -45.8).k;
+  const n = NZD.sheets.length;
+  if (sh) S.push({
+    part, title: `Sheet ${sh.code}${NZ.name ? ` ${NZ.name}` : ""}`,
+    body: `<p>New Zealand's national topographic maps, the <b>NZTopo50</b> series from Toitu Te Whenua Land Information New Zealand
+      (LINZ), are 1:50 000 sheets of <b>24 by 36 km</b>. ${nm} is on sheet <b>${sh.code}</b>${NZ.name ? ` (${NZ.name})` : ""}.</p>
+      <p>A Topo50 grid reference is the sheet and six figures: <b>${z.six.text}</b>. The figures are read off the kilometre grid
+      printed on the sheet, ${k2(kmE)} across and ${k2(kmN)} up, then tenths: the same scheme as Part 1, on a different grid.</p>`,
+    cam: sheetCam, L: { tiles: 1, nzSheet: 1 }, rows: ["nzs"], hi: ["atl", "d-km", "d-hm"], click: true
+  });
+  S.push({
+    part: sh ? null : part, title: `${n} sheets on a lattice`,
+    body: `<p>The sheets sit on a lattice of the grid, so a sheet code is arithmetic: the two digits are the column and the
+      letters the row. A sheet's west edge is <b>E 988 000 + 24 000 x column</b> and its north edge is
+      <b>N 6 810 000 - 36 000 x row</b>, with rows lettered AA, AB, ... AZ, BA, ... from the north, skipping I and O.
+      ${sh ? `${sh.code} is column ${sh.col} and row ${sh.code.slice(0, 2)} (${sh.row}): west edge E ${grp(sh.west)}, north edge N ${grp(sh.north)}.` : ""}</p>
+      <p>All ${n} sheets in LINZ's list fall on it. Sheets that would be all sea are left out, and some printed maps join
+      a sliver of a neighbouring sheet onto their own.</p>`,
+    cam: nzCam(1590000, 5470000, 1500e3), L: { coast: 1, nzAll: 1 }, rows: ["nzs", "nzen"], hi: ["atl"], click: true
+  });
+  S.push({
+    title: "Six figures, without the leading digits",
+    body: `<p>In full ${nm} is <b>E ${grp(z.e)}, N ${grp(z.n)}</b> on <b>NZTM2000</b> (EPSG:2193). The reference keeps the kilometre
+      and 100 m digits, <b>${z.six.e}</b> and <b>${z.six.n}</b>, and drops the ${String(Math.floor(z.e / 1e5))} and
+      ${String(Math.floor(z.n / 1e5))} in front: the sheet code stands in for them, as the MGRS and National Grid letters do.</p>
+      <p>The faint lines are the UTM grid of Part 1. NZTM is turned ${Math.abs(z.conv - D.conv).toFixed(2)}${DEG} from it here.</p>`,
+    cam: nzCam(Math.floor(z.e / 100) * 100 + 50, Math.floor(z.n / 100) * 100 + 50, 2600), L: { tiles: 0.85, nzGrid: 1, nzCell: 1, grid: 0.25 },
+    rows: ["nzs", "nzen"], hi: ["d-km", "d-hm"], click: true
+  });
+  S.push({
+    title: "One zone for both islands",
+    body: `<p>New Zealand spans UTM zones 58, 59 and 60. NZTM uses one transverse Mercator for all of it, on <b>173${DEG}E</b>
+      (E 1 600 000), with UTM's own scale of <b>0.9996</b> there.</p>
+      <p>The country is about a thousand kilometres wide across the grid, about twice the width of a UTM zone, so the scale
+      runs well past true at the edges: ${ppm(kW)} in Fiordland, against ${ppm(z.k)} at ${nm}. The dashed lines are where
+      the scale is true, about ${grp(z.trueScale / 1000)} km either side of 173${DEG}E.</p>`,
+    cam: nzCam(1590000, 5470000, 1500e3), L: { coast: 1, nzAll: 0.25, nzCM: 1, edges: 0.6 }, rows: ["nzen"], hi: ["d-hk"]
+  });
+  S.push({
+    title: "0,0 in Antarctica",
+    body: `<p>NZTM's false easting is <b>1 600 000</b> and its false northing <b>10 000 000</b>. So the easting is 1 600 km plus
+      the distance east of 173${DEG}E, and every northing is 10 000 km less the distance south of the equator, as in UTM's south.</p>
+      <p>Follow those back to <b>E 0, N 0</b> and the grid's 0,0 lands at <b>${fmtLat(oLat)} ${fmtLon(oLon)}</b>, on the East
+      Antarctic ice sheet, in the Australian Antarctic Territory. In NZTM, eastings run from about 1 090 000 in Fiordland to
+      2 090 000 at East Cape, and northings from 4 750 000 on Stewart Island to 6 190 000 at Cape Reinga: both have seven digits.</p>`,
+    cam: { globe: [128, -62], zoom: 1.5 }, L: { nzOrigin: 1 }, rows: ["nzen"], hi: ["d-hk"]
+  });
+  if (sh) S.push({
+    title: `Back to ${sh.code}`,
+    body: `<ul class="decode">
+        <li><b>${sh.code}</b>: row ${sh.code.slice(0, 2)}, column ${sh.col} of a 24 by 36 km lattice on NZTM.</li>
+        <li><b>${z.six.e} ${z.six.n}</b>: kilometres and 100 m east and north, with the leading digits left to the sheet.</li>
+        <li><b>E ${grp(z.e)}, N ${grp(z.n)}</b>: metres on one zone centred on 173${DEG}E, from a 0,0 in Antarctica.</li>
+      </ul>`,
+    cam: sheetCam, L: { tiles: 1, nzSheet: 1 }, rows: ["nzs", "nzen"], hi: ["all"], click: true
+  });
+  return S;
+}
+
+function drawNZ(ctx, v, L, base) {
+  const al = (k) => base * L(k);
+  if (L("nzAll") > 0.01) { ctx.globalAlpha = al("nzAll"); drawNZAll(ctx, v); }
+  if (L("nzSheet") > 0.01) { ctx.globalAlpha = al("nzSheet"); drawNZSheet(ctx, v); }
+  if (L("nzGrid") > 0.01) { ctx.globalAlpha = al("nzGrid"); drawOSGrid(ctx, v, nz2plane, nzFromLL); }
+  if (L("nzCell") > 0.01) { ctx.globalAlpha = al("nzCell"); drawNZCell(ctx, v); }
+  if (L("nzCM") > 0.01) { ctx.globalAlpha = al("nzCM"); drawNZCM(ctx, v); }
+}
+
+function drawNZAll(ctx, v) {
+  const w = Z.SHEET.w * v.s;
+  for (const code of NZD.sheets) {
+    const f = Z.sheetFrame(code), mine = NZ.sheet && NZ.sheet.code === code;
+    const pts = osPoly(ctx, v, f.west, f.south, f.east, f.north, nz2plane);
+    ctx.fillStyle = mine ? "rgba(232,89,12,0.45)" : "rgba(255,159,67,0.1)"; ctx.fill();
+    ctx.strokeStyle = mine ? "#ff9f43" : "rgba(255,159,67,0.6)"; ctx.lineWidth = mine ? 2 : 0.7; ctx.stroke();
+    if (w > 26) label(ctx, code, (pts[0][0] + pts[2][0]) / 2, (pts[0][1] + pts[2][1]) / 2, { size: Math.min(12, w / 3.2), align: "center", color: mine ? "#ffffff" : "#ffd8b0", bold: mine });
+  }
+}
+
+function drawNZSheet(ctx, v) {
+  const sh = NZ.sheet;
+  if (!sh) return;
+  osPoly(ctx, v, sh.west, sh.south, sh.east, sh.north, nz2plane);
+  ctx.fillStyle = "rgba(255,250,235,0.08)"; ctx.fill();
+  // the kilometre grid printed on the sheet, every 1 km, heavier every 10 km
+  for (let e = sh.west; e <= sh.east; e += 1000) {
+    ctx.strokeStyle = e % 10000 ? "rgba(61,220,132,0.45)" : OS_GRID; ctx.lineWidth = e % 10000 ? 0.7 : 1.6;
+    strokeOS(ctx, v, e, sh.south, e, sh.north, 2, nz2plane);
+  }
+  for (let n = sh.south; n <= sh.north; n += 1000) {
+    ctx.strokeStyle = n % 10000 ? "rgba(61,220,132,0.45)" : OS_GRID; ctx.lineWidth = n % 10000 ? 0.7 : 1.6;
+    strokeOS(ctx, v, sh.west, n, sh.east, n, 2, nz2plane);
+  }
+  osPoly(ctx, v, sh.west, sh.south, sh.east, sh.north, nz2plane);
+  ctx.strokeStyle = "#e8590c"; ctx.lineWidth = 3; ctx.stroke();
+  // the pin's kilometre square
+  const kE = Math.floor(NZ.nz.e / 1000) * 1000, kN = Math.floor(NZ.nz.n / 1000) * 1000;
+  osPoly(ctx, v, kE, kN, kE + 1000, kN + 1000, nz2plane);
+  ctx.fillStyle = "rgba(255,211,77,0.35)"; ctx.fill(); ctx.strokeStyle = C.tm; ctx.lineWidth = 2; ctx.stroke();
+  const kpx = 1000 * v.s, k2 = (val) => String(Math.round(val / 1000) % 100).padStart(2, "0");
+  if (kpx >= 9) {
+    const step = kpx >= 22 ? 1000 : kpx >= 11 ? 2000 : 4000;
+    for (let e = sh.west; e <= sh.east; e += step) for (const n of [sh.north + 700, sh.south - 700]) {
+      const [x, y] = v.px(...nz2plane(e, n));
+      label(ctx, k2(e), x, y, { size: 11, bold: e % 10000 === 0, align: "center", color: OS_GREEN });
+    }
+    for (let n = sh.south; n <= sh.north; n += step) for (const [e, a] of [[sh.west - 500, "right"], [sh.east + 500, "left"]]) {
+      const [x, y] = v.px(...nz2plane(e, n));
+      label(ctx, k2(n), x, y, { size: 11, bold: n % 10000 === 0, align: a, color: OS_GREEN });
+    }
+  }
+  const [tx, ty0] = v.px(...nz2plane(sh.east, sh.north + 1400)), ty = ty0 - 8;
+  const tab = `${sh.code}${NZ.name ? " " + NZ.name : ""}`;
+  ctx.font = "600 15px system-ui, sans-serif";
+  const tw = ctx.measureText(tab).width + 16;
+  ctx.fillStyle = "#c2410c"; ctx.fillRect(tx - tw, ty - 24, tw, 24);
+  label(ctx, tab, tx - tw / 2, ty - 12, { size: 15, bold: true, align: "center", color: "#ffffff", halo: false });
+}
+
+function drawNZCell(ctx, v) {
+  const z = NZ.nz, e = Math.floor(z.e / 100) * 100, n = Math.floor(z.n / 100) * 100;
+  const pts = osPoly(ctx, v, e, n, e + 100, n + 100, nz2plane);
+  ctx.fillStyle = "rgba(123,237,159,0.25)"; ctx.fill(); ctx.strokeStyle = OS_GREEN; ctx.lineWidth = 2.5; ctx.stroke();
+  label(ctx, z.six.text, pts[3][0] + 6, pts[3][1] + 14, { color: OS_GREEN, bold: true, size: 13 });
+}
+
+function drawNZCM(ctx, v) {
+  ctx.strokeStyle = C.cm; ctx.lineWidth = 2.5;
+  strokeOS(ctx, v, 16e5, 46e5, 16e5, 63e5, 20, nz2plane);
+  const [x, y] = v.px(...nz2plane(16e5, 62.6e5));
+  label(ctx, `173${DEG}E = E 1 600 000, k 0.9996`, x + 8, y, { color: C.cm, size: 13, bold: true });
+  ctx.setLineDash([7, 5]); ctx.lineWidth = 1.8; ctx.strokeStyle = C.tm;
+  const off = NZ.nz.trueScale;
+  for (const e of [16e5 - off, 16e5 + off]) strokeOS(ctx, v, e, 46e5, e, 63e5, 20, nz2plane);
+  ctx.setLineDash([]);
+  const [xs, ys] = v.px(...nz2plane(16e5 + off, 48e5));
+  label(ctx, "k = 1", xs + 6, ys, { color: C.tm, size: 13, bold: true });
+}
+
 // ---------------------------------------------------------------- panel and refbar
 
 function renderSteps() {
@@ -858,6 +1023,11 @@ function renderRefbar() {
     if (U.page) rows.uka = `<span class="k">Atlas</span><span class="v"><i class="atl">page ${U.page.page}</i> <i class="atl">${U.page.letter}${U.page.number}</i></span>`;
     rows.os = `<span class="k">Nat. Grid</span><span class="v"><i class="d-hk">${o.square}</i> ${shortSpans([o.six.e, o.six.n])}</span>`;
     rows.osen = `<span class="k">OSGB36</span><span class="v"><span class="d-e">E ${digitSpans(o.e)}</span> <span class="d-n">N ${digitSpans(o.n)}</span></span>`;
+  }
+  if (NZ) {
+    const z = NZ.nz;
+    rows.nzs = `<span class="k">Topo50</span><span class="v">${NZ.sheet ? `<i class="atl">${NZ.sheet.code}</i> ` : ""}${shortSpans([z.six.e, z.six.n])}</span>`;
+    rows.nzen = `<span class="k">NZTM</span><span class="v"><span class="d-e">E ${digitSpans(z.e)}</span> <span class="d-n">N ${digitSpans(z.n)}</span></span>`;
   }
   $("refbar").innerHTML = `<button type="button" class="rb-toggle" aria-label="Show or hide the grid reference card"></button>` +
     Object.entries(rows).map(([k, v]) => `<div class="row r-${k}">${v}</div>`).join("");
@@ -1052,6 +1222,7 @@ function drawPlane(ctx, cam, L, w, h, dpr) {
   }
   if (L("grid") > 0.01) { ctx.globalAlpha = al("grid"); drawGrid(ctx, v); }
   if (U) drawUK(ctx, v, L, base);
+  if (NZ) drawNZ(ctx, v, L, base);
   if (L("sq100") > 0.01) { ctx.globalAlpha = al("sq100"); drawSquares(ctx, v); }
   if (L("cell100") > 0.01) { ctx.globalAlpha = al("cell100"); drawCell(ctx, v, 100, C.hm); }
   if (L("cell10") > 0.01) { ctx.globalAlpha = al("cell10"); drawCell(ctx, v, 10, C.tm); }
@@ -1683,6 +1854,29 @@ function drawGlobe(ctx, cam, L, w, h) {
     if (c > 0) { ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(x, y, 4, 0, 2 * Math.PI); ctx.fill(); }
     ctx.globalAlpha = a0;
   }
+  // NZTM's own axes, back to its 0,0
+  if (NZ && L("nzOrigin") > 0.01) {
+    const a0 = ctx.globalAlpha;
+    ctx.globalAlpha = a0 * L("nzOrigin");
+    const cm = []; for (let lat = -90; lat <= -30; lat += 1) cm.push([173, lat]);
+    line(cm, C.cm, 2);
+    const eAxis = [], nAxis = [];
+    for (let n = 0; n <= 1e7; n += 1e5) eAxis.push(Z.fromGrid(0, n));
+    for (let e = 0; e <= 16e5; e += 4e4) nAxis.push(Z.fromGrid(e, 0));
+    line(eAxis, "rgba(255,255,255,0.8)", 1.5); line(nAxis, "rgba(255,255,255,0.8)", 1.5);
+    const [ol, op] = Z.fromGrid(0, 0);
+    let [x, y, c] = proj(ol, op);
+    if (c > 0) {
+      ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(x, y, 6, 0, 2 * Math.PI); ctx.fill();
+      label(ctx, "NZTM 0, 0", x + 10, y - 8, { size: 15, bold: true });
+      label(ctx, `${fmtLat(op)} ${fmtLon(ol)}`, x + 10, y + 10, { size: 12, color: "#cfd8e6" });
+    }
+    [x, y, c] = proj(...Z.fromGrid(0, 5e6));
+    if (c > 0) label(ctx, "E 0", x + 6, y, { size: 12, bold: true });
+    [x, y, c] = proj(173, -32);
+    if (c > 0) label(ctx, `173${DEG}E`, x + 6, y, { size: 12, bold: true, color: C.cm });
+    ctx.globalAlpha = a0;
+  }
   // the pin's zone outline and the pin
   const out = [];
   for (let lat = -80; lat <= 84; lat += 2) out.push([lon0 - 3, lat]);
@@ -1808,6 +2002,7 @@ window.addEventListener("hashchange", () => {
 new ResizeObserver(() => { if (!embed) t = scrollT(); schedule(); }).observe($("stage"));
 
 shareLinks("playproj: Grid references", { height: 600 });
+NZD = await fetch(new URL("../data/nz-topo50.json", import.meta.url)).then((r) => (r.ok ? r.json() : null)).then((j) => (j ? { ...j, has: new Set(j.sheets) } : null)).catch(() => null);
 MR = await fetch(new URL("../data/tas-mapref.json", import.meta.url)).then((r) => (r.ok ? r.json() : null)).then((j) => (j ? R.read(j) : null)).catch(() => null);
 setPlace();
 syncPlaceSel();

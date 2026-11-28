@@ -31,6 +31,7 @@ export * as mgrs from "./mgrs.js";
 export * as gridref from "./gridref.js";
 export * as mapref from "./mapref.js";
 export * as osgb from "./osgb.js";
+export * as nzgrid from "./nzgrid.js";
 export * as aatgrid from "./aatgrid.js";
 export * as polarstere from "./polarstere.js";
 export * as seaice from "./seaice.js";
