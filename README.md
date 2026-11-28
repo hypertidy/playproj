@@ -958,6 +958,25 @@ units (`data/insets-10m.json`, from `test/make-insets-data.py`). Hash keys:
 `s`, `scene`, `main`, `aks`, `L`, `tp`, `outline`, `leader`, `ctx`, `grat`,
 `names`, `edit`, `v`.
 
+## Australia, faceted
+
+`australia.html` is the alternative to insets for Australia, its external
+territories and the Australian Antarctic Territory: an overview panel that
+holds the true geography and the numbered footprint of every other panel,
+and a grid of panels, each a full map in its own CRS (GDA2020 Australian
+Albers for the mainland, the MGA zone of each territory, EPSG:3031 for the
+AAT) fitted to its land. Pieces can be grouped (Australia, the Tasman Sea,
+the Indian Ocean Territories, the reefs, the sub-Antarctic islands, the AAT;
+grouped panels are a Lambert azimuthal on the group) or given a panel each,
+fitted or all at one scale, or drawn as one frame. Nine steps go from the
+mainland and Tasmania (a frame 51 percent land) through Macquarie (37), the
+external territories (21, 7 200 km wide), Heard and the AAT, and end on a
+grouping of your own. `src/core/facets.js` has the pieces, groups, panels,
+layout and footprints, checked by `test/check-facets.mjs`. Land is Natural
+Earth 1:10m admin-0 map units (`data/australia-10m.json`, from
+`test/make-australia-data.py`). Hash keys: `s`, `on`, `split`, `shared`,
+`single`, `ctx`, `grat`.
+
 ## Nuyina
 
 `nuyina.html` follows RSV Nuyina, Australia's icebreaker, along a voyage. The
@@ -1634,6 +1653,7 @@ homage.html, js/homage.js              homage storyboard: UN emblem, Gall-Peters
 vicgrid.html, js/vicgrid.js            VicGrid: Victoria's one-zone grid against MGA, NSW/SA Lambert, Albers
 chile.html, js/chile.js                Which grid for Chile? UTM 19S/18S, one TM, Faja 1, Albers, LAEA, LCC over the land
 insets.html, js/insets.js              Insets: why Alaska is in a box; true place, GS50, moved land, ten other countries, your own layout
+australia.html, js/australia.js        Australia, faceted: overview plus panels in their own CRS for every territory and the AAT
 sentinel.html, js/sentinel.js          MGRS and Sentinel-2 page
 gridref.html, js/gridref.js            Grid references: a scrolling explainer from a street directory page out to UTM and UPS
 aatgrid.html, js/aatgrid.js            AAT grid: a mini aatgrid, one tile lattice in every UTM south zone
@@ -1727,6 +1747,7 @@ src/core/gridref.js               grid references: point scale, convergence, tru
 src/core/vicgrid.js               VicGrid, MGA, NSW/SA Lambert, Australian Albers; AGD66/GDA94/GDA2020 shifts
 src/core/chile.js                 grids for mainland Chile (UTM, TM, Faja 1, Albers, LAEA, LCC, eqc), factors, land sample and summary
 src/core/inset.js                 composite maps: GS50 and alsk, d3 geoAlbersUsa pieces, affine placement, ground area, frame statistics, scenes
+src/core/facets.js                Australia faceted: pieces, groups, panels in official CRSs, grid layout, footprints, one-frame statistics
 src/core/sight.js                 terrain visibility: gnomonic wedges or the sun, a horizon kept front to back
 src/core/peel.js                  gores (sinu, cass, tmerc), the peel from orange to flower, the spiral peel and its Euler spiral
 src/core/affine.js                geotransform: apply, invert, parts, extent, world file, fit to control points

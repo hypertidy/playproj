@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playproj: Australia, faceted</title>
+<meta name="description" content="Australia, its external territories and the Australian Antarctic Territory as well sized panels, each in its own CRS, with an overview panel that holds the true geography and every panel's footprint: the alternative to insets.">
+<link rel="stylesheet" href="css/app.css">
+<script src="js/mobile.js" defer></script>
+<script type="module" src="js/australia.js"></script>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <canvas id="map" aria-label="An overview panel of Australia and its territories with the footprint of each panel, and a grid of panels each in its own CRS"></canvas>
+    <a id="open-full" class="open-full" href="./australia.html" target="_blank" rel="noopener" hidden>Open in playproj</a>
+  </main>
+
+  <aside id="panel">
+    <header>
+      <h1>playproj</h1>
+      <nav class="pages"><span class="group"><a href="./guide.html">Guide</a></span><span class="group"><a href="./">Perspective</a><a href="./cones.html">Cones and cylinders</a><a href="./sight.html">Sight and shade</a></span><span class="group"><a href="./spilhaus.html">Spilhaus</a><a href="./globals.html">Globals and interrupteds</a><a href="./peel.html">Peeling the orange</a><a href="./tissot.html">Distortion</a><a href="./chile.html">Which grid for Chile?</a><a href="./insets.html">Insets</a><a href="./australia.html" aria-current="page">Australia, faceted</a></span><span class="group"><a href="./ellipsoid.html">Ellipsoid</a><a href="./geoid.html">Geoid</a><a href="./ortho.html">Orthorectification</a></span><span class="group"><a href="./cells.html">s2 cells</a><a href="./h3.html">H3 hexagons</a><a href="./bins.html">L3 bins</a><a href="./grids.html">Model grids</a><a href="./indexspace.html">Index space</a><a href="./sentinel.html">MGRS and Sentinel-2</a><a href="./gridref.html">Grid references</a><a href="./aatgrid.html">AAT grid</a><a href="./structure.html">Tiles and overviews</a><a href="./rectilinear.html">Rectilinear chunks</a><a href="./store.html">Icechunk and Zarr</a><a href="./rasterize.html">Rasterize</a><a href="./affine.html">Affine</a><a href="./regular.html">Regular in what?</a><a href="./hull.html">Convex hull</a></span><span class="group"><a href="./catastrophes.html">Catastrophes</a><a href="./texture.html">Texture mapping</a><a href="./penguin.html">Penguin datum</a><a href="./example.html">For example</a></span><span class="group"><a href="./homage.html">Homage</a><a href="./vicgrid.html">VicGrid</a></span><span class="group"><a href="./nuyina.html">Nuyina</a><a href="./rhumb.html">Rhumb lines</a><a href="./coastlen.html">Coastline length</a><a href="./frame.html">Frame</a><a href="./fourd.html">Time and depth</a><a href="./cutaway.html">Cutaway</a><a href="./voxels.html">Voxels</a><a href="./story.html">Story</a><a href="./navigate.html">Navigation</a></span></nav>
+    </header>
+
+    <section class="embed-keep">
+      <p id="step-title" class="step-title"></p>
+      <p id="caption" class="describe"></p>
+      <div class="buttons">
+        <button id="prev" type="button">Back</button>
+        <button id="next" type="button">Next</button>
+        <span id="count" class="hint"></span>
+      </div>
+    </section>
+
+    <section class="embed-keep">
+      <div id="picker" class="toggles"></div>
+      <div class="toggles">
+        <label><input id="split" type="checkbox"> One panel each</label>
+        <label><input id="shared" type="checkbox"> One scale for all</label>
+        <label><input id="single" type="checkbox"> One frame only</label>
+        <label><input id="ctx" type="checkbox"> Other land</label>
+        <label><input id="grat" type="checkbox"> Graticule</label>
+      </div>
+    </section>
+
+    <section>
+      <table id="stats" class="readout"></table>
+      <table id="panels" class="readout"></table>
+    </section>
+
+    <section>
+      <ol id="steps" class="steps"></ol>
+    </section>
+
+    <section class="about">
+      <details open>
+        <summary>How it works</summary>
+        <p>Australia's land runs from the Cocos (Keeling) Islands at 96.8 E to Norfolk Island at 168 E, and
+          from Ashmore Reef at 12 S to Heard Island at 53 S. With the Australian Antarctic Territory it runs
+          to the South Pole. An inset map puts the far pieces in boxes on the main map. This page does it
+          the other way round. Every piece or group gets a panel of its own, a full map in its own CRS
+          fitted to its land. One overview panel holds the true geography and the footprint of every other
+          panel, numbered. The locator becomes the main thing, and no panel is a guest on another.</p>
+        <p>Panels use GDA2020 where it has a grid: the Australian Albers (EPSG:9473) for the mainland and
+          the MGA zone of each territory. The AAT uses the Antarctic polar stereographic (EPSG:3031).
+          Grouped panels use a Lambert azimuthal on the middle of their group. The overview, and the one
+          frame for everything, use a Lambert azimuthal on the middle of the land shown. The table gives
+          what one frame for the same land would be, its size and the share of it that is land. For each
+          panel it gives the width it shows, its scale against the first panel and the share of it that
+          is land.</p>
+        <p>The AAT is Antarctica between 45 E and 160 E less Adelie Land (136 11' E to 142 02' E), south of
+          60 S, as the Australian Antarctic Territory Act 1954 has it. Lord Howe Island is part of New South
+          Wales and Macquarie Island part of Tasmania. The others are external territories.
+          <code>src/core/facets.js</code> has the pieces, groups, panels, layout and footprints, checked in
+          <code>test/check-facets.mjs</code>. Projections are those of <code>src/core/inset.js</code> and
+          <code>src/core/polarstere.js</code>.</p>
+        <p>Hash keys: <code>s</code> (step), <code>on</code> (pieces shown), <code>split</code>,
+          <code>shared</code>, <code>single</code>, <code>ctx</code>, <code>grat</code>.</p>
+        <ul class="credits">
+          <li>Land from <a href="https://www.naturalearthdata.com/">Natural Earth</a> 1:10m admin-0 map units
+            (public domain), made by <code>test/make-australia-data.py</code>. The Coral Sea Islands and
+            Ashmore and Cartier are each one or two tiny polygons at this scale.</li>
+          <li>Definitions from the <a href="https://epsg.org/">EPSG Geodetic Parameter Dataset</a>;
+            <a href="https://www.icsm.gov.au/gda2020">GDA2020</a> (ICSM).</li>
+          <li><a href="https://www.legislation.gov.au/C1954A00052/latest/text">Australian Antarctic Territory
+            Act 1954</a>; <a href="https://www.infrastructure.gov.au/territories-regions-cities/territories">Australia's
+            territories</a>.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="share">
+      <button id="copy-link" type="button">Copy link</button>
+      <button id="copy-embed" type="button">Copy embed code</button>
+      <a href="https://github.com/hypertidy/playproj">Source and contributing</a>
+    </section>
+  </aside>
+</div>
+</body>
+</html>

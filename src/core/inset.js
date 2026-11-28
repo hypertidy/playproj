@@ -25,6 +25,7 @@ import { tmerc, tmercInverse } from "./mgrs.js";
 import { lcc, aea } from "./vicgrid.js";
 import { laea } from "./chile.js";
 import { factors } from "./tissot.js";
+import { polarStere } from "./polarstere.js";
 
 const D2R = Math.PI / 180, HALFPI = Math.PI / 2;
 const GRS80 = { a: 6378137, es: 0.0066943800229 };
@@ -162,6 +163,11 @@ export function crs(spec) {
       const q = modster({ lon0: gs ? -120 : -152, lat0: gs ? 45 : 64, coef: gs ? (sphere ? GS50_S : GS50_E) : (sphere ? ALSK_S : ALSK_E), ...e });
       g = { ...q, ...e, name: gs ? "GS50, modified stereographic of the 50 states" : "Modified stereographic of Alaska",
         proj: `+proj=${p.proj} ${sphere ? "+R=6370997" : "+ellps=clrk66"} +units=m +no_defs` };
+      break;
+    }
+    case "stere": {
+      const q = polarStere(p.def || "EPSG:3031");
+      g = { forward: q.forward, inverse: q.inverse, a: 6378137, es: 0.00669437999014, name: q.def.name, proj: q.proj };
       break;
     }
     case "d3aea": {

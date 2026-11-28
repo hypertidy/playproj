@@ -43,6 +43,7 @@ export * as ortho from "./ortho.js";
 export * as vicgrid from "./vicgrid.js";
 export * as chile from "./chile.js";
 export * as inset from "./inset.js";
+export * as facets from "./facets.js";
 export * as sight from "./sight.js";
 
 export * as geo from "./geo.js";
