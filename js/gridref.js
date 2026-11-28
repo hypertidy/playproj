@@ -12,6 +12,10 @@
 // The panel's scroll position is a continuous step number: the camera and
 // every layer's opacity are interpolated between the steps either side of
 // it. The numbers are src/core/gridref.js, on src/core/mgrs.js.
+//
+// Part 2 follows the pin into a local system where there is one: the
+// Tasmanian street atlas and map book (src/core/mapref.js), or Britain's
+// National Grid with a made-up London atlas (src/core/osgb.js).
 
 import * as M from "../src/core/mgrs.js";
 import * as G from "../src/core/gridref.js";
@@ -19,6 +23,7 @@ import { readParams, hashWriter } from "../src/scene/hash.js";
 import { shareLinks, isEmbed } from "../src/scene/share.js";
 import * as R from "../src/core/mapref.js";
 import { shift } from "../src/core/vicgrid.js";
+import * as O from "../src/core/osgb.js";
 import { loadCoastline } from "./data.js";
 
 const $ = (id) => document.getElementById(id);
@@ -65,6 +70,8 @@ function placeFromState() {
 let P = null, D = null, zone = 55, south = true, lon0 = 147, STEPS = [];
 // the Tasmanian street atlas and map book (theLIST), and the pin's place in them
 let MR = null, T = null;
+// the pin on the British National Grid, and its page in the made-up London atlas
+let U = null;
 let fwd = null, inv = null;
 
 function setPlace() {
@@ -82,6 +89,11 @@ function setPlace() {
     const hits = R.locate(MR, u.e, u.n);
     const sa = hits.find((h) => h.book === "SA" && h.square) || null, mb = hits.find((h) => h.book === "MB") || null;
     if (sa || mb) T = { e94: u.e, n94: u.n, dE: D.e - u.e, dN: D.n - u.n, sa, mb, hits };
+  }
+  U = null;
+  if (!T && O.inGB(P.lon, P.lat)) {
+    const os = O.describe(P.lon, P.lat);
+    if (os) U = { os, page: O.countyPage(os.e, os.n) };
   }
   STEPS = buildSteps();
   renderSteps();
@@ -125,7 +137,9 @@ function buildSteps() {
   const kEdge = G.scaleAndConvergence(lon0 + 3, 0, zone).k, off = G.trueScaleOffset(P.lat, zone);
   const poleN = G.poleNorthing(south), [oLon, oLat] = d.origin;
   const aus = south && P.lon > 110 && P.lon < 156 && P.lat > -45;
-  const gdaName = aus ? `MGA zone ${zone} (the Map Grid of Australia on GDA2020, EPSG:${7800 + zone})` : `UTM zone ${zone}${south ? "S" : "N"} (EPSG:${d.epsg})`;
+  const gdaName = aus ? `MGA zone ${zone} (the Map Grid of Australia on GDA2020, EPSG:${7800 + zone})`
+    : U ? `UTM zone ${zone}${south ? "S" : "N"} (EPSG:${d.epsg}), the grid of GPS and military maps; Britain's own National Grid comes in Part 2`
+    : `UTM zone ${zone}${south ? "S" : "N"} (EPSG:${d.epsg})`;
   const midN = (d.n + eq) / 2;
   const tall = Math.abs(d.n - eq) * 1.25 + 600e3;
   const ppm = (k) => `${k >= 1 ? "+" : "-"}${Math.abs((k - 1) * 1e5).toFixed(0)} cm per km`;
@@ -331,6 +345,7 @@ function buildSteps() {
   // in Tasmania, theLIST's own topographic map for the street steps
   if (T) for (const i of [0, 1, 2, 3, S.length - 1]) { const L = S[i].L; if (L.tiles) { L.topo = L.tiles; delete L.tiles; } }
   if (T) S.push(...bookSteps());
+  if (U) S.push(...ukSteps());
   return S;
 }
 
@@ -364,7 +379,7 @@ function bookSteps() {
   const sq = sa && sa.square, mbs = mb && mb.square;
 
   S.push({
-    part: 2, title: "Two books",
+    part: { title: "Part 2: the street atlas and the map book", hint: "Tasmania's two emergency map books, from theLIST." }, title: "Two books",
     body: `<p>Tasmania has two books of maps that emergency services use for callouts, and theLIST (Land Tasmania) publishes
       their pages and squares. The <b>map book</b> (grey) covers the whole state in ${mbP.length} pages, MB001 to
       MB${String(Math.max(...mbP.map((p) => p.page))).padStart(3, "0")}. The <b>street atlas</b> (blue) covers the towns in
@@ -538,10 +553,288 @@ function drawUV(ctx, v) {
   ctx.fillStyle = C.tm; ctx.beginPath(); ctx.arc(x0, y0, 5, 0, 2 * Math.PI); ctx.fill();
 }
 
+// ---------------------------------------------------------------- Great Britain: the National Grid and a London atlas
+
+// National Grid easting, northing (OSGB36) onto this (WGS84 UTM) plane
+function os2plane(e, n) { const [l, p] = O.fromGrid(e, n); return fwd(...O.toWGS84(l, p)); }
+function osCam(e, n, span) { const [E, N] = os2plane(e, n); return { E, N, span }; }
+
+function ukSteps() {
+  const S = [], o = U.os, pg = U.page, nm = P.name, A = O.COUNTY;
+  const part = { title: "Part 2: a London atlas and the National Grid", hint: "Britain's own grid, from a street atlas page out to its 0,0 off the Scilly Isles." };
+  const pageCam = pg ? osCam((pg.west + pg.east) / 2, (pg.north + pg.south) / 2 + 150, 4000 * 1.3) : null;
+  const kmE = Math.floor(o.e / 1000), kmN = Math.floor(o.n / 1000);
+  const k2 = (v) => String(v % 100).padStart(2, "0");
+  const [l36, p36] = [o.lon36, o.lat36];
+  const shiftM = Math.hypot((l36 - P.lon) * 111320 * Math.cos(P.lat * D2R), (p36 - P.lat) * 111200);
+  const kE0 = (() => { const [l, p] = O.fromGrid(0, o.n); return O.scaleAndConvergence(l, p).k; })();
+  const ppm = (k) => `${k >= 1 ? "+" : "-"}${Math.abs((k - 1) * 1e5).toFixed(0)} cm per km`;
+  if (pg) S.push({
+    part, title: `Page ${pg.page}, square ${pg.letter}${pg.number}`,
+    body: `<p>Many British street atlases are cut straight from the National Grid. In this one (made up for the page, but built
+      that way) ${nm} is on <b>page ${pg.page}, square ${pg.letter}${pg.number}</b>: pages 3 km wide and 4 km tall, 6 x 8 squares
+      of 500 m lettered A to F and numbered 1 to 8.</p>
+      <p>The kilometre lines of the National Grid are printed over the page (green) with their numbers in the margin, so the
+      page itself says that ${nm} is in the square east of line <b class="c-km">${k2(kmE)}</b> and north of line
+      <b class="c-km">${k2(kmN)}</b>, four figures <b>${o.square} ${k2(kmE)}${k2(kmN)}</b>.</p>`,
+    cam: pageCam, L: { tiles: 1, ukPage: 1 }, rows: ["uka", "os"], hi: ["atl"], click: true
+  });
+  if (pg) S.push({
+    title: "Pages on whole kilometres",
+    body: `<p>The atlas covers ${grp((A.east - A.west) / 1000)} by ${grp((A.north - A.south) / 1000)} km of London in
+      ${A.across * A.down} pages, ${A.across} across and ${A.down} down, numbered across and then down from the north-west.
+      Every page edge is a whole kilometre line of the grid (E ${grp(A.west)} to ${grp(A.east)}, N ${grp(A.south)} to
+      ${grp(A.north)}), so the page number is arithmetic: page = row x ${A.across} + column + 1 = ${pg.row} x ${A.across} + ${pg.col} + 1
+      = <b>${pg.page}</b>.</p>
+      <p>Tasmania's map book works the same way; its street atlas, with pages placed by hand over the towns, does not.</p>`,
+    cam: osCam((A.west + A.east) / 2, (A.north + A.south) / 2, (A.north - A.south) * 1.15), L: { tiles: 0.7, ukAll: 1, osGrid: 0.6 }, rows: ["uka"], hi: ["atl"], click: true
+  });
+  S.push({
+    part: pg ? null : part, title: o.six.text,
+    body: `<p>On the National Grid ${nm} is <b>E ${grp(o.e)}, N ${grp(o.n)}</b> (Ordnance Survey's OSGB36 grid, EPSG:27700), and the
+      six-figure reference is <b>${o.six.text}</b>: the 100 m square (green) ${o.six.e[2]} tenths across from line ${k2(kmE)} and
+      ${o.six.n[2]} tenths up from line ${k2(kmN)}.</p>
+      <p>${o.square} stands for the leading digits, ${String(Math.floor(o.e / 1e5))} and ${String(Math.floor(o.n / 1e5))}, as the
+      MGRS letters did. The faint lines are the UTM grid of Part 1, turned ${Math.abs(o.conv - D.conv).toFixed(2)}${DEG} from the
+      National Grid here, because the two have different central meridians.</p>`,
+    cam: { ...osCam(Math.floor(o.e / 100) * 100 + 50, Math.floor(o.n / 100) * 100 + 50, 2600) }, L: { tiles: 0.85, osGrid: 1, osCell: 1, grid: 0.25 },
+    rows: ["os", "osen"], hi: ["d-km", "d-hm"], click: true
+  });
+  S.push({
+    title: "Letters for the hundreds",
+    body: `<p>The National Grid's 100 km squares have two letters each. The first names a <b>500 km square</b>: S, T, N, O, H and J
+      cover Great Britain (most of it is S, N and T, with H for the far north and O and J for a sliver of sea and coast). The
+      second names the 100 km square inside it, A to Z without I, five across and five down from the north-west.</p>
+      <p>${nm} is in <b>${o.square}</b>: E ${String(Math.floor(o.e / 1e5))}xx xxx and N ${String(Math.floor(o.n / 1e5))}xx xxx.</p>`,
+    cam: osCam(330000, 640000, 1350e3), L: { coast: 1, os100: 1 }, rows: ["os", "osen"], hi: ["d-hk"]
+  });
+  S.push({
+    title: "One zone for the whole island",
+    body: `<p>Great Britain spans UTM zones 29, 30 and 31. The National Grid uses one transverse Mercator for all of it, centred on
+      <b>2${DEG}W</b> (E 400 000), with a scale of <b>0.9996012717</b> on that meridian: the map is 0.04% small there, ${ppm(0.9996012717)}.</p>
+      <p>The scale is true about ${grp(o.trueScale / 1000)} km either side (the dashed lines), and the error grows to the west
+      coast: ${ppm(kE0)} at E 0. Here it is k ${o.k.toFixed(6)}, ${ppm(o.k)}. One zone keeps every British map on the same numbers, at
+      the price of a wider zone than UTM would use.</p>`,
+    cam: osCam(330000, 640000, 1350e3), L: { coast: 1, os100: 0.35, osCM: 1, edges: 0.6 }, rows: ["osen"], hi: ["d-hk"]
+  });
+  S.push({
+    title: "0,0 off the Scilly Isles",
+    body: `<p>The projection's <b>true origin</b> is 49${DEG}N 2${DEG}W, in the Channel. It is given E 400 000, N -100 000, which puts
+      the grid's <b>0,0</b> (the false origin) at ${fmtLat(O.fromGrid(0, 0)[1])} ${fmtLon(O.fromGrid(0, 0)[0])}, out in the sea south-west
+      of the Scilly Isles.</p>
+      <p>So every point in Great Britain has a positive easting and northing, and eastings stay under 700 000. Northings reach
+      past 1 200 000 in Shetland, the only place a British northing needs seven digits.</p>`,
+    cam: osCam(230000, 150000, 820e3), L: { coast: 1, os100: 0.45, osOrigin: 1 }, rows: ["osen"], hi: ["d-hk"]
+  });
+  S.push({
+    title: "A different Earth",
+    body: `<p>The National Grid is not on WGS84: it is on <b>OSGB36</b>, fitted to the Airy 1830 ellipsoid, which hugs Britain better
+      than a global ellipsoid does. ${nm}'s GPS position is ${fmtLat(P.lat, 5)} ${fmtLon(P.lon, 5)}; on OSGB36 the same spot is
+      ${fmtLat(p36, 5)} ${fmtLon(l36, 5)}. Read OSGB36 latitude and longitude as if they were GPS and you land
+      <b>${grp(shiftM)} m</b> away (the arrow).</p>
+      <p>This page uses Ordnance Survey's seven-parameter Helmert shift, good to a few metres. The exact transformation is the
+      OSTN15 grid (PROJ has it), which takes the shift to about 10 cm.
+      ${Math.abs(P.lon) < 0.01 ? ` At Greenwich the transit circle is close to longitude 0 on OSGB36, while the GPS prime meridian runs about 100 m to the east of it.` : ""}</p>`,
+    cam: { ...osCam(o.e, o.n, 420) }, L: { tiles: 0.85, osShift: 1, osGrid: 0.5 }, rows: ["os", "osen"], hi: ["all"], click: true
+  });
+  if (pg) S.push({
+    title: `Back to page ${pg.page}`,
+    body: `<ul class="decode">
+        <li><b>Page ${pg.page}, ${pg.letter}${pg.number}</b>: a 3 by 4 km page and a 500 m square, cut from whole kilometres.</li>
+        <li><b>${o.six.text}</b>: the 100 km square, then 100 m east and north inside it.</li>
+        <li><b>E ${grp(o.e)}, N ${grp(o.n)}</b>: metres from a 0,0 off the Scilly Isles, on one zone centred on 2${DEG}W.</li>
+        <li>All of it on OSGB36, a datum of its own, about ${grp(shiftM)} m from GPS latitude and longitude here.</li>
+      </ul>`,
+    cam: pageCam, L: { tiles: 1, ukPage: 1 }, rows: ["uka", "os", "osen"], hi: ["all"], click: true
+  });
+  return S;
+}
+
+// a National Grid polyline, sampled, through to the plane
+function strokeOS(ctx, v, e0, n0, e1, n1, steps = 12) {
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const [x, y] = v.px(...os2plane(e0 + ((e1 - e0) * i) / steps, n0 + ((n1 - n0) * i) / steps));
+    if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+  }
+  ctx.stroke();
+}
+// the view's extent in National Grid metres, from its corners and edges
+function osExtent(v) {
+  let e0 = Infinity, n0 = Infinity, e1 = -Infinity, n1 = -Infinity;
+  for (let i = 0; i <= 4; i++) for (const [x, y] of [[(v.w * i) / 4, 0], [(v.w * i) / 4, v.h], [0, (v.h * i) / 4], [v.w, (v.h * i) / 4]]) {
+    const [lon, lat] = inv(...v.en(x, y)), [l, p] = O.fromWGS84(lon, lat), [e, n] = O.toGrid(l, p);
+    e0 = Math.min(e0, e); e1 = Math.max(e1, e); n0 = Math.min(n0, n); n1 = Math.max(n1, n);
+  }
+  return [e0, n0, e1, n1];
+}
+const OS_GREEN = "#7bed9f", OS_GRID = "#3ddc84";
+
+function osPoly(ctx, v, e0, n0, e1, n1) {
+  const pts = [[e0, n1], [e1, n1], [e1, n0], [e0, n0]].map(([e, n]) => v.px(...os2plane(e, n)));
+  ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath();
+  return pts;
+}
+
+function drawUK(ctx, v, L, base) {
+  const al = (k) => base * L(k);
+  if (L("ukAll") > 0.01) { ctx.globalAlpha = al("ukAll"); drawUKAll(ctx, v); }
+  if (L("ukPage") > 0.01) { ctx.globalAlpha = al("ukPage"); drawUKPage(ctx, v); }
+  if (L("osGrid") > 0.01) { ctx.globalAlpha = al("osGrid"); drawOSGrid(ctx, v); }
+  if (L("osCell") > 0.01) { ctx.globalAlpha = al("osCell"); drawOSCell(ctx, v); }
+  if (L("os100") > 0.01) { ctx.globalAlpha = al("os100"); drawOS100(ctx, v); }
+  if (L("osCM") > 0.01) { ctx.globalAlpha = al("osCM"); drawOSCM(ctx, v); }
+  if (L("osOrigin") > 0.01) { ctx.globalAlpha = al("osOrigin"); drawOSOrigin(ctx, v); }
+  if (L("osShift") > 0.01) { ctx.globalAlpha = al("osShift"); drawOSShift(ctx, v); }
+}
+
+function drawUKAll(ctx, v) {
+  const A = O.COUNTY, pw = A.pageW * v.s;
+  for (let p = 1; p <= A.across * A.down; p++) {
+    const f = O.countyFrame(p), mine = U.page && U.page.page === p;
+    const pts = osPoly(ctx, v, f.west, f.south, f.east, f.north);
+    ctx.fillStyle = mine ? "rgba(90,130,255,0.5)" : "rgba(70,110,255,0.14)"; ctx.fill();
+    ctx.strokeStyle = mine ? "#aab4ff" : "rgba(110,150,255,0.8)"; ctx.lineWidth = mine ? 2 : 0.8; ctx.stroke();
+    if (pw > 18) {
+      const cx = (pts[0][0] + pts[2][0]) / 2, cy = (pts[0][1] + pts[2][1]) / 2;
+      label(ctx, String(p), cx, cy, { size: Math.min(13, pw / 2.4), align: "center", color: mine ? "#ffffff" : "#dfe6ff", bold: mine });
+    }
+  }
+}
+
+function drawUKPage(ctx, v) {
+  const pg = U.page;
+  if (!pg) return;
+  const sq = 500, spx = sq * v.s;
+  // the frame and its squares
+  osPoly(ctx, v, pg.west, pg.south, pg.east, pg.north);
+  ctx.fillStyle = "rgba(255,250,235,0.1)"; ctx.fill();
+  ctx.strokeStyle = "rgba(60,70,200,0.95)"; ctx.lineWidth = 1;
+  for (let e = pg.west + sq; e < pg.east; e += sq) strokeOS(ctx, v, e, pg.south, e, pg.north, 2);
+  for (let n = pg.south + sq; n < pg.north; n += sq) strokeOS(ctx, v, pg.west, n, pg.east, n, 2);
+  // the pin's square
+  osPoly(ctx, v, pg.squareWest, pg.squareNorth - sq, pg.squareWest + sq, pg.squareNorth);
+  ctx.fillStyle = "rgba(255,211,77,0.3)"; ctx.fill(); ctx.strokeStyle = C.tm; ctx.lineWidth = 2.5; ctx.stroke();
+  // the National Grid kilometre lines over the page
+  ctx.strokeStyle = OS_GRID; ctx.lineWidth = 1.6;
+  for (let e = pg.west; e <= pg.east; e += 1000) strokeOS(ctx, v, e, pg.south - 260, e, pg.north + 260, 2);
+  for (let n = pg.south; n <= pg.north; n += 1000) strokeOS(ctx, v, pg.west - 260, n, pg.east + 260, n, 2);
+  osPoly(ctx, v, pg.west, pg.south, pg.east, pg.north);
+  ctx.strokeStyle = "#5865f2"; ctx.lineWidth = 3; ctx.stroke();
+  if (spx < 14) return;
+  const fs = Math.max(9, Math.min(15, spx * 0.18));
+  // square letters and numbers inside the frame edge, grid numbers outside it
+  for (let c = 0; c < 6; c++) for (const n of [pg.north - 90, pg.south + 90]) {
+    const [x, y] = v.px(...os2plane(pg.west + (c + 0.5) * sq, n));
+    label(ctx, "ABCDEF"[c], x, y, { size: fs, bold: true, align: "center", color: "#c3c9ff" });
+  }
+  for (let r = 0; r < 8; r++) for (const e of [pg.west + 90, pg.east - 90]) {
+    const [x, y] = v.px(...os2plane(e, pg.north - (r + 0.5) * sq));
+    label(ctx, String(r + 1), x, y, { size: fs, bold: true, align: "center", color: "#c3c9ff" });
+  }
+  const k2 = (val) => String(Math.round(val / 1000) % 100).padStart(2, "0");
+  for (let e = pg.west; e <= pg.east; e += 1000) for (const n of [pg.north + 330, pg.south - 330]) {
+    const [x, y] = v.px(...os2plane(e, n));
+    label(ctx, k2(e), x, y, { size: fs + 1, bold: true, align: "center", color: OS_GREEN });
+  }
+  for (let n = pg.south; n <= pg.north; n += 1000) for (const [e, al] of [[pg.west - 300, "right"], [pg.east + 300, "left"]]) {
+    const [x, y] = v.px(...os2plane(e, n));
+    label(ctx, k2(n), x, y, { size: fs + 1, bold: true, align: al, color: OS_GREEN });
+  }
+  const [tx, ty0] = v.px(...os2plane(pg.east, pg.north + 330)), ty = ty0 - 10;
+  ctx.font = "600 15px system-ui, sans-serif";
+  const tab = String(pg.page), tw = ctx.measureText(tab).width + 16;
+  ctx.fillStyle = "#3b44c4"; ctx.fillRect(tx - tw, ty - 26, tw, 24);
+  label(ctx, tab, tx - tw / 2, ty - 14, { size: 15, bold: true, align: "center", color: "#ffffff", halo: false });
+}
+
+function drawOSGrid(ctx, v) {
+  const [e0, n0, e1, n1] = osExtent(v);
+  const sp = [1e3, 1e4, 1e5].find((s) => s * v.s >= 60) || 1e5;
+  ctx.strokeStyle = OS_GRID; ctx.lineWidth = 1.2;
+  const eA = Math.floor(e0 / sp) * sp, nA = Math.floor(n0 / sp) * sp;
+  for (let e = eA; e <= e1; e += sp) strokeOS(ctx, v, e, n0, e, n1, 6);
+  for (let n = nA; n <= n1; n += sp) strokeOS(ctx, v, e0, n, e1, n, 6);
+  const txt = (val) => (sp === 1e3 ? String(Math.floor(val / 1000) % 100).padStart(2, "0") : sp === 1e4 ? String(Math.floor(val / 1e4) % 10) + "0" : grp(val));
+  for (let e = eA + sp; e <= e1; e += sp) {
+    const [x, y] = v.px(...os2plane(e, n1));
+    if (x > 20 && x < v.w - 20) label(ctx, txt(e), x + 3, Math.max(y, 0) + 30, { size: 13, bold: true, color: OS_GREEN });
+  }
+  for (let n = nA + sp; n <= n1; n += sp) {
+    const [x, y] = v.px(...os2plane(e1, n));
+    if (y > 50 && y < v.h - 40) label(ctx, txt(n), Math.min(x, v.w) - 6, y - 9, { size: 13, bold: true, color: OS_GREEN, align: "right" });
+  }
+}
+
+function drawOSCell(ctx, v) {
+  const o = U.os, e = Math.floor(o.e / 100) * 100, n = Math.floor(o.n / 100) * 100;
+  const pts = osPoly(ctx, v, e, n, e + 100, n + 100);
+  ctx.fillStyle = "rgba(123,237,159,0.25)"; ctx.fill(); ctx.strokeStyle = OS_GREEN; ctx.lineWidth = 2.5; ctx.stroke();
+  label(ctx, o.six.text, pts[3][0] + 6, pts[3][1] + 14, { color: OS_GREEN, bold: true, size: 13 });
+}
+
+function drawOS100(ctx, v) {
+  for (let e = 0; e < 7e5; e += 1e5) for (let n = 0; n < 13e5; n += 1e5) {
+    const mine = Math.floor(U.os.e / 1e5) * 1e5 === e && Math.floor(U.os.n / 1e5) * 1e5 === n;
+    const pts = osPoly(ctx, v, e, n, e + 1e5, n + 1e5);
+    if (mine) { ctx.fillStyle = "rgba(255,159,67,0.25)"; ctx.fill(); }
+    ctx.strokeStyle = "rgba(255,159,67,0.55)"; ctx.lineWidth = 1; ctx.stroke();
+    const cx = (pts[0][0] + pts[2][0]) / 2, cy = (pts[0][1] + pts[2][1]) / 2, w = Math.abs(pts[1][0] - pts[0][0]);
+    if (w > 24) label(ctx, O.squareLetters(e + 1, n + 1), cx, cy, { size: Math.min(20, w / 2.6), bold: true, align: "center", color: mine ? C.hk : "rgba(255,159,67,0.85)" });
+  }
+  // the 500 km squares
+  ctx.strokeStyle = "#ff6b6b"; ctx.lineWidth = 2.5;
+  for (let e = 0; e <= 1e6; e += 5e5) strokeOS(ctx, v, e, 0, e, 15e5, 20);
+  for (let n = 0; n <= 15e5; n += 5e5) strokeOS(ctx, v, 0, n, 1e6, n, 20);
+  for (const [e, n] of [[0, 0], [5e5, 0], [0, 5e5], [5e5, 5e5], [0, 1e6], [5e5, 1e6]]) {
+    const [x, y] = v.px(...os2plane(e + 8e3, n + 492e3));
+    label(ctx, O.squareLetters(e + 1, n + 1)[0], x, y, { size: 22, bold: true, color: "#ff6b6b", base: "top" });
+  }
+}
+
+function drawOSCM(ctx, v) {
+  ctx.strokeStyle = C.cm; ctx.lineWidth = 2.5;
+  strokeOS(ctx, v, 4e5, -1e5, 4e5, 13e5, 24);
+  const [x, y] = v.px(...os2plane(4e5, 12.4e5));
+  label(ctx, `2${DEG}W = E 400 000, k 0.9996013`, x + 8, y, { color: C.cm, size: 13, bold: true });
+  ctx.setLineDash([7, 5]); ctx.lineWidth = 1.8; ctx.strokeStyle = C.tm;
+  const off = U.os.trueScale;
+  for (const e of [4e5 - off, 4e5 + off]) strokeOS(ctx, v, e, -1e5, e, 13e5, 24);
+  ctx.setLineDash([]);
+  const [xs, ys] = v.px(...os2plane(4e5 + off, 1.5e5));
+  label(ctx, "k = 1", xs + 6, ys, { color: C.tm, size: 13, bold: true });
+}
+
+function drawOSOrigin(ctx, v) {
+  const [x0, y0] = v.px(...os2plane(0, 0)), [xt, yt] = v.px(...os2plane(4e5, -1e5));
+  ctx.strokeStyle = "rgba(255,255,255,0.75)"; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+  strokeOS(ctx, v, 0, 0, 7e5, 0, 8); strokeOS(ctx, v, 0, 0, 0, 13e5, 8);
+  ctx.setLineDash([]);
+  for (const [x, y] of [[x0, y0], [xt, yt]]) {
+    ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(x, y, 6, 0, 2 * Math.PI); ctx.fill();
+    ctx.strokeStyle = C.bg; ctx.lineWidth = 2; ctx.stroke();
+  }
+  const [lon, lat] = O.fromGrid(0, 0);
+  label(ctx, "0, 0", x0 - 10, y0 - 16, { size: 16, bold: true, align: "right" });
+  label(ctx, `is ${fmtLat(lat)} ${fmtLon(lon)}`, x0 - 10, y0 + 4, { size: 12, color: "#cfd8e6", align: "right" });
+  label(ctx, `true origin 49${DEG}N 2${DEG}W`, xt + 10, yt - 8, { size: 13, bold: true });
+  label(ctx, "E 400 000, N -100 000", xt + 10, yt + 10, { size: 12, color: "#cfd8e6" });
+  arrow(ctx, x0, yt + 30, xt, yt + 30, C.hk, "400 km", {});
+  arrow(ctx, x0 - 30, y0, x0 - 30, yt, C.hk, "100 km", {});
+}
+
+function drawOSShift(ctx, v) {
+  const [xp, yp] = v.px(D.e, D.n), [xs, ys] = v.px(...fwd(U.os.lon36, U.os.lat36));
+  ctx.fillStyle = "#ffffff"; ctx.strokeStyle = C.bg; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(xs, ys, 6, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+  arrow(ctx, xp, yp, xs, ys, C.tm, "", { both: false, dash: [6, 4] });
+  label(ctx, "OSGB36 lat/lon read as GPS", xs + 10, ys + 16, { size: 13, bold: true, color: C.tm });
+}
+
 // ---------------------------------------------------------------- panel and refbar
 
 function renderSteps() {
-  $("steps").innerHTML = STEPS.map((s, i) => (s.part === 2 ? `<div class="part-head"><h2>Part 2: the street atlas and the map book</h2><p class="hint">Tasmania's two emergency map books, from theLIST.</p></div>` : "") +
+  $("steps").innerHTML = STEPS.map((s, i) => (s.part ? `<div class="part-head"><h2>${s.part.title}</h2><p class="hint">${s.part.hint}</p></div>` : "") +
     `<section class="step" data-i="${i}"><h2><span class="n">${i + 1}</span>${s.title}</h2>${s.body}</section>`).join("");
   const j = $("jump");
   j.innerHTML = STEPS.map((s, i) => `<option value="${i}">${i + 1}. ${s.title}</option>`).join("");
@@ -560,6 +853,12 @@ function renderRefbar() {
     zone: `<span class="k">Zone</span><span class="v"><i class="d-gzd">${zone}${d.band}</i> ${lonName(lon0 - 3)}-${lonName(lon0 + 3)}, CM ${lonName(lon0)}</span>`,
     scale: `<span class="k">Scale</span><span class="v"><i class="kk">k ${d.k.toFixed(6)}</i></span>`
   };
+  if (U) {
+    const o = U.os;
+    if (U.page) rows.uka = `<span class="k">Atlas</span><span class="v"><i class="atl">page ${U.page.page}</i> <i class="atl">${U.page.letter}${U.page.number}</i></span>`;
+    rows.os = `<span class="k">Nat. Grid</span><span class="v"><i class="d-hk">${o.square}</i> ${shortSpans([o.six.e, o.six.n])}</span>`;
+    rows.osen = `<span class="k">OSGB36</span><span class="v"><span class="d-e">E ${digitSpans(o.e)}</span> <span class="d-n">N ${digitSpans(o.n)}</span></span>`;
+  }
   $("refbar").innerHTML = `<button type="button" class="rb-toggle" aria-label="Show or hide the grid reference card"></button>` +
     Object.entries(rows).map(([k, v]) => `<div class="row r-${k}">${v}</div>`).join("");
   lastBar = -1;
@@ -752,6 +1051,7 @@ function drawPlane(ctx, cam, L, w, h, dpr) {
     if (L("uv") > 0.01) { ctx.globalAlpha = al("uv"); drawUV(ctx, v); }
   }
   if (L("grid") > 0.01) { ctx.globalAlpha = al("grid"); drawGrid(ctx, v); }
+  if (U) drawUK(ctx, v, L, base);
   if (L("sq100") > 0.01) { ctx.globalAlpha = al("sq100"); drawSquares(ctx, v); }
   if (L("cell100") > 0.01) { ctx.globalAlpha = al("cell100"); drawCell(ctx, v, 100, C.hm); }
   if (L("cell10") > 0.01) { ctx.globalAlpha = al("cell10"); drawCell(ctx, v, 10, C.tm); }
